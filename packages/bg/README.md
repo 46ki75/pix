@@ -58,8 +58,22 @@ Finished counts remain visible while idle and reset on reload or session
 replacement; they are not restored from history. Commands that fail to launch
 are not counted.
 
-`/bg` lists detailed outcomes and lets you view output or kill a running task
-after confirmation.
+`/bg` lists detailed outcomes with a colored `⏺` before each task ID and a matching
+legend below the list:
+
+| Legend | Dot color | Meaning |
+| --- | --- | --- |
+| Running/stopping | Blue `#68779f` | Still running or cleaning up |
+| Succeeded | Theme `success` | Exit code 0 |
+| Failed | Theme `error` | Nonzero exit, signal, or execution error |
+| Timeout/cap | Theme `warning` | Timeout or output limit reached |
+| Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
+
+Status and theme colors refresh while the list is open, without moving your
+selection when another task starts. The legend wraps on narrow terminals; very
+short viewports prioritize task rows. Use Up/Down or j/k to navigate, Enter to
+select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a running
+task after confirmation. The footer keeps its simpler Running/Finished totals.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
 task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following

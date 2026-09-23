@@ -6,11 +6,157 @@ import type {
 import {
   matchesKey,
   ScrollView,
+  SelectList,
   Text,
   truncateToWidth,
+  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { readTail, statusLine } from "./format.ts";
 import type { Registry, Task } from "./registry.ts";
+
+type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
+type StatusColor = "running" | "success" | "error" | "warning" | "muted";
+
+function runningColor(theme: StatusTheme, text: string): string {
+  // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
+  const blue =
+    theme.getColorMode() === "truecolor"
+      ? "\x1b[38;2;104;119;159m"
+      : "\x1b[38;5;67m";
+  return `${blue}${text}\x1b[39m`;
+}
+
+function statusColor(task: Task): StatusColor {
+  if (task.status !== "finished") return "running";
+  switch (task.outcome?.kind) {
+    case "exited":
+      return task.outcome.code === 0 ? "success" : "error";
+    case "signaled":
+    case "failed":
+      return "error";
+    case "timed_out":
+    case "output_capped":
+      return "warning";
+    case "killed":
+      return "muted";
+    default:
+      return "error";
+  }
+}
+
+function statusDot(theme: StatusTheme, color: StatusColor): string {
+  return color === "running" ? runningColor(theme, "⏺") : theme.fg(color, "⏺");
+}
+
+const legend: readonly (readonly [StatusColor, string])[] = [
+  ["running", "Running/stopping"],
+  ["success", "Succeeded"],
+  ["error", "Failed"],
+  ["warning", "Timeout/cap"],
+  ["muted", "Killed"],
+];
+
+export class TaskListView {
+  private list: SelectList;
+  private ids: string[] = [];
+  private disposed = false;
+
+  constructor(
+    private tasks: () => Task[],
+    private theme: StatusTheme,
+    private height: () => number,
+    private renderRequest: () => void,
+    private done: (id: string | undefined) => void,
+  ) {
+    this.list = this.createList(1);
+  }
+
+  private createList(maxVisible: number): SelectList {
+    const selected = this.list?.getSelectedItem()?.value;
+    const tasks = this.tasks().toReversed();
+    const colors = new Map(tasks.map((task) => [task.id, statusColor(task)]));
+    this.ids = tasks.map((task) => task.id);
+    const list = new SelectList(
+      tasks.map((task) => ({ value: task.id, label: statusLine(task) })),
+      maxVisible,
+      {
+        selectedPrefix: (text) => this.theme.fg("accent", text),
+        selectedText: (text) => this.theme.fg("accent", text),
+        description: (text) => this.theme.fg("muted", text),
+        scrollInfo: (text) => this.theme.fg("dim", text),
+        noMatch: (text) => this.theme.fg("muted", text),
+      },
+      {
+        truncatePrimary: ({ item, text, isSelected, maxWidth }) => {
+          // Pi's fg() does not restore an enclosing color after a nested reset.
+          // Style the row text separately so the dot keeps its status color.
+          const line =
+            statusDot(this.theme, colors.get(item.value) ?? "error") +
+            " " +
+            this.theme.fg(isSelected ? "accent" : "text", text);
+          return truncateToWidth(line, Math.max(0, maxWidth), "");
+        },
+      },
+    );
+    list.setSelectedIndex(Math.max(0, this.ids.indexOf(selected ?? "")));
+    list.onSelect = (item) => this.finish(item.value);
+    list.onCancel = () => this.finish(undefined);
+    return list;
+  }
+
+  handleInput(data: string): void {
+    if (this.disposed) return;
+    if (data === "j" || data === "k") {
+      const index = this.ids.indexOf(this.list.getSelectedItem()?.value ?? "");
+      this.list.setSelectedIndex(index + (data === "j" ? 1 : -1));
+    } else this.list.handleInput(data);
+    this.renderRequest();
+  }
+
+  render(width: number): string[] {
+    if (this.disposed || width < 1) return [];
+    const rows = Math.max(1, this.height());
+    const legendText =
+      this.theme.fg("dim", "Legend: ") +
+      legend
+        .map(
+          ([color, label]) =>
+            `${statusDot(this.theme, color)} ${this.theme.fg("muted", label)}`,
+        )
+        .join(this.theme.fg("dim", " · "));
+    // On tiny terminals prioritize at least one task row over the full legend.
+    const legendLines = wrapTextWithAnsi(legendText, width).slice(
+      0,
+      Math.max(0, rows - 4),
+    );
+    const listHeight = Math.max(1, rows - legendLines.length - 2);
+    // Reserve a line for SelectList's scroll position when the tasks overflow.
+    this.list = this.createList(Math.max(1, listHeight - 1));
+    return [
+      this.theme.fg("accent", "Background tasks"),
+      ...this.list.render(width).slice(0, listHeight),
+      ...legendLines,
+      this.theme.fg(
+        "dim",
+        "↑↓ / j k navigate · enter select · esc/ctrl+c cancel",
+      ),
+    ]
+      .slice(0, rows)
+      .map((line) => truncateToWidth(line, width));
+  }
+
+  invalidate(): void {}
+
+  private finish(id: string | undefined): void {
+    if (this.disposed) return;
+    this.dispose();
+    this.done(id);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
 
 export class OutputView {
   private body = new Text("", 0, 0);
@@ -102,7 +248,7 @@ export class OutputView {
 
 export class TaskUI {
   private disposed = false;
-  private closeViewer: (() => void) | undefined;
+  private closeView: (() => void) | undefined;
   private renderIndicator: (() => void) | undefined;
   private running = 0;
   private finished = 0;
@@ -135,14 +281,9 @@ export class TaskUI {
           render: (width: number) => {
             if (this.disposed || width < 1) return [];
             const theme = this.ctx.ui.theme;
-            // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
-            const blue =
-              theme.getColorMode() === "truecolor"
-                ? "\x1b[38;2;104;119;159m"
-                : "\x1b[38;5;67m";
             const line =
               theme.fg("dim", "| ") +
-              `${blue}⏺ Running: ${this.running}\x1b[39m` +
+              runningColor(theme, `⏺ Running: ${this.running}`) +
               theme.fg("muted", ` ⏺ Finished: ${this.finished}`) +
               theme.fg("dim", " | /bg → Show BG Tasks |");
             return [truncateToWidth(line, width)];
@@ -155,17 +296,31 @@ export class TaskUI {
 
   async show(ctx: ExtensionCommandContext): Promise<void> {
     while (!this.disposed) {
-      const tasks = this.registry.list().reverse();
-      if (!tasks.length) {
+      if (!this.registry.list().length) {
         ctx.ui.notify("No background tasks.", "info");
         return;
       }
-      const labels = tasks.map((task) => statusLine(task));
-      const selection = await ctx.ui.select("Background tasks", labels);
-      if (this.disposed || !selection) return;
-      const selected = tasks[labels.indexOf(selection)];
-      if (!selected) return;
-      const task = this.registry.get(selected.id);
+      const selected = await ctx.ui.custom<string | undefined>(
+        (tui, theme, _keys, done) => {
+          const view = new TaskListView(
+            () => this.registry.list(),
+            theme,
+            () => Math.max(4, tui.terminal.rows - 4),
+            () => tui.requestRender(),
+            done,
+          );
+          this.closeView = () => {
+            view.dispose();
+            done(undefined);
+          };
+          // Registry events already request a render through update(); the list
+          // reads fresh snapshots during rendering, without a polling timer.
+          return view;
+        },
+      );
+      this.closeView = undefined;
+      if (this.disposed || !selected) return;
+      const task = this.registry.get(selected);
       const action = await ctx.ui.select(statusLine(task), [
         "View output",
         ...(task.status === "running" ? ["Kill"] : []),
@@ -181,13 +336,13 @@ export class TaskUI {
             () => tui.requestRender(),
             () => done(),
           );
-          this.closeViewer = () => {
+          this.closeView = () => {
             view.dispose();
             done();
           };
           return view;
         });
-        this.closeViewer = undefined;
+        this.closeView = undefined;
       } else if (
         action === "Kill" &&
         (await ctx.ui.confirm("Kill background task?", statusLine(task)))
@@ -205,7 +360,7 @@ export class TaskUI {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.closeViewer?.();
+    this.closeView?.();
     this.ctx.ui.setWidget("pix-bg", undefined);
     this.renderIndicator = undefined;
   }
