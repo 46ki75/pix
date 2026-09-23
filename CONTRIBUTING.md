@@ -1,7 +1,8 @@
 # Contributing
 
 These rules apply to humans and agents. Follow the setup and command reference in
-[README.md](README.md).
+[README.md](README.md). Before changing a package, also read its `CONTRIBUTING.md`
+for package-specific development guidance.
 
 ## Tooling and validation
 
@@ -64,7 +65,10 @@ Use `packages/websearch` as a reference for package layout and Pi tool registrat
    root test options.
 5. Add tests for observable behavior or important integration boundaries.
    Isolate tests from personal Pi configuration and avoid model requests.
-6. Run `mise exec -- pnpm install`, format and lint the new files explicitly,
+6. Document usage, configuration, and user-visible limitations in the package's
+   `README.md`. Link to a package `CONTRIBUTING.md` for development, testing, and
+   implementation guidance; it should link here rather than duplicate shared rules.
+7. Run `mise exec -- pnpm install`, format and lint the new files explicitly,
    then run `mise run check`. Add a package development task to `mise.toml` when
    an interactive Pi launch is useful.
 
