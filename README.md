@@ -66,8 +66,9 @@ so provider updates and content-extraction updates can be released independently
 [`@ikuma.cloud/pix-mcp`](packages/mcp/README.md) connects to configured stdio and
 Streamable HTTP MCP servers, exposes compact discovery, and activates native tool
 schemas on demand. Run `mise run mcp:dev` for an isolated development launch or
-`mise run test --project pix-mcp` for its tests. Review its configuration trust and
-invocation approval requirements before connecting servers.
+`mise run test --project pix-mcp` for its tests. Review its configuration trust
+requirements before connecting servers. Tool-call permissions are left to Pi
+extensions rather than enforced by the adapter.
 
 ## Layout
 

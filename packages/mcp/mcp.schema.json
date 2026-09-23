@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "pix-mcp configuration",
-  "description": "A Claude-style connection subset with pix-specific approval and lifecycle options. Environment expansion and HTTP URL/header validation also occur at runtime.",
+  "description": "A Claude-style connection subset with pix-specific discovery and lifecycle options. Environment expansion and HTTP URL/header validation also occur at runtime.",
   "type": "object",
   "required": ["mcpServers"],
   "additionalProperties": false,
@@ -42,11 +42,6 @@
         "catalogTimeoutMs": {
           "$ref": "#/$defs/timeout",
           "description": "pix extension: one complete catalog snapshot, including all pages."
-        },
-        "approve": {
-          "type": "boolean",
-          "default": true,
-          "description": "pix extension: require confirmation for every tool invocation."
         },
         "disabled": { "const": false }
       }
@@ -108,7 +103,6 @@
         "timeout": true,
         "startupTimeoutMs": true,
         "catalogTimeoutMs": true,
-        "approve": true,
         "disabled": { "type": "boolean" }
       },
       "if": {

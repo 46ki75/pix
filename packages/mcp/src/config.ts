@@ -9,7 +9,6 @@ export interface CommonServer {
   timeout: number;
   startupTimeoutMs: number;
   catalogTimeoutMs: number;
-  approve: boolean;
 }
 export type ServerConfig = CommonServer &
   (
@@ -133,6 +132,11 @@ function parseServer(
       "timeoutMs",
       "Removed; use timeout for tool calls, startupTimeoutMs for initialization, and catalogTimeoutMs for discovery (milliseconds).",
     );
+  if (Object.hasOwn(server, "approve"))
+    invalid(
+      "approve",
+      "Removed; delete approve and use a Pi tool_call extension for permission controls.",
+    );
   const allowed = new Set([
     "type",
     "command",
@@ -145,7 +149,6 @@ function parseServer(
     "timeout",
     "startupTimeoutMs",
     "catalogTimeoutMs",
-    "approve",
     "disabled",
   ]);
   if (Object.keys(server).some((key) => !allowed.has(key)))
@@ -156,8 +159,6 @@ function parseServer(
   if (server.disabled !== undefined && typeof server.disabled !== "boolean")
     invalid("disabled", "Expected a boolean.");
   if (server.disabled === true) return undefined;
-  if (server.approve !== undefined && typeof server.approve !== "boolean")
-    invalid("approve", "Expected a boolean.");
   const common: CommonServer = {
     name,
     description:
@@ -167,7 +168,6 @@ function parseServer(
     timeout: timeout(server.timeout, "timeout"),
     startupTimeoutMs: timeout(server.startupTimeoutMs, "startupTimeoutMs"),
     catalogTimeoutMs: timeout(server.catalogTimeoutMs, "catalogTimeoutMs"),
-    approve: server.approve !== false,
   };
   const type =
     server.type === undefined && server.command !== undefined

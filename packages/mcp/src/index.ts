@@ -250,46 +250,22 @@ export default function mcp(pi: ExtensionAPI) {
             description:
               tool.description || `Call ${tool.name} on ${config.name}.`,
             parameters,
-            // Approval dialogs share Pi's UI. Only preapproved calls may overlap.
-            executionMode: config.approve ? "sequential" : "parallel",
-            async execute(_id, params, signal, _onUpdate, ctx) {
+            executionMode: "parallel",
+            async execute(_id, params, signal) {
               current(owner);
               signal?.throwIfAborted();
-              const verify = () => {
-                current(owner);
-                if (
-                  owner.entries.get(item.name)?.fingerprint !==
-                    item.fingerprint ||
-                  owner.loaded.get(item.name) !== item.fingerprint ||
-                  !pi.getActiveTools().includes(item.name)
-                ) {
-                  throw new Error(
-                    "MCP tool is unavailable or changed. Discover it again.",
-                  );
-                }
-              };
-              verify();
+              if (
+                owner.entries.get(item.name)?.fingerprint !==
+                  item.fingerprint ||
+                owner.loaded.get(item.name) !== item.fingerprint ||
+                !pi.getActiveTools().includes(item.name)
+              ) {
+                throw new Error(
+                  "MCP tool is unavailable or changed. Discover it again.",
+                );
+              }
               if (!validator.Check(params))
                 throw new Error("Arguments do not match the MCP input schema.");
-              if (config.approve) {
-                if (!ctx.hasUI)
-                  throw new Error(
-                    "MCP approval required. Use an interactive session or explicitly set approve:false for this trusted server.",
-                  );
-                const input = JSON.stringify(params, null, 2);
-                if (input.length > 8000)
-                  throw new Error(
-                    "MCP arguments are too large for the approval dialog.",
-                  );
-                const allowed = await ctx.ui.confirm(
-                  `Call ${config.name}/${tool.name}?`,
-                  input,
-                  signal ? { signal } : undefined,
-                );
-                if (!allowed) throw new Error("MCP tool call denied.");
-              }
-              signal?.throwIfAborted();
-              verify();
               const connection = owner.connections.get(config.name);
               if (!connection) throw new Error("MCP connection unavailable.");
               const result = await connection.call(

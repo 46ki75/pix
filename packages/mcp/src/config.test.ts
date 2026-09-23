@@ -46,7 +46,6 @@ test("loads only the selected file and resolves explicit environment variables",
           type: "http",
           url: "https://example.test/mcp",
           headers: { Authorization: `Bearer \${API_TOKEN}` },
-          approve: false,
         },
         disabled: { disabled: true },
       },
@@ -57,7 +56,6 @@ test("loads only the selected file and resolves explicit environment variables",
   expect(result?.servers[0]).toMatchObject({
     type: "stdio",
     env: { TOKEN: "secret" },
-    approve: true,
     timeout: 30000,
     startupTimeoutMs: 30000,
     catalogTimeoutMs: 30000,
@@ -69,7 +67,6 @@ test("loads only the selected file and resolves explicit environment variables",
   expect(result?.servers[1]).toMatchObject({
     type: "http",
     headers: { Authorization: "Bearer secret" },
-    approve: false,
   });
   expect(JSON.stringify(result)).not.toContain("PRIVATE_HOST_ENV");
 });
@@ -126,7 +123,6 @@ test.each([
   },
   { mcpServers: { a: { command: "node", args: [1] } } },
   { mcpServers: { a: { command: "node", timeoutMs: -1 } } },
-  { mcpServers: { a: { command: "node", approve: "false" } } },
   { mcpServers: { "bad.name": { command: "node" } } },
 ])(
   "reports unsupported or malformed server entries without leaking values",
@@ -217,6 +213,28 @@ test("requires explicit HTTP type, normalizes its alias, and explains the remove
     serverIssue({ mcpServers: { a: { command: "node", timeoutMs: 960000 } } }),
   ).resolves.toContain("Removed; use timeout");
 });
+
+test.each([true, false, "SECRET"])(
+  "rejects removed approve policy with migration guidance (%s)",
+  async (approve) => {
+    for (const disabled of [false, true]) {
+      const result = await config({
+        mcpServers: { a: { command: "node", approve, disabled } },
+      });
+      expect(result?.servers).toEqual([]);
+      expect(result?.issues).toEqual([
+        {
+          name: "a",
+          field: "approve",
+          message: expect.stringContaining(
+            "Removed; delete approve and use a Pi tool_call extension for permission controls.",
+          ),
+        },
+      ]);
+      expect(JSON.stringify(result?.issues)).not.toContain("SECRET");
+    }
+  },
+);
 
 test("expands connection strings and unset-only defaults without recursive interpolation", async () => {
   const result = await config(
@@ -326,6 +344,10 @@ test("published schema agrees with structural parser validation", async () => {
     { type: "http", url: "https://example.test", cwd: "." },
     { command: "node", autoApprove: [] },
     { disabled: true, autoApprove: [] },
+    { command: "node", approve: true },
+    { command: "node", approve: false },
+    { command: "node", approve: "false" },
+    { disabled: true, approve: true },
   ];
   for (const server of cases) {
     const value = { mcpServers: { a: server } };

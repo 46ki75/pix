@@ -177,7 +177,6 @@ async function httpFixture(
     timeout: options.timeout ?? 1000,
     startupTimeoutMs: options.startupTimeoutMs ?? 1000,
     catalogTimeoutMs: options.catalogTimeoutMs ?? 1000,
-    approve: false,
   };
   const catalogs: Tool[][] = [];
   const connection = new Connection(config, (tools) => catalogs.push(tools));
@@ -599,7 +598,6 @@ test("stdio calls have their own deadlines and cancellation preserves siblings",
     timeout: 1000,
     startupTimeoutMs: 2000,
     catalogTimeoutMs: 1000,
-    approve: false,
   };
   const connection = new Connection(config, () => {});
   cleanups.push(() => connection.close());
