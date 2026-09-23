@@ -34,6 +34,8 @@ workspace dependencies.
 | `mise run check` | Run formatting, lint, type checking, and tests |
 | `mise run hello:dev` | Launch Pi with the starter extension |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
+| `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
+| `mise run web:dev` | Launch Pi with both web tools |
 
 `packages/hello` contains a minimal `/hello [name]` command. Run
 `mise run hello:dev`, then enter `/hello Pi`. Restart that command after editing
@@ -44,6 +46,14 @@ invokes the command without making model requests.
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
 `mise run websearch:dev` to try it, or
 `mise run test --project pix-websearch` for its tests.
+
+[`@ikuma.cloud/pix-webfetch`](packages/webfetch/README.md) adds an independent
+`webfetch` tool for reading URLs as text, including static HTML extraction. Run
+`mise run webfetch:dev` to try it or `mise run web:dev` to use both web tools.
+Its tests run with `mise run test --project pix-webfetch`.
+
+Web search and web fetch have separate package versions and runtime dependencies,
+so provider updates and content-extraction updates can be released independently.
 
 ## Layout
 

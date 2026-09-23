@@ -1,0 +1,31 @@
+{
+  "name": "@ikuma.cloud/pix-webfetch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fetch web pages as readable text for Pi Coding Agent",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {
+    "html-to-text": "10.0.1"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@types/html-to-text": "9.0.4"
+  }
+}

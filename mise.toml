@@ -59,3 +59,15 @@ description = "Launch Pi with @ikuma.cloud/pix-websearch"
 dir = "{{config_root}}/packages/websearch"
 raw = true
 run = "pnpm exec pi -e ."
+
+[tasks."webfetch:dev"]
+description = "Launch Pi with @ikuma.cloud/pix-webfetch"
+dir = "{{config_root}}/packages/webfetch"
+raw = true
+run = "pnpm exec pi -e ."
+
+[tasks."web:dev"]
+description = "Launch Pi with web search and web fetch"
+dir = "{{config_root}}/packages/webfetch"
+raw = true
+run = "pnpm exec pi -e ../websearch -e ."
