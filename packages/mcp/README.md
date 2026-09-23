@@ -59,30 +59,77 @@ contact remote services. Configuration trust is not an OS sandbox.
       "url": "https://mcp.example.com/mcp",
       "headers": { "Authorization": "Bearer ${SERVICE_TOKEN}" },
       "description": "Issue tracking tools",
-      "timeoutMs": 30000,
+      "timeout": 960000,
+      "startupTimeoutMs": 30000,
+      "catalogTimeoutMs": 30000,
       "approve": true
     }
   }
 }
 ```
 
-Supported fields:
+### Supported configuration
+
+MCP standardizes the protocol, not a universal configuration file. This adapter
+supports a [Claude Code-style](https://code.claude.com/docs/en/mcp) connection
+subset, not every client-specific field or transport. OpenCode configuration,
+Cursor's `${env:VAR}` syntax, and other clients' approval policies are not imported
+or translated.
+
+The published [JSON Schema](mcp.schema.json) provides editor validation. An
+optional root `$schema` string can reference your installed copy; the adapter
+never fetches that URL. Runtime validation additionally checks expanded strings,
+URLs, and HTTP headers.
 
 | Field | Behavior |
 | --- | --- |
-| `type` | `stdio` or `http`; inferred from `command` or `url` when omitted |
-| `command`, `args`, `env`, `cwd` | Stdio only; executable and argument array, not a shell command |
-| `url`, `headers` | Streamable HTTP only; no SSE fallback or redirect following |
-| `description` | Optional short capability summary for discovery |
-| `timeoutMs` | Request/discovery timeout, default 30000; allowed range 100–120000 |
-| `approve` | Require confirmation for every invocation, default `true` |
-| `disabled` | Skip this server when `true` |
+| `type` | `stdio`, `http`, or `streamable-http` (alias of `http`); only stdio is inferred, when `command` is present |
+| `command`, `args`, `env` | Stdio only; executable and argument array, not a shell command |
+| `url`, `headers` | Streamable HTTP only; explicit `type` required; no legacy SSE fallback or redirect following |
+| `timeout` | Hard deadline for each tool invocation, in milliseconds; default 30000 |
+| `cwd` | Stdio extension: working directory relative to the config directory |
+| `description` | Discovery extension: optional summary, truncated to 500 characters |
+| `startupTimeoutMs` | pix extension: complete connection/initialization handshake deadline; default 30000 |
+| `catalogTimeoutMs` | pix extension: complete catalog snapshot deadline, including all pages; default 30000 |
+| `approve` | pix policy: require confirmation for every invocation, default `true` |
+| `disabled` | Skip the server's value validation and environment expansion when `true`; unknown fields are still errors |
 
-Only `env` and `headers` values expand `${VARIABLE}` references. Missing
-variables fail without echoing their values. Stdio inherits the SDK's minimal
-platform environment plus explicit `env`, not the entire Pi environment.
-Credentials in HTTP URLs are rejected; use headers instead. Unknown fields fail
-rather than silently accepting unsupported configuration.
+`command`, `args`, `cwd`, `env` values, `url`, and `headers` values expand `${VAR}`
+and `${VAR:-default}`. A default applies only when the variable is unset, not when
+it is an empty string. Expansion is single-pass against Pi's environment; `env`
+entries do not define variables for other entries. Missing variables and invalid
+expanded values fail without echoing credentials. Stdio inherits the SDK's
+minimal platform environment plus explicit `env`, not the entire Pi environment.
+Credentials and fragments in HTTP URLs are rejected; use headers for credentials.
+Unknown fields fail rather than silently accepting unsupported configuration.
+
+### Deadlines and migration
+
+All three deadline fields accept integers from 1 through 2,147,483,647 milliseconds
+(Node's timer-safe maximum). Each defaults independently to 30 seconds. Setting
+`"timeout": 960000` permits a 16-minute tool call without lengthening startup or
+discovery. The call clock starts after invocation approval and connection startup;
+progress does not reset it. Catalog deadlines cover all pages of one snapshot;
+a subsequent list-change refresh starts a new deadline.
+
+HTTP deadlines cover response headers and bodies, including JSON and SSE. MCP
+requests borrow the host's HTTP/proxy routing but override its header/body idle
+limits per request; Pi's global settings and unrelated requests are unchanged.
+Notification GET streams have a bounded header wait but no body-idle deadline.
+Upstream proxies and servers may still impose their own limits.
+
+**Breaking changes from 0.0.1:**
+
+- Replace `timeoutMs` with `timeout` for tool calls. Set `startupTimeoutMs` and
+  `catalogTimeoutMs` separately if their defaults are unsuitable. The removed
+  field produces a migration diagnostic; it is not an alias.
+- Add `"type": "http"` to remote entries that previously specified only `url`.
+- Connection strings now expand environment references beyond `env` and `headers`.
+
+The 120-second call ceiling is removed. This is a configuration migration, not a
+promise to finish a remote operation within its deadline.
+
+### Invocation approval
 
 Tool invocation requires confirmation independently of config trust. In headless
 mode, calls fail closed unless the reviewed configuration explicitly sets
@@ -156,12 +203,13 @@ Schemas are syntax-checked before compilation. Only the default MCP dialect,
 JSON Schema 2020-12, is supported; explicit legacy dialects (including embedded
 resources) are rejected rather than interpreted with incorrect reference
 semantics. External schema references are unsupported, but literal `$ref` fields
-inside instance data are allowed. Requests and the entire initialization
-handshake use fixed deadlines, not progress-extended timeouts.
+inside instance data are allowed.
 
 The adapter never automatically retries `tools/call`: a timeout or lost response
-may occur after a mutating operation took effect. Successful output is validated
-against the schema captured when the call began; MCP error results are exempt
+may occur after a mutating operation took effect. Cancellation or expiration
+aborts only the affected HTTP request and sends a best-effort MCP cancellation
+notification; concurrent sibling calls remain usable. Successful output is
+validated against the schema captured when the call began; MCP error results are exempt
 from that success schema. Cancellation is best-effort at the server and does not
 roll back effects.
 

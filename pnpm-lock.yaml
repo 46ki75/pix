@@ -193,6 +193,9 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      undici:
+        specifier: 8.10.2
+        version: 8.10.2
     devDependencies:
       '@earendil-works/pi-ai':
         specifier: 0.87.1

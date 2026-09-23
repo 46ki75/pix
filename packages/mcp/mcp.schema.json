@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pix-mcp configuration",
+  "description": "A Claude-style connection subset with pix-specific approval and lifecycle options. Environment expansion and HTTP URL/header validation also occur at runtime.",
+  "type": "object",
+  "required": ["mcpServers"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "$ref": "#/$defs/text",
+      "description": "Editor hint only; never fetched by pix-mcp."
+    },
+    "mcpServers": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]{1,48}$" },
+      "additionalProperties": { "$ref": "#/$defs/server" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "pattern": "^[^\u0000]*$" },
+    "string": { "type": "string", "pattern": "^[^\u0000]*$" },
+    "timeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "default": 30000,
+      "description": "Fixed deadline in milliseconds; progress does not extend it."
+    },
+    "common": {
+      "type": "object",
+      "properties": {
+        "description": { "$ref": "#/$defs/text" },
+        "timeout": {
+          "$ref": "#/$defs/timeout",
+          "description": "Hard deadline for one tool invocation."
+        },
+        "startupTimeoutMs": {
+          "$ref": "#/$defs/timeout",
+          "description": "pix extension: complete transport connection and initialization handshake."
+        },
+        "catalogTimeoutMs": {
+          "$ref": "#/$defs/timeout",
+          "description": "pix extension: one complete catalog snapshot, including all pages."
+        },
+        "approve": {
+          "type": "boolean",
+          "default": true,
+          "description": "pix extension: require confirmation for every tool invocation."
+        },
+        "disabled": { "const": false }
+      }
+    },
+    "stdio": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "type": { "const": "stdio" },
+        "command": { "$ref": "#/$defs/text" },
+        "args": { "type": "array", "items": { "$ref": "#/$defs/string" } },
+        "cwd": {
+          "$ref": "#/$defs/text",
+          "description": "Resolved relative to the configuration directory."
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/string" }
+        }
+      },
+      "not": { "anyOf": [{ "required": ["url"] }, { "required": ["headers"] }] }
+    },
+    "http": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "url"],
+      "properties": {
+        "type": { "enum": ["http", "streamable-http"] },
+        "url": { "$ref": "#/$defs/text" },
+        "headers": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" },
+          "additionalProperties": { "$ref": "#/$defs/string" }
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["command"] },
+          { "required": ["args"] },
+          { "required": ["env"] },
+          { "required": ["cwd"] }
+        ]
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": true,
+        "command": true,
+        "args": true,
+        "env": true,
+        "cwd": true,
+        "url": true,
+        "headers": true,
+        "description": true,
+        "timeout": true,
+        "startupTimeoutMs": true,
+        "catalogTimeoutMs": true,
+        "approve": true,
+        "disabled": { "type": "boolean" }
+      },
+      "if": {
+        "required": ["disabled"],
+        "properties": { "disabled": { "const": true } }
+      },
+      "then": {
+        "description": "Disabled entries skip value validation and environment expansion, but unknown fields remain errors."
+      },
+      "else": {
+        "oneOf": [{ "$ref": "#/$defs/stdio" }, { "$ref": "#/$defs/http" }]
+      }
+    }
+  }
+}

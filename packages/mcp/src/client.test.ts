@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { createServer, type ServerResponse } from "node:http";
 import { setTimeout } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
@@ -29,7 +31,13 @@ async function httpFixture(
     emptyCursor?: boolean;
     hangInitialized?: boolean;
     noNotifications?: boolean;
-    timeoutMs?: number;
+    timeout?: number;
+    startupTimeoutMs?: number;
+    catalogTimeoutMs?: number;
+    jsonResponse?: boolean;
+    initializeDelay?: number;
+    catalogDelay?: number;
+    stalledBody?: "application/json" | "text/event-stream";
     notificationContentType?: string;
     legacyOutput?: boolean;
   } = {},
@@ -73,6 +81,7 @@ async function httpFixture(
   let deleted = false;
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: randomUUID,
+    enableJsonResponse: options.jsonResponse ?? false,
     onsessionclosed: () => {
       deleted = true;
     },
@@ -80,6 +89,8 @@ async function httpFixture(
   await server.connect(transport as Transport);
   const methods: string[] = [];
   const authorizations: (string | undefined)[] = [];
+  const cancelled: unknown[] = [];
+  let closedCalls = 0;
   let notificationResponse: ServerResponse | undefined;
   const http = createServer((request, response) => {
     void (async () => {
@@ -113,7 +124,29 @@ async function httpFixture(
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
         body = JSON.parse(Buffer.concat(chunks).toString());
-        methods.push((body as { method: string }).method);
+        const message = body as {
+          method: string;
+          params?: { requestId?: unknown };
+        };
+        methods.push(message.method);
+        if (message.method === "notifications/cancelled")
+          cancelled.push(message.params?.requestId);
+        if (message.method === "initialize" && options.initializeDelay)
+          await setTimeout(options.initializeDelay);
+        if (message.method === "tools/list" && options.catalogDelay)
+          await setTimeout(options.catalogDelay);
+        if (message.method === "tools/call") {
+          response.on("close", () => closedCalls++);
+          if (options.stalledBody) {
+            response.writeHead(200, { "Content-Type": options.stalledBody });
+            response.write(
+              options.stalledBody === "application/json"
+                ? '{"jsonrpc":'
+                : ": heartbeat\n\n",
+            );
+            return;
+          }
+        }
         if (
           options.hangInitialized &&
           (body as { method: string }).method === "notifications/initialized"
@@ -140,7 +173,9 @@ async function httpFixture(
     description: "Fixture",
     url: `http://127.0.0.1:${(http.address() as AddressInfo).port}/mcp`,
     headers: { Authorization: "Bearer fixture-token" },
-    timeoutMs: options.timeoutMs ?? 1000,
+    timeout: options.timeout ?? 1000,
+    startupTimeoutMs: options.startupTimeoutMs ?? 1000,
+    catalogTimeoutMs: options.catalogTimeoutMs ?? 1000,
     approve: false,
   };
   const catalogs: Tool[][] = [];
@@ -153,6 +188,8 @@ async function httpFixture(
     authorizations,
     catalogs,
     calls,
+    cancelled,
+    closedCalls: () => closedCalls,
     server,
     wasDeleted: () => deleted,
     hasNotificationStream: () => notificationResponse !== undefined,
@@ -183,7 +220,7 @@ test("HTTP shares initialization, follows pagination, propagates headers and ter
 test("the entire HTTP initialization handshake has a deadline", async () => {
   const { connection } = await httpFixture({
     hangInitialized: true,
-    timeoutMs: 100,
+    startupTimeoutMs: 100,
   });
   const outcome = await Promise.race([
     connection.start().then(
@@ -259,7 +296,7 @@ test("HTTP notifications refresh the catalog", async () => {
 test("request timeouts never retry a possibly mutating call", async () => {
   const { connection, config, calls } = await httpFixture();
   await connection.start();
-  config.timeoutMs = 100;
+  config.timeout = 100;
   await expect(
     connection.call("slow", { message: "x", delay: 1000 }),
   ).rejects.toThrow("may already have taken effect");
@@ -439,4 +476,198 @@ test("output schema validation remains enabled", async () => {
     "call failed",
   );
   expect(calls).toHaveLength(1);
+});
+
+test.each([false, true])(
+  "long HTTP calls bypass ambient idle limits without changing host routing (JSON=%s)",
+  async (jsonResponse) => {
+    const previous = getGlobalDispatcher();
+    const agent = new Agent({ headersTimeout: 50, bodyTimeout: 50 });
+    const requests: {
+      headersTimeout?: number | null;
+      bodyTimeout?: number | null;
+    }[] = [];
+    const routed = agent.compose((dispatch) => (options, handler) => {
+      requests.push(options);
+      return dispatch(options, handler);
+    });
+    setGlobalDispatcher(routed);
+    cleanups.push(async () => {
+      setGlobalDispatcher(previous);
+      await agent.destroy();
+    });
+    const fixture = await httpFixture({ jsonResponse, timeout: 3000 });
+    await fixture.connection.start();
+    fixture.config.startupTimeoutMs = 50;
+    fixture.config.catalogTimeoutMs = 50;
+    expect(
+      (await fixture.connection.call("slow", { message: "long", delay: 1300 }))
+        .content[0],
+    ).toMatchObject({ text: "long" });
+    expect(fixture.connection.status).toBe("Connected");
+    expect(fixture.hasNotificationStream()).toBe(true);
+    expect(getGlobalDispatcher()).toBe(routed);
+    expect(requests.length).toBeGreaterThan(4);
+    expect(
+      requests.every(
+        (request) => request.headersTimeout === 0 && request.bodyTimeout === 0,
+      ),
+    ).toBe(true);
+    expect(fixture.calls).toEqual(["slow"]);
+    expect(fixture.cancelled).toEqual([]);
+  },
+);
+
+test.each([false, true])(
+  "HTTP cancellation aborts only its response and still notifies the server (JSON=%s)",
+  async (jsonResponse) => {
+    const fixture = await httpFixture({ jsonResponse, timeout: 3000 });
+    await fixture.connection.start();
+    const abort = new AbortController();
+    const result = fixture.connection.call(
+      "slow",
+      { message: "cancel", delay: 2000 },
+      abort.signal,
+    );
+    const rejection = expect(result).rejects.toThrow();
+    const sibling = fixture.connection.call("slow", {
+      message: "sibling",
+      delay: 400,
+    });
+    await expect.poll(() => fixture.calls.length).toBe(2);
+    abort.abort();
+    await rejection;
+    await expect.poll(() => fixture.cancelled.length).toBe(1);
+    await expect.poll(fixture.closedCalls).toBeGreaterThanOrEqual(1);
+    expect((await sibling).content[0]).toMatchObject({ text: "sibling" });
+    expect(
+      (await fixture.connection.call("echo", { message: "usable" })).content[0],
+    ).toMatchObject({ text: "usable" });
+    expect(fixture.calls).toEqual(["slow", "slow", "echo"]);
+  },
+);
+
+test.each(["application/json", "text/event-stream"] as const)(
+  "a stalled %s response body is aborted at the tool deadline",
+  async (stalledBody) => {
+    const fixture = await httpFixture({ stalledBody, timeout: 100 });
+    await fixture.connection.start();
+    await expect(
+      fixture.connection.call("slow", { message: "stall" }),
+    ).rejects.toThrow("may already have taken effect");
+    await expect.poll(fixture.closedCalls).toBe(1);
+    await expect.poll(() => fixture.cancelled.length).toBe(1);
+    expect(
+      fixture.methods.filter((method) => method === "tools/call"),
+    ).toHaveLength(1);
+    expect(fixture.connection.status).toBe("Connected");
+  },
+);
+
+test("a long call budget does not extend initialization or paginated catalog deadlines", async () => {
+  const startup = await httpFixture({
+    timeout: 960000,
+    startupTimeoutMs: 80,
+    initializeDelay: 250,
+  });
+  await expect(startup.connection.start()).rejects.toThrow(
+    "connection or discovery failed",
+  );
+  const catalog = await httpFixture({
+    timeout: 960000,
+    catalogTimeoutMs: 150,
+    catalogDelay: 90,
+  });
+  await expect(catalog.connection.start()).rejects.toThrow("discovery failed");
+  expect(
+    catalog.methods.filter((method) => method === "tools/list"),
+  ).toHaveLength(2);
+  expect(catalog.catalogs.at(-1)).toEqual([]);
+  expect(catalog.calls).toEqual([]);
+});
+
+test("stdio calls have their own deadlines and cancellation preserves siblings", async () => {
+  const config: ServerConfig = {
+    name: "stdio",
+    type: "stdio",
+    description: "Fixture",
+    command: process.execPath,
+    args: [fileURLToPath(new URL("./fixtures/server.ts", import.meta.url))],
+    env: {},
+    cwd: process.cwd(),
+    timeout: 1000,
+    startupTimeoutMs: 2000,
+    catalogTimeoutMs: 1000,
+    approve: false,
+  };
+  const connection = new Connection(config, () => {});
+  cleanups.push(() => connection.close());
+  await connection.start();
+  config.startupTimeoutMs = 20;
+  config.catalogTimeoutMs = 20;
+  expect(
+    (await connection.call("slow", { message: "long", delay: 100 })).content[0],
+  ).toMatchObject({ text: "long" });
+  config.timeout = 50;
+  await expect(
+    connection.call("slow", { message: "timeout", delay: 500 }),
+  ).rejects.toThrow("may already have taken effect");
+  config.timeout = 1000;
+  const abort = new AbortController();
+  const rejection = expect(
+    connection.call("slow", { message: "cancel", delay: 500 }, abort.signal),
+  ).rejects.toThrow();
+  const sibling = connection.call("slow", { message: "sibling", delay: 100 });
+  abort.abort();
+  await rejection;
+  expect((await sibling).content[0]).toMatchObject({ text: "sibling" });
+});
+
+test("aborting a completed or never-started HTTP call sends no stale cancellation", async () => {
+  const fixture = await httpFixture();
+  await fixture.connection.start();
+  const done = new AbortController();
+  await fixture.connection.call("echo", { message: "done" }, done.signal);
+  done.abort();
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await expect(
+    fixture.connection.call("echo", { message: "never" }, cancelled.signal),
+  ).rejects.toThrow();
+  await fixture.connection.call("echo", { message: "barrier" });
+  expect(fixture.calls).toEqual(["echo", "echo"]);
+  expect(fixture.cancelled).toEqual([]);
+});
+
+test("progress notifications cannot extend a tool deadline", async () => {
+  const fixture = await httpFixture({ timeout: 150 });
+  let progress = 0;
+  fixture.server.setRequestHandler(
+    CallToolRequestSchema,
+    async (request, extra) => {
+      fixture.calls.push(request.params.name);
+      const timer = globalThis.setInterval(() => {
+        progress++;
+        void fixture.server
+          .notification({
+            method: "notifications/progress",
+            params: { progressToken: extra.requestId, progress, total: 100 },
+          })
+          .catch(() => {});
+      }, 20);
+      try {
+        await setTimeout(1000, undefined, { signal: extra.signal });
+        return { content: [{ type: "text", text: "too late" }] };
+      } finally {
+        clearInterval(timer);
+      }
+    },
+  );
+  await fixture.connection.start();
+  await expect(
+    fixture.connection.call("slow", { message: "progress" }),
+  ).rejects.toThrow("may already have taken effect");
+  await expect.poll(() => fixture.cancelled.length).toBe(1);
+  expect(progress).toBeGreaterThanOrEqual(2);
+  expect(fixture.calls).toEqual(["slow"]);
 });
