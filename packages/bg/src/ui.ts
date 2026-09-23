@@ -1,7 +1,8 @@
-import type {
-  ExtensionCommandContext,
-  ExtensionContext,
-  Theme,
+import {
+  DynamicBorder,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   matchesKey,
@@ -57,6 +58,7 @@ const legend: readonly (readonly [StatusColor, string])[] = [
 ];
 
 export class TaskListView {
+  private border: DynamicBorder;
   private list: SelectList;
   private ids: string[] = [];
   private disposed = false;
@@ -68,6 +70,8 @@ export class TaskListView {
     private renderRequest: () => void,
     private done: (id: string | undefined) => void,
   ) {
+    // Extension-loaded DynamicBorder cannot rely on Pi's global theme instance.
+    this.border = new DynamicBorder((text) => this.theme.fg("border", text));
     this.list = this.createList(1);
   }
 
@@ -115,7 +119,10 @@ export class TaskListView {
 
   render(width: number): string[] {
     if (this.disposed || width < 1) return [];
-    const rows = Math.max(1, this.height());
+    const height = Math.max(1, this.height());
+    // Leave room for the title and a task before spending rows on decoration.
+    const border = height >= 4 ? this.border.render(width) : [];
+    const rows = height - 2 * border.length;
     const legendText =
       this.theme.fg("dim", "Legend: ") +
       legend
@@ -132,7 +139,7 @@ export class TaskListView {
     const listHeight = Math.max(1, rows - legendLines.length - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
-    return [
+    const content = [
       this.theme.fg("accent", "Background tasks"),
       ...this.list.render(width).slice(0, listHeight),
       ...legendLines,
@@ -140,9 +147,10 @@ export class TaskListView {
         "dim",
         "↑↓ / j k navigate · enter select · esc/ctrl+c cancel",
       ),
-    ]
-      .slice(0, rows)
-      .map((line) => truncateToWidth(line, width));
+    ].slice(0, rows);
+    return [...border, ...content, ...border].map((line) =>
+      truncateToWidth(line, width),
+    );
   }
 
   invalidate(): void {}

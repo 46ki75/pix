@@ -101,6 +101,32 @@ test("running and stopping dots match the footer blue, including the palette fal
   expect(h.row()).toContain("\x1b[38;5;67m⏺\x1b[39m");
 });
 
+test("top and bottom borders follow the viewport width and current theme without crowding out tasks", () => {
+  const h = harness();
+  for (const width of [1, 12, 40, 120]) {
+    for (const rows of [4, 10, 24]) {
+      h.height(rows);
+      const lines = h.view.render(width);
+      expect(stripVTControlCharacters(lines[0] ?? "")).toBe("─".repeat(width));
+      expect(stripVTControlCharacters(lines.at(-1) ?? "")).toBe(
+        "─".repeat(width),
+      );
+      expect(lines.length).toBeLessThanOrEqual(rows);
+      expect(h.theme.fg).toHaveBeenCalledWith("border", "─".repeat(width));
+    }
+  }
+  h.theme.fg.mockImplementation((_color, text) => `\x1b[35m${text}\x1b[39m`);
+  h.view.invalidate();
+  const lines = h.view.render(40);
+  expect(lines[0]).toBe(`\x1b[35m${"─".repeat(40)}\x1b[39m`);
+  expect(lines.at(-1)).toBe(lines[0]);
+  // Keep the selected task visible even when little room remains for borders.
+  h.height(4);
+  expect(h.text()).toContain("→ ⏺ abc |");
+  h.height(3);
+  expect(h.text()).toContain("→ ⏺ abc |");
+});
+
 test("legend covers every color and uses the current theme on each render", () => {
   const h = harness([
     { ...task, status: "finished", outcome: { kind: "exited", code: 0 } },
