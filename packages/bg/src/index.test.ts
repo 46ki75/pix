@@ -79,7 +79,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       hasUI: mode === "rpc" || mode === "tui",
       cwd: directory,
       sessionManager: { getSessionId: () => sessionId },
-      ui: { setStatus: vi.fn() },
+      ui: { setWidget: vi.fn() },
     } as unknown as ExtensionContext;
     const loaded = await discoverAndLoadExtensions(
       [fileURLToPath(new URL("../", import.meta.url))],
@@ -122,11 +122,19 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       expect(extension.shortcuts.size).toBe(0);
       await expect(tool("bg_status")({})).rejects.toThrow("not started");
       await emit("session_start", "startup");
+      expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       const result = await tool("bg_run")({
         command: "sleep 30",
         name: "test sleeper",
       });
       const task = result.details.task as Task;
+      if (mode === "tui")
+        expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+          "pix-bg",
+          expect.any(Function),
+          { placement: "belowEditor" },
+        );
+      else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       outputDir = dirname(task.outputPath);
       // A private shared /tmp/pi-bg parent would exclude every other OS user.
       expect(dirname(outputDir)).toBe(
@@ -165,6 +173,12 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         await expect(tool("bg_status")({})).rejects.toThrow("not started");
         await emit("session_start", reason);
         expect((await tool("bg_status")({})).details.tasks).toEqual([]);
+        if (mode === "tui")
+          expect(ctx.ui.setWidget).toHaveBeenLastCalledWith(
+            "pix-bg",
+            undefined,
+          );
+        else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       }
       expect(send).toHaveBeenCalledTimes(1);
     } finally {

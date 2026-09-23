@@ -103,6 +103,9 @@ export class OutputView {
 export class TaskUI {
   private disposed = false;
   private closeViewer: (() => void) | undefined;
+  private renderIndicator: (() => void) | undefined;
+  private running = 0;
+  private finished = 0;
 
   constructor(
     private registry: Registry,
@@ -113,12 +116,40 @@ export class TaskUI {
 
   update(): void {
     if (this.disposed) return;
-    const running = this.registry
-      .list()
-      .filter((task) => task.status !== "finished").length;
-    this.ctx.ui.setStatus(
+    const tasks = this.registry.list();
+    if (!tasks.length) return;
+    this.running = tasks.filter((task) => task.status !== "finished").length;
+    this.finished = tasks.length - this.running;
+    if (this.renderIndicator) {
+      this.renderIndicator();
+      return;
+    }
+    // setStatus stores precolored strings. A widget resolves theme tokens on
+    // every render, including idle theme changes, without replacing Pi's footer.
+    this.ctx.ui.setWidget(
       "pix-bg",
-      running ? `bg: ${running} running` : undefined,
+      (tui) => {
+        this.renderIndicator = () => tui.requestRender();
+        return {
+          invalidate() {},
+          render: (width: number) => {
+            if (this.disposed || width < 1) return [];
+            const theme = this.ctx.ui.theme;
+            // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
+            const blue =
+              theme.getColorMode() === "truecolor"
+                ? "\x1b[38;2;104;119;159m"
+                : "\x1b[38;5;67m";
+            const line =
+              theme.fg("dim", "| ") +
+              `${blue}⏺ Running: ${this.running}\x1b[39m` +
+              theme.fg("muted", ` ⏺ Finished: ${this.finished}`) +
+              theme.fg("dim", " | /bg → Show BG Tasks |");
+            return [truncateToWidth(line, width)];
+          },
+        };
+      },
+      { placement: "belowEditor" },
     );
   }
 
@@ -175,6 +206,7 @@ export class TaskUI {
     if (this.disposed) return;
     this.disposed = true;
     this.closeViewer?.();
-    this.ctx.ui.setStatus("pix-bg", undefined);
+    this.ctx.ui.setWidget("pix-bg", undefined);
+    this.renderIndicator = undefined;
   }
 }
