@@ -47,6 +47,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
+| `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
 
 [`@ikuma.cloud/pix-websearch`](packages/websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
@@ -61,6 +62,12 @@ Its tests run with `mise run test --project pix-webfetch`.
 
 Web search and web fetch have separate package versions and runtime dependencies,
 so provider updates and content-extraction updates can be released independently.
+
+[`@ikuma.cloud/pix-mcp`](packages/mcp/README.md) connects to configured stdio and
+Streamable HTTP MCP servers, exposes compact discovery, and activates native tool
+schemas on demand. Run `mise run mcp:dev` for an isolated development launch or
+`mise run test --project pix-mcp` for its tests. Review its configuration trust and
+invocation approval requirements before connecting servers.
 
 ## Layout
 

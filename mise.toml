@@ -60,6 +60,13 @@ dir = "{{config_root}}/packages/webfetch"
 raw = true
 run = "pnpm exec pi -e ."
 
+[tasks."mcp:dev"]
+description = "Launch Pi with only @ikuma.cloud/pix-mcp; accepts Pi arguments"
+dir = "{{config_root}}/packages/mcp"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e ."
+
 [tasks."web:dev"]
 description = "Launch Pi with web search and web fetch"
 dir = "{{config_root}}/packages/webfetch"
