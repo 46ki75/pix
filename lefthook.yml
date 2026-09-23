@@ -1,0 +1,41 @@
+min_version: 2.1.14
+lefthook: mise exec -- pnpm exec lefthook
+glob_matcher: doublestar
+
+output:
+  - summary
+  - success
+  - failure
+  - skips
+
+fmt:
+  files: git ls-files
+  jobs:
+    - &biome-format
+      name: biome
+      glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}"
+      exclude: ".mise/locks/**"
+      run: pnpm exec biome format --write {files}
+
+fmt-check:
+  files: git ls-files
+  jobs:
+    - <<: *biome-format
+      run: pnpm exec biome format {files}
+
+lint:
+  files: git ls-files
+  jobs:
+    - <<: *biome-format
+      run: pnpm exec biome lint --error-on-warnings {files}
+
+pre-commit:
+  jobs:
+    - <<: *biome-format
+      run: pnpm exec biome check --error-on-warnings {staged_files}
+
+commit-msg:
+  jobs:
+    - name: conventional-commit
+      run: "head -n 1 \"{1}\" | grep -Eq '^(feat|fix|chore|test|refactor|docs)!?: [^[:space:]].*$'"
+      fail_text: "Use type[!]: summary (feat, fix, chore, test, refactor, or docs)."
