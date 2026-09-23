@@ -6,3 +6,6 @@ coverage/
 mise.local.toml
 mise.local.lock
 lefthook-local.*
+
+.pi/tasks/
+
