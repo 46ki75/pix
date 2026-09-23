@@ -48,6 +48,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
 | `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
+| `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 
 [`@ikuma.cloud/pix-websearch`](packages/websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
@@ -69,6 +70,11 @@ schemas on demand. Run `mise run mcp:dev` for an isolated development launch or
 `mise run test --project pix-mcp` for its tests. Review its configuration trust
 requirements before connecting servers. Tool-call permissions are left to Pi
 extensions rather than enforced by the adapter.
+
+[`@ikuma.cloud/pix-bg`](packages/bg/README.md) runs background shell tasks with
+completion wake-ups, capped log files, and a `/bg` task viewer. Run
+`mise run bg:dev` for an isolated launch or `mise run test --project pix-bg`
+for its tests. Tasks stop on reload, session replacement, and quit.
 
 ## Layout
 
