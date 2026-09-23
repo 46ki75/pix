@@ -21,8 +21,9 @@ import {
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
-import { tinyPng } from "./fixtures/server.ts";
+import { eagleSchema, tinyPng } from "./fixtures/server.ts";
 import { toolName } from "./catalog.ts";
+import type { RejectionCode } from "./rejection.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -37,6 +38,9 @@ async function setup(
     broken?: boolean;
     invalidSchema?: boolean;
     legacySchema?: boolean;
+    draft07Schema?: boolean;
+    rejections?: boolean;
+    unsafeSchemas?: boolean;
     booleanSchema?: boolean;
     tools?: string[];
     twoServers?: boolean;
@@ -59,6 +63,9 @@ async function setup(
     env: {
       ...(options.invalidSchema ? { PIX_FIXTURE_INVALID_SCHEMA: "true" } : {}),
       ...(options.legacySchema ? { PIX_FIXTURE_LEGACY_SCHEMA: "true" } : {}),
+      ...(options.draft07Schema ? { PIX_FIXTURE_DRAFT07_SCHEMA: "true" } : {}),
+      ...(options.rejections ? { PIX_FIXTURE_REJECTIONS: "true" } : {}),
+      ...(options.unsafeSchemas ? { PIX_FIXTURE_UNSAFE_SCHEMAS: "true" } : {}),
       ...(options.booleanSchema !== undefined
         ? { PIX_FIXTURE_BOOLEAN_SCHEMA: String(options.booleanSchema) }
         : {}),
@@ -162,7 +169,18 @@ async function setup(
       items: { name: string; tool: string; active: boolean }[];
       total: number;
       nextOffset?: number;
-      servers: { name: string; status: string; unsupportedTools: number }[];
+      servers: {
+        name: string;
+        status: string;
+        unsupportedTools: number;
+        rejections?: {
+          tool?: string;
+          index: number;
+          code: RejectionCode;
+          message: string;
+        }[];
+        omittedRejections?: number;
+      }[];
     };
   }
   function registerUnrelated() {
@@ -542,11 +560,185 @@ test.each([true, false])(
   },
 );
 
+test("Eagle-style draft-07 tools load normalized schemas at Pi's native boundary", async () => {
+  const { session, call, discover, requestTools } = await setup({
+    draft07Schema: true,
+  });
+  const listed = await discover({ action: "list" });
+  expect(listed.total).toBe(7);
+  expect(listed.servers[0]?.unsupportedTools).toBe(0);
+  expect(listed.servers[0]?.rejections).toBeUndefined();
+  const eagle = toolName("fixture", "eagle_search");
+  const status = toolName("fixture", "ai_search_status");
+  const names = [eagle, status];
+  const deferred = listed.items.filter((item) => names.includes(item.name));
+  expect(deferred).toHaveLength(2);
+  expect(deferred.every((item) => !item.active)).toBe(true);
+  await discover({ action: "load", names });
+  const exposed = await requestTools();
+  const parameters = {
+    ...eagleSchema,
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    properties: {
+      ...eagleSchema.properties,
+      message: { type: "string", pattern: "^[\\s\\S]{3,}(?![\\s\\S])" },
+    },
+  };
+  expect(session.getToolDefinition(eagle)?.parameters).toEqual(parameters);
+  expect(exposed.find((tool) => tool.name === eagle)?.parameters).toEqual(
+    parameters,
+  );
+  expect(exposed.find((tool) => tool.name === status)?.parameters).toEqual({
+    $schema: parameters.$schema,
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+  expect(
+    (await call(eagle, { message: "valid", limit: 2, tags: ["a", "b"] }))
+      .content[0],
+  ).toMatchObject({ text: expect.stringContaining("valid") });
+  const invalid: JsonObject[] = [
+    {},
+    { message: "x" },
+    { message: "valid", limit: 101 },
+    { message: "valid", tags: ["a", "b", "c", "d"] },
+    { message: "valid", extra: true },
+  ];
+  for (const args of invalid)
+    await expect(call(eagle, args)).rejects.toThrow("Validation failed");
+  // Also exercise the adapter's check without Pi's pre-execution validator.
+  const native = session.agent.state.tools.find((tool) => tool.name === eagle);
+  if (!native) throw new Error("Missing Eagle fixture tool");
+  await expect(native.execute("invalid", { message: "x" })).rejects.toThrow(
+    "MCP input schema",
+  );
+  await expect(call(status, { extra: true })).rejects.toThrow(
+    "Validation failed",
+  );
+});
+
+test("normalized draft-07 schema changes still require reloading", async () => {
+  const { session, call, discover } = await setup({ draft07Schema: true });
+  const eagle = toolName("fixture", "eagle_search");
+  const change = toolName("fixture", "change");
+  await discover({ action: "load", names: [eagle, change] });
+  const stale = session.agent.state.tools.find((tool) => tool.name === eagle);
+  if (!stale) throw new Error("Missing Eagle fixture tool");
+  await call(change, { message: "schema" });
+  await expect.poll(() => session.getActiveToolNames()).not.toContain(eagle);
+  await discover({ action: "load", names: [eagle] });
+  await expect(stale.execute("stale", { message: "valid" })).rejects.toThrow(
+    "changed",
+  );
+  await expect(call(eagle, { message: "abc" })).rejects.toThrow(
+    "Validation failed",
+  );
+  expect((await call(eagle, { message: "valid" })).content[0]).toMatchObject({
+    text: expect.stringContaining("valid"),
+  });
+});
+
+test("discovery reports bounded, safe rejection reasons and clears stale diagnostics", async () => {
+  const { call, discover } = await setup({ rejections: true });
+  const listed = await discover({ action: "list" });
+  expect(listed.total).toBe(5);
+  expect(listed.servers[0]).toMatchObject({
+    status: "Connected",
+    unsupportedTools: 8,
+    omittedRejections: 3,
+  });
+  expect(listed.servers[0]?.rejections).toHaveLength(5);
+  expect(listed.servers[0]?.rejections?.[0]).toEqual({
+    index: 2,
+    code: "invalid-tool-metadata",
+    message: expect.any(String),
+  });
+  expect(listed.servers[0]?.rejections?.map((item) => item.code)).toEqual([
+    "invalid-tool-metadata",
+    "unsupported-dialect",
+    "invalid-schema",
+    "invalid-tool-metadata",
+    "tasks-required",
+  ]);
+  expect(listed.servers[0]?.rejections?.[1]?.tool).toBe("bad_dialect");
+  for (const result of [
+    listed,
+    await discover({ action: "search", query: "echo" }),
+    await discover({ action: "load", names: [toolName("fixture", "change")] }),
+  ]) {
+    expect(result.servers).toEqual(listed.servers);
+    expect(JSON.stringify(result)).not.toContain("SECRET");
+  }
+  await call(toolName("fixture", "change"), { message: "rename" });
+  await expect
+    .poll(
+      async () =>
+        (await discover({ action: "list" })).servers[0]?.unsupportedTools,
+    )
+    .toBe(0);
+  const refreshed = await discover({ action: "list" });
+  expect(refreshed.servers[0]?.rejections).toBeUndefined();
+  expect(refreshed.servers[0]?.omittedRejections).toBeUndefined();
+});
+
+test("unsafe literal and pattern schemas never reach Pi's native tools", async () => {
+  const { session, discover, requestTools } = await setup({
+    unsafeSchemas: true,
+  });
+  const listed = await discover({ action: "list" });
+  expect(listed.total).toBe(5);
+  expect(listed.servers[0]?.unsupportedTools).toBe(3);
+  expect(
+    listed.servers[0]?.rejections?.map(({ tool, code }) => ({ tool, code })),
+  ).toEqual([
+    { tool: "unsafe_const", code: "draft07-literal-array" },
+    { tool: "unsafe_enum", code: "draft07-literal-array" },
+    { tool: "unsafe_pattern", code: "draft07-pattern-backreference" },
+  ]);
+  for (const name of ["unsafe_const", "unsafe_enum", "unsafe_pattern"]) {
+    const native = toolName("fixture", name);
+    expect(session.getAllTools().some((tool) => tool.name === native)).toBe(
+      false,
+    );
+    await expect(discover({ action: "load", names: [native] })).rejects.toThrow(
+      "unavailable",
+    );
+  }
+  expect(
+    (await requestTools()).some((tool) => tool.name.includes("unsafe")),
+  ).toBe(false);
+});
+
+test("tool name collisions have an adapter-owned diagnostic", async () => {
+  const { discover } = await setup({
+    extension(pi) {
+      pi.registerTool({
+        name: toolName("fixture", "echo"),
+        label: "Collision",
+        description: "Existing tool",
+        parameters: Type.Object({}),
+        async execute() {
+          return { content: [], details: undefined };
+        },
+      });
+    },
+  });
+  const listed = await discover({ action: "list" });
+  expect(listed.total).toBe(4);
+  expect(listed.servers[0]?.rejections).toEqual([
+    expect.objectContaining({ tool: "echo", code: "name-collision" }),
+  ]);
+});
+
 test("unrepresentable legacy reference semantics are rejected before native exposure", async () => {
   const { session, call, discover } = await setup({ legacySchema: true });
   const listed = await discover({ action: "list" });
   expect(listed.total).toBe(5);
   expect(listed.servers[0]?.unsupportedTools).toBe(1);
+  expect(listed.servers[0]?.rejections).toEqual([
+    expect.objectContaining({ tool: "legacy", code: "draft07-reference" }),
+  ]);
   expect(
     session.getAllTools().some((tool) => tool.name.includes("legacy")),
   ).toBe(false);

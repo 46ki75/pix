@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { Type, type TSchema } from "@earendil-works/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -9,7 +9,18 @@ import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
 import { formatResult } from "./output.ts";
-import { compileSchema } from "./schema.ts";
+import { prepareSchema } from "./schema.ts";
+import { ToolRejectionError, type RejectionCode } from "./rejection.ts";
+
+interface Rejections {
+  count: number;
+  samples: {
+    tool?: string;
+    index: number;
+    code: RejectionCode;
+    message: string;
+  }[];
+}
 
 interface State {
   alive: boolean;
@@ -17,7 +28,7 @@ interface State {
   entries: Map<string, Entry>;
   loaded: Map<string, string>;
   connections: Map<string, Connection>;
-  rejected: Map<string, number>;
+  rejected: Map<string, Rejections>;
   configIssues: ConfigIssue[];
 }
 
@@ -191,11 +202,21 @@ export default function mcp(pi: ExtensionAPI) {
               status: issue.message,
               unsupportedTools: 0,
             })),
-            ...[...owner.connections.values()].map((connection) => ({
-              name: connection.config.name,
-              status: connection.status,
-              unsupportedTools: owner.rejected.get(connection.config.name) ?? 0,
-            })),
+            ...[...owner.connections.values()].map((connection) => {
+              const rejected = owner.rejected.get(connection.config.name);
+              return {
+                name: connection.config.name,
+                status: connection.status,
+                unsupportedTools: rejected?.count ?? 0,
+                ...(rejected?.count
+                  ? {
+                      rejections: rejected.samples,
+                      omittedRejections:
+                        rejected.count - rejected.samples.length,
+                    }
+                  : {}),
+              };
+            }),
           ],
           items: selected.map((item) => ({
             ...summary(item),
@@ -223,27 +244,27 @@ export default function mcp(pi: ExtensionAPI) {
     const active = new Set(pi.getActiveTools());
     const registered = new Set(pi.getAllTools().map((tool) => tool.name));
     const next = new Map<string, Entry>();
-    let rejected = 0;
-    for (const tool of tools) {
+    const rejected: Rejections = { count: 0, samples: [] };
+    for (const [index, tool] of tools.entries()) {
       const item = entry(config.name, tool);
+      const validName = /^[A-Za-z0-9_.-]{1,128}$/.test(tool.name);
       try {
         if (
-          !/^[A-Za-z0-9_.-]{1,128}$/.test(tool.name) ||
+          !validName ||
           Buffer.byteLength(tool.description ?? "") > 16 * 1024
         ) {
-          throw new Error("Unsupported tool metadata");
+          throw new ToolRejectionError("invalid-tool-metadata");
         }
         if (tool.execution?.taskSupport === "required")
-          throw new Error("Tasks unsupported");
+          throw new ToolRejectionError("tasks-required");
         if (
           next.has(item.name) ||
           (registered.has(item.name) && !owned.has(item.name))
         )
-          throw new Error("Tool name collision");
-        const validator = compileSchema(tool.inputSchema);
+          throw new ToolRejectionError("name-collision");
+        const { parameters, validator } = prepareSchema(tool.inputSchema);
         const old = previous.get(item.name);
         if (old?.fingerprint !== item.fingerprint) {
-          const parameters = tool.inputSchema as TSchema;
           pi.registerTool({
             name: item.name,
             label: `MCP: ${config.name}/${tool.name}`,
@@ -287,8 +308,22 @@ export default function mcp(pi: ExtensionAPI) {
           owned.add(item.name);
         }
         next.set(item.name, item);
-      } catch {
-        rejected++;
+      } catch (error) {
+        rejected.count++;
+        // Bound discovery independently of catalog size. Invalid names and raw
+        // compiler/SDK errors are never reflected back into model context.
+        if (rejected.samples.length < 5) {
+          const reason =
+            error instanceof ToolRejectionError
+              ? error
+              : new ToolRejectionError("registration-failed");
+          rejected.samples.push({
+            ...(validName ? { tool: tool.name } : {}),
+            index: index + 1,
+            code: reason.code,
+            message: reason.message,
+          });
+        }
       }
     }
     for (const [name, old] of previous) {

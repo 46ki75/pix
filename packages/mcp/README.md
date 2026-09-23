@@ -180,16 +180,77 @@ permission extensions must coordinate any shared approval UI. Discovered tools
 stay active until session shutdown or a server catalog change.
 Changed and removed definitions are withdrawn; changed tools require loading
 again. Unsupported input schemas or metadata, name collisions, and task-only
-tools are counted as `unsupportedTools` in discovery results. An unsupported
-output schema fails that server's discovery. Losing an established HTTP
-notification stream also withdraws tools rather than silently keeping a stale
-catalog; servers that decline the optional stream with HTTP 405 remain usable.
-Reload Pi to reconnect a failed server or reread configuration.
+tools are counted as `unsupportedTools` in discovery results. Each server with
+rejections also includes up to five `rejections` and an `omittedRejections`
+count. Each rejection has a one-based catalog `index`, an adapter-owned `code`
+and `message`, and the original `tool` name only if it passes name validation.
+For example, `draft07-reference` identifies unsupported draft-07 references;
+`unsupported-dialect` identifies an unrecognized dialect. These diagnostics are
+returned by list, search, and load, and replaced on each catalog refresh. Raw
+exceptions, schema contents, invalid tool names, and dialect URLs are not exposed.
+
+An unsupported output schema still fails that server's discovery rather than
+producing a per-tool rejection. Losing an established HTTP notification stream
+also withdraws tools rather than silently keeping a stale catalog; servers that
+decline the optional stream with HTTP 405 remain usable. Reload Pi to reconnect
+a failed server or reread configuration.
 
 Pi handles provider compatibility. Some providers support transcript-anchored
 schema additions; others rebuild the tool set and may invalidate prompt caches.
 For very small catalogs, eager loading would avoid a discovery round trip, but
 v1 intentionally offers only the deferred mode.
+
+### Schema compatibility
+
+Schemas without `$schema` use MCP's default JSON Schema 2020-12 dialect. Explicit
+2020-12 schemas and a conservative draft-07 subset are supported. Draft-07
+accepts `http://json-schema.org/draft-07/schema` and its HTTPS spelling, with or
+without a trailing `#`.
+
+Draft-07 schemas are syntax-checked against their own bundled meta-schema, then
+checked against this keyword allowlist:
+
+| Category | Supported draft-07 keywords |
+| --- | --- |
+| Types and values | `type` (including unions), `enum`, `const`, boolean subschemas |
+| Objects | `properties`, `patternProperties`, `additionalProperties`, `required`, `propertyNames`, `minProperties`, `maxProperties` |
+| Arrays | Schema-valued `items`, `contains`, `minItems`, `maxItems`, `uniqueItems: false` |
+| Numbers | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` |
+| Strings | `minLength`, `maxLength`, `pattern` |
+| Composition | `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else` |
+| Metadata and storage | `$comment`, `title`, `description`, `default`, `examples`, `readOnly`, `writeOnly`, `definitions` |
+
+After these checks, the schema is normalized to equivalent 2020-12 constraints.
+String length bounds must be safe integers and become Unicode patterns that
+count code points rather than Pi's native grapheme-cluster lengths. Object
+normalization also avoids an incorrect native property-count optimization.
+The normalized schema is both exposed to Pi and used for adapter validation;
+output schemas use the same compatibility policy. Literal data in annotations,
+`const`, and `enum` is preserved without interpreting it as a schema. Pi's normal
+argument coercion still applies before adapter execution.
+
+`multipleOf`, `uniqueItems: true`, and `properties`/`required` names inherited from
+`Object.prototype` (for example, `toString`, `constructor`, and `__proto__`) are
+rejected with specific diagnostics. Pi's current validator uses inexact numeric
+comparisons, lossy uniqueness hashes, and inherited-property checks for these
+constructs; accepting them would not preserve JSON Schema semantics. These
+compatibility restrictions and normalizations apply to draft-07 admission;
+existing default/2020-12 validation behavior is unchanged.
+
+`const` and `enum` literals cannot contain arrays, even nested inside objects:
+native equality can conflate array literals with unequal objects. Arrays in
+annotation data such as `default` and `examples` remain legal. Numeric
+backreferences in `patternProperties` are also rejected, regardless of
+`additionalProperties`, because native pattern combination changes their capture
+indices. Escaped literal backslashes and named backreferences remain supported.
+
+Draft-07 references (including local references), `$id`, nested `$schema`
+declarations, tuple `items`, `additionalItems`, `dependencies`, `format`, content
+keywords, and other unlisted keywords are rejected. In particular, newer keywords
+such as `dependentRequired` cannot silently become constraints. This is not a
+complete draft-07 converter. For unsupported dialect constructs, the server must
+supply an equivalent supported schema—not merely remove or change `$schema`.
+Embedded draft-07 declarations inside a 2020-12 document also remain unsupported.
 
 ## Output and limits
 
@@ -211,11 +272,11 @@ servers concurrently. Each catalog is limited to 1000 tools, 100 pagination
 cursors, and 2 MiB of metadata; individual input/output schemas are limited to
 64 KiB. Tool names must use 1–128 ASCII letters, digits, underscores, hyphens, or
 periods; descriptions are limited to 16 KiB. Stdio messages are limited to 16 MiB.
-Schemas are syntax-checked before compilation. Only the default MCP dialect,
-JSON Schema 2020-12, is supported; explicit legacy dialects (including embedded
-resources) are rejected rather than interpreted with incorrect reference
-semantics. External schema references are unsupported, but literal `$ref` fields
-inside instance data are allowed.
+Schemas are syntax-checked before compilation; see [schema compatibility](#schema-compatibility)
+for supported dialects and the draft-07 subset. Schema nesting is limited to 64
+levels, including literal data. External schema references are unsupported, but
+literal `$ref` fields inside instance data are allowed. Meta-schema validation
+never fetches a server-provided URL.
 
 The adapter never automatically retries `tools/call`: a timeout or lost response
 may occur after a mutating operation took effect. Cancellation or expiration

@@ -19,6 +19,18 @@ export const legacySchema = {
   required: ["message"],
 };
 
+export const eagleSchema = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  type: "object" as const,
+  properties: {
+    message: { type: "string", minLength: 3 },
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+    tags: { type: "array", items: { type: "string" }, maxItems: 3 },
+  },
+  required: ["message"],
+  additionalProperties: false,
+};
+
 export function fixtureServer() {
   let changed = false;
   let revised = false;
@@ -71,6 +83,85 @@ export function fixtureServer() {
       });
     if (process.env.PIX_FIXTURE_LEGACY_SCHEMA === "true")
       tools.push({ name: "legacy", inputSchema: legacySchema });
+    if (process.env.PIX_FIXTURE_DRAFT07_SCHEMA === "true")
+      tools.push(
+        {
+          name: "eagle_search",
+          inputSchema: {
+            ...eagleSchema,
+            properties: {
+              ...eagleSchema.properties,
+              message: { type: "string", minLength: revised ? 5 : 3 },
+            },
+          },
+        },
+        {
+          name: "ai_search_status",
+          inputSchema: {
+            $schema: eagleSchema.$schema,
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+        },
+      );
+    if (process.env.PIX_FIXTURE_UNSAFE_SCHEMAS === "true")
+      tools.push(
+        {
+          name: "unsafe_const",
+          inputSchema: {
+            $schema: eagleSchema.$schema,
+            type: "object",
+            properties: { value: { const: [] } },
+          },
+        },
+        {
+          name: "unsafe_enum",
+          inputSchema: {
+            $schema: eagleSchema.$schema,
+            type: "object",
+            properties: { value: { enum: [[]] } },
+          },
+        },
+        {
+          name: "unsafe_pattern",
+          inputSchema: {
+            $schema: eagleSchema.$schema,
+            type: "object",
+            patternProperties: { "^(a)\\1$": true },
+            additionalProperties: false,
+          },
+        },
+      );
+    if (process.env.PIX_FIXTURE_REJECTIONS === "true" && !changed)
+      tools.push(
+        { name: "SECRET\ninvalid", inputSchema: { type: "object" } },
+        {
+          name: "bad_dialect",
+          inputSchema: { $schema: "https://SECRET.test", type: "object" },
+        },
+        {
+          name: "bad_pattern",
+          inputSchema: {
+            type: "object",
+            properties: { value: { type: "string", pattern: "SECRET[" } },
+          },
+        },
+        {
+          name: "long_description",
+          description: "SECRET".repeat(3000),
+          inputSchema: { type: "object" },
+        },
+        {
+          name: "task_only",
+          execution: { taskSupport: "required" },
+          inputSchema: { type: "object" },
+        },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          name: `unknown_keyword_${index}`,
+          inputSchema: { ...eagleSchema, "SECRET-keyword": true },
+        })),
+      );
     if (process.env.PIX_FIXTURE_BOOLEAN_SCHEMA !== undefined)
       tools.push({
         name: "boolean",

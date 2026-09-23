@@ -15,7 +15,7 @@ import {
 import { afterEach, expect, test } from "vitest";
 import { Connection } from "./client.ts";
 import type { ServerConfig } from "./config.ts";
-import { fixtureServer, legacySchema } from "./fixtures/server.ts";
+import { eagleSchema, fixtureServer, legacySchema } from "./fixtures/server.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -41,6 +41,7 @@ async function httpFixture(
     stalledBody?: "application/json" | "text/event-stream";
     notificationContentType?: string;
     legacyOutput?: boolean;
+    draft07Output?: boolean;
   } = {},
 ) {
   const { server, calls } = fixtureServer();
@@ -69,13 +70,13 @@ async function httpFixture(
         ? { tools: [{ name: "echo", inputSchema: { type: "object" } }] }
         : { tools: [], nextCursor: "" },
     );
-  if (options.legacyOutput)
+  if (options.legacyOutput || options.draft07Output)
     server.setRequestHandler(ListToolsRequestSchema, () => ({
       tools: [
         {
           name: "echo",
           inputSchema: { type: "object" },
-          outputSchema: legacySchema,
+          outputSchema: options.draft07Output ? eagleSchema : legacySchema,
         },
       ],
     }));
@@ -280,11 +281,51 @@ test("an unrelated notification MIME type containing the SSE substring is reject
   expect(fixture.calls).toEqual([]);
 });
 
+test("compatible draft-07 output schemas preserve response validation", async () => {
+  const { connection, calls } = await httpFixture({ draft07Output: true });
+  await connection.start();
+  expect(connection.status).toBe("Connected");
+  expect(calls).toEqual([]);
+  expect(
+    (await connection.call("echo", { message: "valid" })).structuredContent,
+  ).toEqual({ message: "valid" });
+  await expect(connection.call("echo", { message: "x" })).rejects.toThrow(
+    "call failed",
+  );
+  expect(calls).toEqual(["echo", "echo"]);
+});
+
 test("unrepresentable legacy output schemas fail discovery without running tools", async () => {
   const { connection, calls } = await httpFixture({ legacyOutput: true });
   await expect(connection.start()).rejects.toThrow("discovery failed");
   expect(calls).toEqual([]);
 });
+
+test.each([
+  { properties: { value: { const: [] } } },
+  { properties: { value: { enum: [[]] } } },
+  { patternProperties: { "^(a)\\1$": true }, additionalProperties: false },
+])(
+  "unsafe draft-07 output schemas fail discovery without calls (%j)",
+  async (fragment) => {
+    const { server, connection, calls } = await httpFixture();
+    server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: [
+        {
+          name: "echo",
+          inputSchema: { type: "object" },
+          outputSchema: {
+            $schema: eagleSchema.$schema,
+            type: "object",
+            ...fragment,
+          },
+        },
+      ],
+    }));
+    await expect(connection.start()).rejects.toThrow("discovery failed");
+    expect(calls).toEqual([]);
+  },
+);
 
 test("HTTP notifications refresh the catalog", async () => {
   const { connection, catalogs } = await httpFixture();
