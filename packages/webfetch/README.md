@@ -28,8 +28,6 @@ pi -e /absolute/path/to/pix/packages/webfetch
 ```
 
 Pi loads the TypeScript source directly. No build step or API key is required.
-The package is private while under development, following the workspace's
-new-package convention.
 
 ### Use with web search
 
