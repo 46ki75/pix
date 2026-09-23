@@ -43,8 +43,23 @@ Stopping from `/bg` queues a next-turn message without waking the agent.
 
 ## Interactive UI
 
-The footer shows `bg: N running` while tasks are active. `/bg` lists tasks and
-lets you view output or kill a running task after confirmation.
+After the first task starts, a one-line indicator appears below the editor,
+above Pi's existing footer:
+
+```text
+| ⏺ Running: 2 ⏺ Finished: 8 | /bg → Show BG Tasks |
+```
+
+Running includes tasks still stopping and uses blue `#68779f` (approximated in
+256-color terminals). Finished includes every terminal outcome, not just success,
+and uses the theme's `muted` color; separators and the hint use `dim`. Theme colors
+refresh when the theme changes, and the line is truncated on narrow terminals.
+Finished counts remain visible while idle and reset on reload or session
+replacement; they are not restored from history. Commands that fail to launch
+are not counted.
+
+`/bg` lists detailed outcomes and lets you view output or kill a running task
+after confirmation.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
 task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following
