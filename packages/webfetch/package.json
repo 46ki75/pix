@@ -19,9 +19,7 @@
   "dependencies": {
     "entities": "7.0.1",
     "html-to-text": "10.0.1",
-    "htmlparser2": "10.1.0",
-    "turndown": "7.2.4",
-    "turndown-plugin-gfm": "1.0.2"
+    "htmlparser2": "10.1.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -30,7 +28,6 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "0.87.1",
     "@earendil-works/pi-coding-agent": "0.87.1",
-    "@types/html-to-text": "9.0.4",
-    "@types/turndown": "5.0.6"
+    "@types/html-to-text": "9.0.4"
   }
 }

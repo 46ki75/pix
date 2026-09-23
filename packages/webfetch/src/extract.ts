@@ -1,6 +1,11 @@
 import { convert } from "html-to-text";
 import { FetchError, type FetchedPage, type FetchFormat } from "./fetch.ts";
-import { checkConversionSize, isHtml, prepareHtml } from "./html.ts";
+import {
+  checkConversionSize,
+  isHtml,
+  prepareDocument,
+  serializeHtml,
+} from "./html.ts";
 import { toMarkdown } from "./markdown.ts";
 
 export function extractContent(
@@ -9,10 +14,10 @@ export function extractContent(
 ): string {
   if (!isHtml(page.contentType)) return page.text;
   try {
-    const html = prepareHtml(page.text, page.url);
-    if (format === "markdown") return checkConversionSize(toMarkdown(html));
+    const document = prepareDocument(page.text, page.url);
+    if (format === "markdown") return toMarkdown(document);
     return checkConversionSize(
-      convert(html, {
+      convert(serializeHtml(document), {
         wordwrap: false,
         selectors: [
           ...["h1", "h2", "h3", "h4", "h5", "h6"].map((selector) => ({

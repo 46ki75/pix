@@ -4,6 +4,7 @@ import { runInNewContext } from "node:vm";
 import { DomUtils, parseDocument } from "htmlparser2";
 import { expect, test } from "vitest";
 import { extractContent } from "./extract.ts";
+import { MAX_CONVERSION_BYTES } from "./html.ts";
 
 // Exercise the renderer shipped with Pi so valid-looking Markdown cannot hide lost cells.
 const renderer = {} as { marked: { parse(markdown: string): string } };
@@ -38,6 +39,284 @@ function renderTable(html: string) {
   );
   return { markdown, document, rows };
 }
+
+test.each(["p", "div", "fieldset", "ul", "ol"])(
+  "preserves word boundaries around an empty %s block",
+  (tag) => {
+    const { document } = renderHtml(`<div>A <${tag}></${tag}> B</div>`);
+    expect(
+      DomUtils.getElementsByTagName("p", document).map((node) =>
+        DomUtils.textContent(node),
+      ),
+    ).toEqual(["A", "B"]);
+  },
+);
+
+test.each(["ol", "ul", "menu"])(
+  "normalizes omitted paragraph and item endings in %s",
+  (tag) => {
+    const { document } = renderHtml(`<${tag}><li><p>A<li><p>B</${tag}>`);
+    expect(
+      DomUtils.getElementsByTagName("li", document).map((node) =>
+        DomUtils.textContent(node).trim(),
+      ),
+    ).toEqual(["A", "B"]);
+  },
+);
+
+test("retains cells when the source omits the table row", () => {
+  const { document } = renderHtml("<table><td>A</td><td>B</td></table>");
+  expect(DomUtils.getElementsByTagName("table", document)).toHaveLength(1);
+  expect(
+    DomUtils.getElementsByTagName("td", document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["A", "B"]);
+});
+
+test("repairs long omitted-item lists before applying the nesting limit", () => {
+  const { document } = renderHtml(`<ol>${"<li><p>Item".repeat(200)}</ol>`);
+  expect(DomUtils.getElementsByTagName("li", document)).toHaveLength(200);
+  expect(DomUtils.textContent(document)).not.toContain("omitted");
+});
+
+test.each([
+  ["<ul><li><span>A<li>B</span>C</ul>", ["A", "BC"]],
+  ["<ul><li><span>A<li><b>B</span>C</ul>", ["A", "BC"]],
+  ["<ul><li><span>A<li>B</li></span>C</ul>", ["A", "B"]],
+  ["<ul><li><span>A<li>B</span>C</li>D</ul>", ["A", "BC"]],
+])(
+  "keeps item ownership across stale wrapper closing tags: %s",
+  (html, expected) => {
+    const { document } = renderHtml(html);
+    expect(
+      DomUtils.getElementsByTagName("li", document).map((node) =>
+        DomUtils.textContent(node).trim(),
+      ),
+    ).toEqual(expected);
+  },
+);
+
+test("preserves block content inside headings without swallowing following content", () => {
+  const { document } = renderHtml("<h2><pre>x</pre></h2><p>after</p>");
+  expect(
+    DomUtils.getElementsByTagName("pre", document).map((node) =>
+      DomUtils.textContent(node).trim(),
+    ),
+  ).toEqual(["x"]);
+  expect(
+    DomUtils.getElementsByTagName("p", document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["after"]);
+});
+
+test("converts menu items to an unordered list", () => {
+  const { document } = renderHtml("<menu><li>A</li><li>B</li></menu>");
+  expect(DomUtils.getElementsByTagName("ul", document)).toHaveLength(1);
+  expect(
+    DomUtils.getElementsByTagName("li", document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["A", "B"]);
+});
+
+test("retains legacy directory list structure", () => {
+  const { document } = renderHtml("<dir><li>A</li><li>B</li></dir>");
+  expect(DomUtils.getElementsByTagName("ul", document)).toHaveLength(1);
+  expect(
+    DomUtils.getElementsByTagName("li", document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["A", "B"]);
+});
+
+test.each([
+  "template",
+  "div hidden",
+  'div aria-hidden="true"',
+  "nav",
+  "footer",
+  "form",
+])("does not reparent omitted items out of %s", (tag) => {
+  const text = `<ul><li>A<${tag}><li>Omitted</li></${tag.split(" ")[0]}></li></ul>`;
+  for (const format of ["markdown", "text"] as const) {
+    const output = extractContent(
+      {
+        url: "https://example.com/",
+        contentType: "text/html",
+        text,
+        responseBytes: Buffer.byteLength(text),
+      },
+      format,
+    );
+    expect(output).toContain("A");
+    expect(output).not.toContain("Omitted");
+  }
+});
+
+test.each(["<p><em>A<p>B", "<em>A<div>B</div>C</em>"])(
+  "preserves emphasis across block descendants: %s",
+  (html) => {
+    const { document } = renderHtml(html);
+    expect(DomUtils.textContent(document).replace(/\s/g, "")).toBe(
+      html.includes("C") ? "ABC" : "AB",
+    );
+    expect(
+      DomUtils.getElementsByTagName("em", document).map((node) =>
+        DomUtils.textContent(node),
+      ),
+    ).toEqual([html.includes("C") ? "ABC" : "AB"]);
+  },
+);
+
+test.each([
+  ["\nx", "x\n"],
+  ["\n\nx", "\nx\n"],
+  ["<code>\nx</code>", "\nx\n"],
+  ["<!-- comment -->\nx", "\nx\n"],
+])(
+  "applies the initial pre newline rule only to an immediately following newline: %s",
+  (content, expected) => {
+    const { document } = renderHtml(`<pre>${content}</pre>`);
+    expect(
+      DomUtils.getElementsByTagName("code", document).map((node) =>
+        DomUtils.textContent(node),
+      ),
+    ).toEqual([expected]);
+  },
+);
+
+test.each([
+  ["<p>First<p>Second", "p", ["First", "Second"]],
+  ["<ol><li>First<li>Second", "li", ["First", "Second"]],
+  ["<table><tr><th>A<th>B<tr><td>First<td>Second", "td", ["First", "Second"]],
+])("normalizes omitted closing tags: %s", (html, tag, contents) => {
+  const { document } = renderHtml(html);
+  expect(
+    DomUtils.getElementsByTagName(tag, document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(contents);
+});
+
+test.each([
+  '<p><a href="/outer">Outer<a href="/inner">Inner</a>Tail</a></p>',
+  '<p><a href="/outer"><em>Outer<a href="/inner">Inner</a>Tail</em></a></p>',
+])(
+  "closes nested anchors without losing labels or following text: %s",
+  (html) => {
+    const { document } = renderHtml(html);
+    expect(
+      DomUtils.getElementsByTagName("a", document).map((node) => [
+        node.attribs.href,
+        DomUtils.textContent(node),
+      ]),
+    ).toEqual([
+      ["https://example.com/outer", "Outer"],
+      ["https://example.com/inner", "Inner"],
+    ]);
+    expect(DomUtils.textContent(document).trim()).toBe("OuterInnerTail");
+  },
+);
+
+test("preserves paragraph boundaries, nested lists, and trailing text within list items", () => {
+  const { document } = renderHtml(
+    '<ol start="9"><li><p>First</p><p>Second</p><ul><li>Nested</li></ul>Tail</li><li>Next</li></ol>',
+  );
+  const items = DomUtils.getElementsByTagName("li", document);
+  expect(items).toHaveLength(3);
+  expect(
+    DomUtils.getElementsByTagName("p", items[0]?.children ?? []).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["First", "Second", "Tail"]);
+  expect(DomUtils.getElementsByTagName("ol", document)[0]?.attribs.start).toBe(
+    "9",
+  );
+  expect(items[0] && DomUtils.textContent(items[0])).toContain("Nested");
+});
+
+test("preserves whitespace across inline boundaries and preserves code whitespace separately", () => {
+  const { document } = renderHtml(
+    "<p>  a <span> \n b </span> <em> c </em> <code>  d  </code> e  </p>",
+  );
+  expect(DomUtils.textContent(document).trim()).toBe("a b c   d   e");
+  expect(
+    DomUtils.getElementsByTagName("code", document).map((node) =>
+      DomUtils.textContent(node),
+    ),
+  ).toEqual(["  d  "]);
+});
+
+test.each(["", " ", "&nbsp;", '<img src="/image">'])(
+  "retains source URLs from empty or omitted link labels: %s",
+  (label) => {
+    const { document } = renderHtml(
+      `<p>Before<a href="/source">${label}</a>After</p>`,
+    );
+    expect(
+      DomUtils.getElementsByTagName("a", document).map((node) => [
+        node.attribs.href,
+        DomUtils.textContent(node),
+      ]),
+    ).toEqual([["https://example.com/source", ""]]);
+  },
+);
+
+test("bounds Markdown expansion from HTML fallback entity encoding", () => {
+  expect(() => renderHtml(`<em>${"!".repeat(900_000)}<br>end</em>`)).toThrow(
+    `converted content exceeded ${MAX_CONVERSION_BYTES} bytes`,
+  );
+});
+
+test("generated inline combinations preserve literal text, code, and link targets in Pi", () => {
+  const atoms = [
+    "a",
+    "!",
+    "&amp;copy;",
+    "<code>a</code>",
+    "<code> </code>",
+    "<code>  a  </code>",
+    "<code>`a</code>",
+    "<em>a</em>",
+    "<strong>a</strong>",
+    '<a href="/next">a</a>',
+    "<span>a</span>",
+    "<span><code>a</code></span>",
+  ];
+  for (const a of atoms)
+    for (const b of atoms) {
+      for (const [open, close] of [
+        ["", ""],
+        ["<em>", "</em>"],
+        ["<strong>", "</strong>"],
+      ]) {
+        const html = `<p>${open}x${a}${b}y${close}</p>`;
+        const expected = parseDocument(html);
+        const { document } = renderHtml(html);
+        expect(DomUtils.textContent(document).trim(), html).toBe(
+          DomUtils.textContent(expected),
+        );
+        for (const tag of ["code", "a"]) {
+          expect(
+            DomUtils.getElementsByTagName(tag, document).map((node) => [
+              DomUtils.textContent(node),
+              node.attribs.href,
+            ]),
+            html,
+          ).toEqual(
+            DomUtils.getElementsByTagName(tag, expected).map((node) => [
+              DomUtils.textContent(node),
+              node.attribs.href
+                ? new URL(node.attribs.href, "https://example.com/").href
+                : undefined,
+            ]),
+          );
+        }
+      }
+    }
+});
 
 test.each(["a|b", String.raw`a\|b`, String.raw`a\\|b`, String.raw`a\\\|b`])(
   "preserves inline code %s and its neighboring table cell when rendered",
@@ -560,7 +839,7 @@ test("converts mixed whitespace inside code wrappers within a bounded time", () 
   expect(result.status, result.stderr).toBe(0);
 }, 10_000);
 
-test("rejects excessive HTML attributes before reparsing within a bounded time", () => {
+test("rejects excessive HTML attributes before conversion within a bounded time", () => {
   const result = spawnSync(
     process.execPath,
     [

@@ -82,16 +82,17 @@ the same HTML filtering and depth limit as the preview; it is not the raw page.
 
 ### Supported content
 
-- HTML and XHTML are converted to Markdown using
-  [Turndown](https://github.com/mixmark-io/turndown) with GFM table support.
+- HTML and XHTML are parsed with
+  [htmlparser2](https://github.com/fb55/htmlparser2) and converted directly from the
+  cleaned document tree by a package-local Markdown serializer with GFM table support.
   Headings, links, nested lists, blockquotes, inline code, and fenced code blocks
   are retained. Tables remain HTML when they have no header, multiple header
   rows, unequal row widths, merged cells, nested tables, block-level cell content,
   or inline markup requiring HTML preservation. HTML also preserves nested
-  emphasis and code, headings with explicit line breaks, links around block
-  content, and ordered lists whose numbering GFM cannot represent. Line breaks
-  in block HTML and Markdown-active punctuation in inline HTML are entity-encoded
-  to preserve literal content.
+  emphasis and code, headings with explicit line breaks or block descendants,
+  links or emphasis around block content, and ordered lists whose numbering GFM
+  cannot represent. Line breaks in block HTML and Markdown-active punctuation in
+  inline HTML are entity-encoded to preserve literal content.
 - Plain-text conversion uses
   [`html-to-text`](https://github.com/html-to-text/node-html-to-text), preserving
   readable headings, lists, code blocks, and table-cell separators.
@@ -100,6 +101,11 @@ the same HTML filtering and depth limit as the preview; it is not the raw page.
   are omitted through shared preprocessing in both modes. Markdown requests
   prefer server-provided `text/markdown` through the HTTP `Accept` header;
   text-mode requests prefer `text/plain`.
+- HTML whitespace is collapsed outside code and preformatted blocks. Omitted
+  list-item endings are repaired before the depth limit is applied; nested anchors
+  are split so link labels do not contain other links. Conversion uses bounded
+  chunk writers and cached structural analysis to avoid repeated scans of growing
+  output or sibling lists.
 - Plain text, Markdown, JSON, XML, YAML, JavaScript, and other `text/*` types
   are returned as text. JSON/XML-suffixed application types are supported too.
 - HTTP `charset` declarations are honored, with UTF-8 as the default.
