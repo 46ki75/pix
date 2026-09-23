@@ -185,12 +185,6 @@ importers:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  packages/hello:
-    devDependencies:
-      '@earendil-works/pi-coding-agent':
-        specifier: 0.87.1
-        version: 0.87.1(ws@8.21.3)
-
   packages/webfetch:
     dependencies:
       entities:

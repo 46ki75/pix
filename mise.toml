@@ -48,12 +48,6 @@ run = "pnpm exec vitest"
 description = "Check repository formatting, lint, types, and tests"
 depends = ["fmt-check --all-files", "lint --all-files", "typecheck", "test"]
 
-[tasks."hello:dev"]
-description = "Launch Pi with the hello extension"
-dir = "{{config_root}}/packages/hello"
-raw = true
-run = "pnpm exec pi -e ."
-
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
 dir = "{{config_root}}/packages/websearch"
