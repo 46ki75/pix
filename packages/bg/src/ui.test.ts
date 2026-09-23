@@ -42,6 +42,7 @@ function indicatorContext() {
       },
     ),
     select: vi.fn(),
+    custom: vi.fn(),
     confirm: vi.fn(async () => true),
     notify: vi.fn(),
   };
@@ -211,6 +212,45 @@ test("viewer fits narrow widths, scrolls, refreshes, and releases its timer", ()
   }
 });
 
+test("disposing while the task list is open closes it and registry updates refresh its rows", async () => {
+  const harness = indicatorContext();
+  let current = task;
+  let view: Component | undefined;
+  harness.ui.custom.mockImplementation(
+    (factory) =>
+      new Promise((resolve) => {
+        view = factory(
+          { terminal: { rows: 24 }, requestRender: harness.requestRender },
+          harness.ui.theme,
+          {},
+          resolve,
+        );
+      }),
+  );
+  const ui = new TaskUI(
+    { list: () => [current] } as unknown as Registry,
+    harness.ctx,
+  );
+  const showing = ui.show(harness.ctx);
+  expect(
+    stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
+  ).toContain("Legend:");
+  current = {
+    ...task,
+    status: "finished",
+    outcome: { kind: "exited", code: 3 },
+  };
+  ui.update();
+  expect(harness.requestRender).toHaveBeenCalled();
+  expect(
+    stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
+  ).toContain("exit code 3");
+  ui.dispose();
+  await showing;
+  expect(view?.render(120)).toEqual([]);
+  expect(harness.ui.select).not.toHaveBeenCalled();
+});
+
 test("task menu confirms user kills and clears its footer", async () => {
   const stop = vi.fn(async () => task);
   const registry = {
@@ -218,13 +258,11 @@ test("task menu confirms user kills and clears its footer", async () => {
     get: () => task,
     stop,
   } as unknown as Registry;
-  const select = vi
-    .fn()
-    .mockImplementationOnce(async (_title, labels: string[]) => labels[0])
-    .mockResolvedValueOnce("Kill")
-    .mockResolvedValueOnce(undefined);
   const harness = indicatorContext();
-  harness.ui.select = select;
+  harness.ui.custom
+    .mockResolvedValueOnce("abc")
+    .mockResolvedValueOnce(undefined);
+  harness.ui.select.mockResolvedValueOnce("Kill");
   const ctx = harness.ctx;
   const ui = new TaskUI(registry, ctx);
   await ui.show(ctx);
@@ -245,11 +283,11 @@ test("canceling confirmation leaves the task alone", async () => {
   } as unknown as Registry;
   const ctx = {
     ui: {
-      select: vi
+      custom: vi
         .fn()
-        .mockImplementationOnce(async (_title, labels: string[]) => labels[0])
-        .mockResolvedValueOnce("Kill")
+        .mockResolvedValueOnce("abc")
         .mockResolvedValueOnce(undefined),
+      select: vi.fn().mockResolvedValueOnce("Kill"),
       confirm: vi.fn(async () => false),
       setStatus: vi.fn(),
       setWidget: vi.fn(),
