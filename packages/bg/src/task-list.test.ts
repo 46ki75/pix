@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
+import { outcomeText } from "./format.ts";
 import type { Outcome, Task } from "./registry.ts";
 import { TaskListView } from "./ui.ts";
 
@@ -87,6 +88,36 @@ test.each(outcomes)(
     // Resetting only the dot would otherwise lose the selected row's accent color.
     expect(h.row()).toContain("⏺\x1b[39m \x1b[36mabc |");
     expect(h.text()).toContain("| 2.0s");
+  },
+);
+
+test.each(outcomes)(
+  "long names retain the detailed outcome at 80 columns: %j",
+  (outcome) => {
+    for (const name of ["x".repeat(80), "界".repeat(80), "🙂".repeat(40)]) {
+      const ids = ["112233445566", "66778899aabb"];
+      const h = harness(
+        ids.map((id) => ({
+          ...task,
+          id,
+          name,
+          status: "finished",
+          endedAt: 2000,
+          outcome,
+        })),
+      );
+      const lines = h.view.render(80);
+      for (const id of ids) {
+        const row = lines
+          .map(stripVTControlCharacters)
+          .find((line) => line.includes(`${id} |`));
+        expect(row).toContain(outcomeText(outcome));
+        expect(row).toContain("| 2.0s");
+        expect(row).not.toContain(name);
+      }
+      expect(lines.every((line) => visibleWidth(line) <= 80)).toBe(true);
+      expect(lines.length).toBeLessThanOrEqual(20);
+    }
   },
 );
 

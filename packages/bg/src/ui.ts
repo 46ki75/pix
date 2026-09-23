@@ -10,9 +10,10 @@ import {
   SelectList,
   Text,
   truncateToWidth,
+  visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { readTail, statusLine } from "./format.ts";
+import { oneLine, readTail, statusLine } from "./format.ts";
 import type { Registry, Task } from "./registry.ts";
 
 type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
@@ -78,7 +79,7 @@ export class TaskListView {
   private createList(maxVisible: number): SelectList {
     const selected = this.list?.getSelectedItem()?.value;
     const tasks = this.tasks().toReversed();
-    const colors = new Map(tasks.map((task) => [task.id, statusColor(task)]));
+    const byId = new Map(tasks.map((task) => [task.id, task]));
     this.ids = tasks.map((task) => task.id);
     const list = new SelectList(
       tasks.map((task) => ({ value: task.id, label: statusLine(task) })),
@@ -91,13 +92,24 @@ export class TaskListView {
         noMatch: (text) => this.theme.fg("muted", text),
       },
       {
-        truncatePrimary: ({ item, text, isSelected, maxWidth }) => {
+        truncatePrimary: ({ item, isSelected, maxWidth }) => {
+          const task = byId.get(item.value);
+          if (!task) return "";
+          const dot = `${statusDot(this.theme, statusColor(task))} `;
+          const now = Date.now();
+          // Reserve the ID, outcome, and duration before budgeting a long name.
+          const fixedWidth = visibleWidth(
+            dot + statusLine({ ...task, name: "" }, now),
+          );
+          const name = truncateToWidth(
+            oneLine(task.name),
+            Math.max(0, maxWidth - fixedWidth),
+          );
+          const text = statusLine({ ...task, name }, now);
           // Pi's fg() does not restore an enclosing color after a nested reset.
           // Style the row text separately so the dot keeps its status color.
           const line =
-            statusDot(this.theme, colors.get(item.value) ?? "error") +
-            " " +
-            this.theme.fg(isSelected ? "accent" : "text", text);
+            dot + this.theme.fg(isSelected ? "accent" : "text", text);
           return truncateToWidth(line, Math.max(0, maxWidth), "");
         },
       },

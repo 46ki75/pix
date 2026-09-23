@@ -69,8 +69,9 @@ legend below the list:
 | Timeout/cap | Theme `warning` | Timeout or output limit reached |
 | Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
 
-Status and theme colors refresh while the list is open, without moving your
-selection when another task starts. The legend wraps on narrow terminals; very
+Rows prioritize IDs, outcomes, and durations over long task names. Status and
+theme colors refresh while the list is open, without moving your selection when
+another task starts. The legend wraps on narrow terminals; very
 short viewports prioritize task rows. Use Up/Down or j/k to navigate, Enter to
 select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a running
 task after confirmation. The footer keeps its simpler Running/Finished totals.
