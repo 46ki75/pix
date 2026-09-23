@@ -87,6 +87,5 @@ not reconstructed from history.
 
 ## Release
 
-The package stays private during development. Publishing requires removing
-`private: true`, merging the reviewed changes, tagging `bg-v0.0.1`, and manually
-publishing to npm. The repository has no automated publish workflow.
+After merging the reviewed changes, tag `bg-v0.0.1` and publish the package from
+`packages/bg` manually. The repository has no automated publish workflow.

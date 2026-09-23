@@ -201,6 +201,28 @@ test("rejects unknown IDs, invalid input, and spawn errors without retaining tas
   expect(bad.list()).toEqual([]);
 });
 
+test("shutdown during launch still waits for process cleanup", async () => {
+  const registry = await create();
+  const launching = registry.start({ command: "sleep 30", cwd: tmpdir() });
+  const disposing = registry.disposeAll();
+  const task = await launching;
+  await disposing;
+  expect((await registry.wait(task.id)).outcome).toEqual({
+    kind: "killed",
+    by: "shutdown",
+  });
+  expect(isRunning(task.pid)).toBe(false);
+});
+
+test("the first stop reason survives concurrent stop requests", async () => {
+  const registry = await create();
+  const task = await registry.start({ command: "sleep 30", cwd: tmpdir() });
+  const first = registry.stop(task.id, "user");
+  const second = registry.stop(task.id, "agent");
+  expect((await first).outcome).toEqual({ kind: "killed", by: "user" });
+  expect((await second).outcome).toEqual({ kind: "killed", by: "user" });
+});
+
 test("validates the environment cap", () => {
   expect(outputLimit({})).toBe(DEFAULT_MAX_OUTPUT_BYTES);
   expect(outputLimit({ PIX_BG_MAX_OUTPUT_BYTES: " 123 " })).toBe(123);
