@@ -19,6 +19,18 @@ Tool versions come from `mise.toml` and the root `package.json`. Tool downloads
 are locked for macOS ARM64, Linux x64, and Linux ARM64. `pnpm-lock.yaml` locks
 workspace dependencies.
 
+## Continuous integration
+
+[GitHub Actions](.github/workflows/check.yml) runs on pull requests and pushes to
+`main`, with a manual **Run workflow** trigger in GitHub's Actions tab. The
+`Check` job uses Ubuntu 24.04, installs the pinned tools through mise, and runs
+`mise run setup` followed by `mise run check` for formatting, lint, type checking,
+and all workspace tests.
+
+Tool downloads and pnpm dependencies are cached. Dependency cache keys include
+the manifests, lockfiles, workspace configuration, and dependency patches.
+New runs cancel superseded runs for the same event and branch or pull request.
+
 ## Development
 
 | Command | Purpose |
