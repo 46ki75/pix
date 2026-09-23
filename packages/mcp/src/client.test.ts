@@ -9,6 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  EmptyResultSchema,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, expect, test } from "vitest";
@@ -125,10 +126,10 @@ async function httpFixture(
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
         body = JSON.parse(Buffer.concat(chunks).toString());
         const message = body as {
-          method: string;
+          method?: string;
           params?: { requestId?: unknown };
         };
-        methods.push(message.method);
+        methods.push(message.method ?? "response");
         if (message.method === "notifications/cancelled")
           cancelled.push(message.params?.requestId);
         if (message.method === "initialize" && options.initializeDelay)
@@ -638,6 +639,28 @@ test("aborting a completed or never-started HTTP call sends no stale cancellatio
   expect(fixture.calls).toEqual(["echo", "echo"]);
   expect(fixture.cancelled).toEqual([]);
 });
+
+test.each(["startup", "call", "timeout"])(
+  "HTTP control replies do not inherit a finished operation's abort signal (%s)",
+  async (operation) => {
+    const fixture = await httpFixture({ timeout: 100 });
+    await fixture.connection.start();
+    await expect.poll(fixture.hasNotificationStream).toBe(true);
+    if (operation === "call")
+      await fixture.connection.call("echo", { message: "done" });
+    if (operation === "timeout")
+      await expect(
+        fixture.connection.call("slow", { message: "timeout", delay: 1000 }),
+      ).rejects.toThrow("timed out");
+    await expect(
+      fixture.server.request({ method: "ping" }, EmptyResultSchema, {
+        timeout: 1000,
+      }),
+    ).resolves.toEqual({});
+    expect(fixture.methods).toContain("response");
+    expect(fixture.connection.status).toBe("Connected");
+  },
+);
 
 test("progress notifications cannot extend a tool deadline", async () => {
   const fixture = await httpFixture({ timeout: 150 });
