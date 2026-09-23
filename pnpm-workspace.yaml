@@ -17,8 +17,3 @@ allowBuilds:
   # Hook installation is an explicit step of `mise run setup`.
   lefthook: false
   protobufjs: false
-patchedDependencies:
-  # Fix conversion performance and fidelity in the runtime CJS and bundler-oriented
-  # ES builds. The latter expects a bundler-provided require; Node/Pi uses the CJS entry.
-  # Both variants are patched, with rendered-output and performance regressions.
-  turndown@7.2.4: patches/turndown@7.2.4.patch
