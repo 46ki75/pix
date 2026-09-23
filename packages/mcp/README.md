@@ -101,7 +101,24 @@ entries do not define variables for other entries. Missing variables and invalid
 expanded values fail without echoing credentials. Stdio inherits the SDK's
 minimal platform environment plus explicit `env`, not the entire Pi environment.
 Credentials and fragments in HTTP URLs are rejected; use headers for credentials.
-Unknown fields fail rather than silently accepting unsupported configuration.
+Unknown fields invalidate their server entry rather than being silently ignored.
+
+### Configuration errors
+
+An invalid server entry is skipped without hiding healthy servers. Discovery's
+`servers` list includes a safe diagnostic for each skipped entry; a valid server
+name can still be used with `mcp({ action: "list", server: "name" })` to inspect
+its status. Invalid names are replaced with their one-based entry positions.
+Diagnostics identify supported fields or migration steps without echoing URLs,
+commands, headers, argument values, or environment-variable names.
+
+Malformed JSON, invalid root structure, unknown root fields, and the file/server
+count limits remain fatal for the whole file. An invalid-only configuration
+reports that no valid servers remain. Disabled entries are omitted, not reported
+as failed connections. Correct the file and reload Pi to retry.
+
+Configuration trust still applies before any valid server is started or its
+metadata exposed. Per-call approval remains independent of configuration errors.
 
 ### Deadlines and migration
 
@@ -141,7 +158,8 @@ server separately in a trusted environment.
 ## Discovery and execution
 
 At session startup, the adapter connects to trusted servers and fetches their
-paginated tool catalogs. One failure does not hide tools from other servers.
+paginated tool catalogs. A server's configuration, connection, or discovery
+failure does not hide tools from other servers.
 Full schemas stay out of model context until selected. **Schema exposure is lazy;
 initial connections and metadata discovery are not.**
 

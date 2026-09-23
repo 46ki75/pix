@@ -22,9 +22,15 @@ export type ServerConfig = CommonServer &
       }
     | { type: "http"; url: string; headers: Record<string, string> }
   );
+export interface ConfigIssue {
+  name: string;
+  field?: string;
+  message: string;
+}
 export interface Config {
   path: string;
   servers: ServerConfig[];
+  issues: ConfigIssue[];
 }
 
 class ConfigError extends Error {
@@ -261,9 +267,27 @@ export async function readConfig(
   if (entries.length > 32)
     invalid("mcpServers", "At most 32 servers are supported.");
   const servers: ServerConfig[] = [];
-  for (const [name, raw] of entries) {
-    const server = parseServer(name, raw, path, env);
-    if (server) servers.push(server);
+  const issues: ConfigIssue[] = [];
+  for (const [index, [name, raw]] of entries.entries()) {
+    try {
+      const server = parseServer(name, raw, path, env);
+      if (server) servers.push(server);
+    } catch (error) {
+      // Invalid names and unknown keys can themselves contain credentials. Only
+      // validated names and our fixed validation messages reach discovery.
+      issues.push({
+        name: /^[A-Za-z0-9_-]{1,48}$/.test(name)
+          ? name
+          : `Invalid server #${index + 1}`,
+        ...(error instanceof ConfigError && error.field
+          ? { field: error.field }
+          : {}),
+        message:
+          error instanceof ConfigError
+            ? error.message
+            : "Invalid MCP configuration. Server could not be validated.",
+      });
+    }
   }
-  return { path, servers };
+  return { path, servers, issues };
 }
