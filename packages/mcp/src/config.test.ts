@@ -1,8 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: Fixtures contain configuration interpolation, not JavaScript interpolation.
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { readConfig } from "./config.ts";
+import { MAX_TIMEOUT_MS, readConfig } from "./config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -34,6 +36,7 @@ test("loads only the selected file and resolves explicit environment variables",
           env: { TOKEN: `\${API_TOKEN}` },
         },
         remote: {
+          type: "http",
           url: "https://example.test/mcp",
           headers: { Authorization: `Bearer \${API_TOKEN}` },
           approve: false,
@@ -48,7 +51,9 @@ test("loads only the selected file and resolves explicit environment variables",
     type: "stdio",
     env: { TOKEN: "secret" },
     approve: true,
-    timeoutMs: 30000,
+    timeout: 30000,
+    startupTimeoutMs: 30000,
+    catalogTimeoutMs: 30000,
   });
   expect(result?.servers[0]).toHaveProperty(
     "cwd",
@@ -70,6 +75,7 @@ test.each(["X.Api-Key", "X+Token", "9-Token", "!Token"])(
       {
         mcpServers: {
           remote: {
+            type: "http",
             url: "https://example.test/mcp",
             headers: { [name]: `\${TOKEN}` },
           },
@@ -90,6 +96,7 @@ test.each(["Bad Header", "Bad:Header", "Bad\r\nHeader"])(
       config({
         mcpServers: {
           remote: {
+            type: "http",
             url: "https://example.test/mcp",
             headers: { [name]: "SECRET" },
           },
@@ -117,11 +124,23 @@ test.each([
   },
 );
 
+test("accepts a 16-minute call deadline without lengthening startup or catalog discovery", async () => {
+  const result = await config({
+    mcpServers: { image: { command: "node", timeout: 960000 } },
+  });
+  expect(result?.servers[0]).toMatchObject({
+    timeout: 960000,
+    startupTimeoutMs: 30000,
+    catalogTimeoutMs: 30000,
+  });
+});
+
 test("missing environment variables and missing files have safe diagnostics", async () => {
   await expect(
     config({
       mcpServers: {
         a: {
+          type: "http",
           url: "https://example.test",
           headers: { Authorization: `\${SECRET}` },
         },
@@ -131,4 +150,161 @@ test("missing environment variables and missing files have safe diagnostics", as
   expect(
     await readConfig(join(tmpdir(), "pix-mcp-nonexistent", ".mcp.json")),
   ).toBeUndefined();
+});
+
+test.each(["timeout", "startupTimeoutMs", "catalogTimeoutMs"])(
+  "validates timer-safe boundaries for %s",
+  async (field) => {
+    for (const value of [1, 120001, 960000, MAX_TIMEOUT_MS]) {
+      expect(
+        (
+          await config({
+            mcpServers: { a: { command: "node", [field]: value } },
+          })
+        )?.servers[0],
+      ).toHaveProperty(field, value);
+    }
+    for (const value of [0, -1, 1.5, "30000", null, MAX_TIMEOUT_MS + 1]) {
+      await expect(
+        config({ mcpServers: { a: { command: "node", [field]: value } } }),
+      ).rejects.toThrow(field);
+    }
+  },
+);
+
+test("requires explicit HTTP type, normalizes its alias, and explains the removed timeout field", async () => {
+  await expect(
+    config({ mcpServers: { a: { url: "https://example.test" } } }),
+  ).rejects.toThrow("explicit type");
+  expect(
+    (
+      await config({
+        mcpServers: {
+          a: { type: "streamable-http", url: "https://example.test" },
+        },
+      })
+    )?.servers[0]?.type,
+  ).toBe("http");
+  await expect(
+    config({ mcpServers: { a: { command: "node", timeoutMs: 960000 } } }),
+  ).rejects.toThrow("Removed; use timeout");
+});
+
+test("expands connection strings and unset-only defaults without recursive interpolation", async () => {
+  const result = await config(
+    {
+      $schema: "https://example.invalid/not-fetched.json",
+      mcpServers: {
+        local: {
+          command: "${COMMAND:-node}",
+          args: ["${SCRIPT}", "${EMPTY:-fallback}", "${UNSET:-fallback}"],
+          cwd: "${DIRECTORY:-service}",
+          env: { TOKEN: "${TOKEN}" },
+        },
+        remote: {
+          type: "http",
+          url: "${BASE:-https://example.test}/mcp",
+          headers: { Authorization: "Bearer ${TOKEN}" },
+        },
+        disabled: {
+          disabled: true,
+          command: "${UNSET}",
+          timeout: "not validated",
+        },
+      },
+    },
+    {
+      COMMAND: "custom-node",
+      SCRIPT: "server.js",
+      EMPTY: "",
+      TOKEN: "literal-${SECRET}",
+    },
+  );
+  expect(result?.servers[0]).toMatchObject({
+    command: "custom-node",
+    args: ["server.js", "", "fallback"],
+    env: { TOKEN: "literal-${SECRET}" },
+  });
+  expect(result?.servers[0]).toHaveProperty(
+    "cwd",
+    join(result?.path ?? "", "../service"),
+  );
+  expect(result?.servers[1]).toMatchObject({
+    url: "https://example.test/mcp",
+    headers: { Authorization: "Bearer literal-${SECRET}" },
+  });
+});
+
+test.each(["${env:TOKEN}", "${UNCLOSED", "${}", "${TOKEN}", "${toString}"])(
+  "fails safely for invalid or unset interpolation %s",
+  async (value) => {
+    await expect(
+      config({ mcpServers: { a: { command: "node", args: [value] } } }),
+    ).rejects.toThrow(/^Invalid MCP configuration\./);
+  },
+);
+
+test("validates expanded values rather than letting substitution bypass safety checks", async () => {
+  for (const server of [
+    { command: "${BAD}" },
+    { command: "node", args: ["${BAD}"] },
+    { command: "node", env: { TOKEN: "${BAD}" } },
+    {
+      type: "http",
+      url: "https://example.test",
+      headers: { Authorization: "${HEADER}" },
+    },
+    { type: "http", url: "${URL}" },
+  ])
+    await expect(
+      config(
+        { mcpServers: { a: server } },
+        {
+          BAD: "SECRET\0",
+          HEADER: "SECRET\r\ninjection",
+          URL: "https://SECRET:password@example.test",
+        },
+      ),
+    ).rejects.toThrow(/^Invalid MCP configuration\./);
+});
+
+test("published schema agrees with structural parser validation", async () => {
+  const schema = JSON.parse(
+    await readFile(new URL("../mcp.schema.json", import.meta.url), "utf8"),
+  );
+  const validate = new Ajv2020({ strict: false }).compile(schema);
+  const cases = [
+    { command: "node" },
+    { type: "stdio", command: "node", args: [""] },
+    { type: "http", url: "https://example.test" },
+    { type: "streamable-http", url: "https://example.test" },
+    { disabled: true },
+    { disabled: true, timeout: "ignored" },
+    {
+      command: "node",
+      timeout: 960000,
+      startupTimeoutMs: 1,
+      catalogTimeoutMs: MAX_TIMEOUT_MS,
+    },
+    { command: "node", timeout: 0 },
+    { command: "node", timeout: MAX_TIMEOUT_MS + 1 },
+    { command: "node", timeout: null },
+    { command: "node", timeoutMs: 30000 },
+    { command: "node", args: null },
+    { command: "node", env: null },
+    { command: "node", type: null },
+    { command: "node", url: "https://example.test" },
+    { url: "https://example.test" },
+    { type: "http", url: "https://example.test", cwd: "." },
+    { command: "node", autoApprove: [] },
+    { disabled: true, autoApprove: [] },
+  ];
+  for (const server of cases) {
+    const value = { mcpServers: { a: server } };
+    const accepted = await config(value).then(
+      () => true,
+      () => false,
+    );
+    expect(validate(value), JSON.stringify(server)).toBe(accepted);
+  }
 });

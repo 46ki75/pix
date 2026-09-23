@@ -49,7 +49,9 @@ async function setup(
     command: process.execPath,
     args: [fixture],
     approve: options.approve ?? false,
-    timeoutMs: 2000,
+    timeout: 2000,
+    startupTimeoutMs: 2000,
+    catalogTimeoutMs: 2000,
     env: {
       ...(options.invalidSchema ? { PIX_FIXTURE_INVALID_SCHEMA: "true" } : {}),
       ...(options.legacySchema ? { PIX_FIXTURE_LEGACY_SCHEMA: "true" } : {}),
