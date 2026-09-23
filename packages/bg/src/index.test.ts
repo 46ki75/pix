@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,63 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { Task } from "./registry.ts";
 
 afterEach(() => vi.unstubAllEnvs());
+
+test.each([
+  ["permissive", "parent"],
+  ["symlink", "parent"],
+  ["permissive", "session"],
+  ["symlink", "session"],
+])("rejects a %s log %s directory", async (kind, scope) => {
+  const shared = await mkdtemp(join(tmpdir(), "pix-bg-shared-"));
+  const parent = join(shared, `pi-bg-${userInfo().uid}`);
+  const sessionId = "test-session";
+  const unsafe = scope === "parent" ? parent : join(parent, sessionId);
+  if (scope === "session") await mkdir(parent, { mode: 0o700 });
+  if (kind === "symlink") {
+    const target = join(shared, "target");
+    await mkdir(target, { mode: 0o700 });
+    await symlink(target, unsafe);
+  } else {
+    await mkdir(unsafe);
+    await chmod(unsafe, 0o777);
+  }
+  const loaded = await discoverAndLoadExtensions(
+    [fileURLToPath(new URL("../", import.meta.url))],
+    shared,
+    join(shared, "agent"),
+  );
+  expect(loaded.errors).toEqual([]);
+  const extension = loaded.extensions[0];
+  if (!extension) throw new Error("Extension did not load");
+  const ctx = {
+    mode: "print",
+    cwd: shared,
+    sessionManager: { getSessionId: () => sessionId },
+  } as unknown as ExtensionContext;
+  vi.stubEnv("TMPDIR", shared);
+  try {
+    const launch = async () => {
+      for (const handler of extension.handlers.get("session_start") ?? [])
+        await handler({ type: "session_start", reason: "startup" }, ctx);
+      const tool = extension.tools.get("bg_run")?.definition;
+      if (!tool) throw new Error("Missing bg_run tool");
+      return tool.execute(
+        "call",
+        { command: "printf unsafe" },
+        undefined,
+        undefined,
+        ctx,
+      );
+    };
+    await expect(launch()).rejects.toThrow(
+      "Unsafe background output directory",
+    );
+  } finally {
+    for (const handler of extension.handlers.get("session_shutdown") ?? [])
+      await handler({ type: "session_shutdown", reason: "quit" }, ctx);
+    await rm(shared, { recursive: true, force: true });
+  }
+});
 
 test.each(["print", "json", "rpc", "tui"] as const)(
   "loads and manages tasks in %s mode without model requests",

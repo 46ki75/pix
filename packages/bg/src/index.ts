@@ -1,10 +1,11 @@
-import { tmpdir, userInfo } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
   type ExtensionAPI,
   getShellConfig,
 } from "@earendil-works/pi-coding-agent";
+import { privateDirectory } from "./directory.ts";
 import { taskDetail, taskList } from "./format.ts";
 import { Notifier } from "./notify.ts";
 import { outputLimit, Registry } from "./registry.ts";
@@ -31,14 +32,13 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     await shutdown();
+    // Linux /tmp is shared: a 0700 parent must be namespaced per OS user.
+    const outputRoot = privateDirectory(
+      join(tmpdir(), `pi-bg-${process.geteuid?.()}`),
+    );
     const tasks = new Registry({
       shell: getShellConfig(),
-      // Linux /tmp is shared: a 0700 parent must be namespaced per OS user.
-      outputDir: join(
-        tmpdir(),
-        `pi-bg-${userInfo().uid}`,
-        ctx.sessionManager.getSessionId(),
-      ),
+      outputDir: join(outputRoot, ctx.sessionManager.getSessionId()),
       maxOutputBytes: outputLimit(process.env),
     });
     const notifier = new Notifier(

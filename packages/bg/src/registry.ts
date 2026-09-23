@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { closeSync, openSync, writeSync } from "node:fs";
 import { constants } from "node:os";
 import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
+import { privateDirectory } from "./directory.ts";
 
 export type KillReason = "agent" | "user" | "shutdown";
 export type Outcome =
@@ -153,7 +154,7 @@ export class Registry {
         "Timeout must be positive and at most 2147483.647 seconds",
       );
     }
-    mkdirSync(this.options.outputDir, { recursive: true, mode: 0o700 });
+    privateDirectory(this.options.outputDir);
     const id = randomBytes(6).toString("hex");
     const outputPath = join(this.options.outputDir, `${id}.log`);
     const fd = openSync(outputPath, "wx", 0o600);
@@ -217,6 +218,7 @@ export class Registry {
               message: "Command terminated without an exit code",
             };
       clearTimeout(entry.timeout);
+      // The shell owns task lifetime; leftover group members are not independent tasks.
       this.cleanGroup(entry);
     });
     child.once("close", () => {
@@ -283,6 +285,7 @@ export class Registry {
       entry.reason?.kind === "output_capped"
     )
       return;
+    // The cap bounds stored logs, not raw bytes: stripped controls do not count.
     const data = Buffer.from(text);
     const remaining = this.options.maxOutputBytes - entry.task.outputBytes;
     try {

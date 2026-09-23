@@ -62,6 +62,8 @@ a final UTF-8 character.
 Logs are stored with owner-only file permissions under
 `os.tmpdir()/pi-bg-<uid>/<session-id>/<task-id>.log`. The private parent is
 namespaced by OS user so that Linux users sharing `/tmp` do not block one another.
+Existing parent and session directories must belong to that user, have no group
+or other permissions, and not be symlinks; unsafe paths are rejected, not repaired.
 Logs remain after tasks finish and after reload so that result paths stay useful.
 Remove old logs yourself; they may contain sensitive command output. Task metadata
 in tool results and completion-message `details` remains in the session, but the
