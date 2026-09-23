@@ -1,6 +1,6 @@
 {
   "name": "@ikuma.cloud/pix-mcp",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "MCP discovery and lazily activated native tools for Pi Coding Agent",
