@@ -1,0 +1,29 @@
+{
+  "name": "@ikuma.cloud/pix-websearch",
+  "version": "0.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "Keyless multi-provider web search for Pi Coding Agent",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1"
+  }
+}

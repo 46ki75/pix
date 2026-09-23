@@ -1,0 +1,73 @@
+min_version = "2026.9.9"
+
+[tools]
+node = "24.20.0"
+
+[settings]
+idiomatic_version_file_enable_tools = ["pnpm"]
+auto_install = false
+
+[tool_config]
+locked = true
+
+[tasks.setup]
+description = "Install locked dependencies and Git hooks"
+run = ["pnpm install --frozen-lockfile", "pnpm exec lefthook install"]
+
+[tasks.fmt]
+description = "Format tracked TypeScript, JavaScript, and JSON files; accepts --file"
+raw_args = true
+run = "pnpm exec lefthook run fmt --no-auto-install"
+
+[tasks.fmt-check]
+description = "Check formatting for the same file selection as fmt"
+raw_args = true
+run = "pnpm exec lefthook run fmt-check --no-auto-install"
+
+[tasks.lint]
+description = "Lint tracked TypeScript, JavaScript, and JSON files; accepts --file"
+raw_args = true
+run = "pnpm exec lefthook run lint --no-auto-install"
+
+[tasks.typecheck]
+description = "Type-check root configuration and every workspace package"
+run = ["pnpm exec tsc --project tsconfig.json", "pnpm --recursive exec tsc --project tsconfig.json"]
+
+[tasks.test]
+description = "Run all Vitest projects once; accepts --project <name>"
+raw_args = true
+run = "pnpm exec vitest run"
+
+[tasks."test:watch"]
+description = "Watch tests across workspace packages"
+raw_args = true
+raw = true
+run = "pnpm exec vitest"
+
+[tasks.check]
+description = "Check repository formatting, lint, types, and tests"
+depends = ["fmt-check --all-files", "lint --all-files", "typecheck", "test"]
+
+[tasks."hello:dev"]
+description = "Launch Pi with the hello extension"
+dir = "{{config_root}}/packages/hello"
+raw = true
+run = "pnpm exec pi -e ."
+
+[tasks."websearch:dev"]
+description = "Launch Pi with @ikuma.cloud/pix-websearch"
+dir = "{{config_root}}/packages/websearch"
+raw = true
+run = "pnpm exec pi -e ."
+
+[tasks."webfetch:dev"]
+description = "Launch Pi with @ikuma.cloud/pix-webfetch"
+dir = "{{config_root}}/packages/webfetch"
+raw = true
+run = "pnpm exec pi -e ."
+
+[tasks."web:dev"]
+description = "Launch Pi with web search and web fetch"
+dir = "{{config_root}}/packages/webfetch"
+raw = true
+run = "pnpm exec pi -e ../websearch -e ."
