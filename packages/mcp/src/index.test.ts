@@ -19,12 +19,13 @@ import {
   SettingsManager,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { tinyPng } from "./fixtures/server.ts";
 import { toolName } from "./catalog.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -38,6 +39,9 @@ async function setup(
     booleanSchema?: boolean;
     tools?: string[];
     twoServers?: boolean;
+    extraServers?: Record<string, unknown>;
+    configValue?: unknown;
+    source?: string;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "pix-mcp-test-"));
@@ -62,15 +66,26 @@ async function setup(
   };
   await writeFile(
     join(directory, ".mcp.json"),
-    JSON.stringify({
-      mcpServers: {
-        fixture: definition,
-        ...(options.twoServers ? { other: definition } : {}),
-        ...(options.broken
-          ? { broken: { ...definition, env: { PIX_FIXTURE_BROKEN: "true" } } }
-          : {}),
-      },
-    }),
+    options.source ??
+      JSON.stringify(
+        options.configValue !== undefined
+          ? options.configValue
+          : {
+              mcpServers: {
+                fixture: definition,
+                ...options.extraServers,
+                ...(options.twoServers ? { other: definition } : {}),
+                ...(options.broken
+                  ? {
+                      broken: {
+                        ...definition,
+                        env: { PIX_FIXTURE_BROKEN: "true" },
+                      },
+                    }
+                  : {}),
+              },
+            },
+      ),
   );
   const agentDir = join(directory, "agent");
   const settingsManager = SettingsManager.inMemory();
@@ -320,6 +335,67 @@ test("one failed server does not hide healthy tools or leak transport errors", a
     result.servers.find((server) => server.name === "broken")?.status,
   ).not.toBe("Connected");
   expect(JSON.stringify(result)).not.toContain("SECRET");
+});
+
+test("configuration failures are visible while healthy tools remain gated and usable", async () => {
+  vi.stubEnv("PIX_FIXTURE_UNSET_SECRET", undefined);
+  const extraServers = {
+    invalid: { command: "SECRET-command", timeout: 0 },
+    missingEnv: {
+      type: "http",
+      url: "https://example.test",
+      headers: { Authorization: `\${PIX_FIXTURE_UNSET_SECRET}` },
+    },
+    legacy: { command: "SECRET-command", timeoutMs: 960000 },
+    "SECRET\ninvalid-name": { command: "SECRET-command" },
+  };
+  const { discover, call } = await setup({ extraServers });
+  const listed = await discover({ action: "list" });
+  expect(listed.total).toBe(5);
+  expect(listed.servers).toHaveLength(5);
+  expect(listed.status).toContain("invalid");
+  expect(JSON.stringify(listed)).not.toContain("SECRET");
+  expect(
+    listed.servers.find((server) => server.name === "legacy")?.status,
+  ).toContain("Removed; use timeout");
+  const invalid = await discover({ action: "list", server: "invalid" });
+  expect(invalid.items).toEqual([]);
+  expect(
+    invalid.servers.find((server) => server.name === "invalid")?.status,
+  ).toContain("timeout");
+  const found = await discover({ action: "search", query: "echo" });
+  expect(
+    (await call(found.items[0]?.name ?? "", { message: "healthy" })).content[0],
+  ).toMatchObject({ text: expect.stringContaining("healthy") });
+  const untrusted = await setup({ extraServers, trust: false });
+  const blocked = await untrusted.discover({ action: "list" });
+  expect(blocked.status).toContain("not trusted");
+  expect(blocked.servers).toEqual([]);
+  expect(blocked.items).toEqual([]);
+  const approved = await setup({ extraServers, approve: true });
+  const gated = await approved.discover({ action: "search", query: "echo" });
+  await expect(
+    approved.call(gated.items[0]?.name ?? "", { message: "denied" }),
+  ).rejects.toThrow("approval required");
+});
+
+test("invalid-only configuration and root errors have safe, distinct discovery results", async () => {
+  const invalid = await setup({
+    configValue: { mcpServers: { broken: { timeout: 0, command: "SECRET" } } },
+  });
+  const result = await invalid.discover({ action: "list" });
+  expect(result.items).toEqual([]);
+  expect(result.servers).toHaveLength(1);
+  expect(result.status).toContain("No valid");
+  expect(JSON.stringify(result)).not.toContain("SECRET");
+  for (const source of ['{"SECRET":', JSON.stringify({ mcpServers: [] })]) {
+    const broken = await setup({ source });
+    const root = await broken.discover({ action: "list" });
+    expect(root.status).toContain("Invalid MCP configuration");
+    expect(root.items).toEqual([]);
+    expect(root.servers).toEqual([]);
+    expect(JSON.stringify(root)).not.toContain("SECRET");
+  }
 });
 
 test("native calls report MCP errors and spill oversized results to private files", async () => {

@@ -7,7 +7,7 @@ import type {
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
-import { readConfig, type ServerConfig } from "./config.ts";
+import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
 import { formatResult } from "./output.ts";
 import { compileSchema } from "./schema.ts";
 
@@ -18,6 +18,7 @@ interface State {
   loaded: Map<string, string>;
   connections: Map<string, Connection>;
   rejected: Map<string, number>;
+  configIssues: ConfigIssue[];
 }
 
 const discoveryParameters = Type.Object(
@@ -81,6 +82,8 @@ export default function mcp(pi: ExtensionAPI) {
   function catalog(owner: State | undefined): string {
     if (!owner) return "Catalog is initialized when the Pi session starts.";
     const lines = [owner.status];
+    for (const issue of owner.configIssues)
+      lines.push(`${issue.name}: ${issue.message}`);
     for (const connection of owner.connections.values()) {
       const config = connection.config;
       const tools = [...owner.entries.values()].filter(
@@ -124,7 +127,11 @@ export default function mcp(pi: ExtensionAPI) {
         if (!owner) throw new Error("MCP session has not started.");
         current(owner);
         deactivate(hiddenTools());
-        if (args.server && !owner.connections.has(args.server))
+        if (
+          args.server &&
+          !owner.connections.has(args.server) &&
+          !owner.configIssues.some((issue) => issue.name === args.server)
+        )
           throw new Error("Unknown MCP server.");
         const all = [...owner.entries.values()].sort((a, b) =>
           a.name.localeCompare(b.name, "en"),
@@ -178,11 +185,18 @@ export default function mcp(pi: ExtensionAPI) {
         }
         const data = {
           status: owner.status,
-          servers: [...owner.connections.values()].map((connection) => ({
-            name: connection.config.name,
-            status: connection.status,
-            unsupportedTools: owner.rejected.get(connection.config.name) ?? 0,
-          })),
+          servers: [
+            ...owner.configIssues.map((issue) => ({
+              name: issue.name,
+              status: issue.message,
+              unsupportedTools: 0,
+            })),
+            ...[...owner.connections.values()].map((connection) => ({
+              name: connection.config.name,
+              status: connection.status,
+              unsupportedTools: owner.rejected.get(connection.config.name) ?? 0,
+            })),
+          ],
           items: selected.map((item) => ({
             ...summary(item),
             active: active.has(item.name),
@@ -335,6 +349,7 @@ export default function mcp(pi: ExtensionAPI) {
       loaded: new Map(),
       connections: new Map(),
       rejected: new Map(),
+      configIssues: [],
     };
     state = owner;
     try {
@@ -363,7 +378,15 @@ export default function mcp(pi: ExtensionAPI) {
           "MCP configuration not trusted. Review it, then restart with --mcp-trust-config or --mcp-config <path>.";
         return;
       }
-      owner.status = "Use list/search/load to discover and activate tools.";
+      owner.configIssues = config.issues;
+      owner.status =
+        config.issues.length > 0
+          ? config.servers.length > 0
+            ? "Some MCP servers have invalid configuration; valid servers remain available. Use list/search/load to discover and activate tools."
+            : "No valid MCP servers configured. Correct configuration errors and reload Pi."
+          : config.servers.length > 0
+            ? "Use list/search/load to discover and activate tools."
+            : "No enabled MCP servers configured.";
       for (const server of config.servers) {
         owner.connections.set(
           server.name,

@@ -24,6 +24,13 @@ async function config(value: unknown, env: NodeJS.ProcessEnv = {}) {
   );
   return readConfig(path, env);
 }
+async function serverIssue(value: unknown, env: NodeJS.ProcessEnv = {}) {
+  const result = await config(value, env);
+  expect(result?.servers).toEqual([]);
+  expect(result?.issues).toHaveLength(1);
+  expect(JSON.stringify(result?.issues)).not.toContain("SECRET");
+  return result?.issues[0]?.message;
+}
 
 test("loads only the selected file and resolves explicit environment variables", async () => {
   const result = await config(
@@ -93,7 +100,7 @@ test.each(["Bad Header", "Bad:Header", "Bad\r\nHeader"])(
   "rejects invalid HTTP header name %s without echoing secrets",
   async (name) => {
     await expect(
-      config({
+      serverIssue({
         mcpServers: {
           remote: {
             type: "http",
@@ -102,27 +109,48 @@ test.each(["Bad Header", "Bad:Header", "Bad\r\nHeader"])(
           },
         },
       }),
-    ).rejects.toThrow(/^Invalid MCP configuration\./);
+    ).resolves.toMatch(/^Invalid MCP configuration\./);
   },
 );
 
 test.each([
   { mcpServers: { a: { command: "node", url: "https://example.test" } } },
-  { mcpServers: { a: { url: "file:///secret" } } },
-  { mcpServers: { a: { url: "https://secret:password@example.test" } } },
-  { mcpServers: { a: { url: "https://example.test", oauth: {} } } },
+  { mcpServers: { a: { type: "http", url: "file:///SECRET" } } },
+  {
+    mcpServers: {
+      a: { type: "http", url: "https://SECRET:password@example.test" },
+    },
+  },
+  {
+    mcpServers: { a: { type: "http", url: "https://example.test", oauth: {} } },
+  },
   { mcpServers: { a: { command: "node", args: [1] } } },
   { mcpServers: { a: { command: "node", timeoutMs: -1 } } },
   { mcpServers: { a: { command: "node", approve: "false" } } },
   { mcpServers: { "bad.name": { command: "node" } } },
-  { mcpServers: [], imports: ["other"] },
-  '{"secret":',
 ])(
-  "rejects unsupported or malformed config without leaking values",
+  "reports unsupported or malformed server entries without leaking values",
   async (value) => {
-    await expect(config(value)).rejects.toThrow(/^Invalid MCP configuration\./);
+    await expect(serverIssue(value)).resolves.toMatch(
+      /^Invalid MCP configuration\./,
+    );
   },
 );
+
+test.each([
+  null,
+  [],
+  {},
+  { mcpServers: [] },
+  { mcpServers: {}, imports: ["SECRET"] },
+  { mcpServers: {}, $schema: 1 },
+  '{"SECRET":',
+])("root errors remain fatal and safe", async (value) => {
+  const error = await config(value).catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toMatch(/^Invalid MCP configuration\./);
+  expect((error as Error).message).not.toContain("SECRET");
+});
 
 test("accepts a 16-minute call deadline without lengthening startup or catalog discovery", async () => {
   const result = await config({
@@ -137,7 +165,7 @@ test("accepts a 16-minute call deadline without lengthening startup or catalog d
 
 test("missing environment variables and missing files have safe diagnostics", async () => {
   await expect(
-    config({
+    serverIssue({
       mcpServers: {
         a: {
           type: "http",
@@ -146,7 +174,7 @@ test("missing environment variables and missing files have safe diagnostics", as
         },
       },
     }),
-  ).rejects.toThrow("unset environment variable");
+  ).resolves.toContain("unset environment variable");
   expect(
     await readConfig(join(tmpdir(), "pix-mcp-nonexistent", ".mcp.json")),
   ).toBeUndefined();
@@ -166,16 +194,16 @@ test.each(["timeout", "startupTimeoutMs", "catalogTimeoutMs"])(
     }
     for (const value of [0, -1, 1.5, "30000", null, MAX_TIMEOUT_MS + 1]) {
       await expect(
-        config({ mcpServers: { a: { command: "node", [field]: value } } }),
-      ).rejects.toThrow(field);
+        serverIssue({ mcpServers: { a: { command: "node", [field]: value } } }),
+      ).resolves.toContain(field);
     }
   },
 );
 
 test("requires explicit HTTP type, normalizes its alias, and explains the removed timeout field", async () => {
   await expect(
-    config({ mcpServers: { a: { url: "https://example.test" } } }),
-  ).rejects.toThrow("explicit type");
+    serverIssue({ mcpServers: { a: { url: "https://example.test" } } }),
+  ).resolves.toContain("explicit type");
   expect(
     (
       await config({
@@ -186,8 +214,8 @@ test("requires explicit HTTP type, normalizes its alias, and explains the remove
     )?.servers[0]?.type,
   ).toBe("http");
   await expect(
-    config({ mcpServers: { a: { command: "node", timeoutMs: 960000 } } }),
-  ).rejects.toThrow("Removed; use timeout");
+    serverIssue({ mcpServers: { a: { command: "node", timeoutMs: 960000 } } }),
+  ).resolves.toContain("Removed; use timeout");
 });
 
 test("expands connection strings and unset-only defaults without recursive interpolation", async () => {
@@ -239,8 +267,8 @@ test.each(["${env:TOKEN}", "${UNCLOSED", "${}", "${TOKEN}", "${toString}"])(
   "fails safely for invalid or unset interpolation %s",
   async (value) => {
     await expect(
-      config({ mcpServers: { a: { command: "node", args: [value] } } }),
-    ).rejects.toThrow(/^Invalid MCP configuration\./);
+      serverIssue({ mcpServers: { a: { command: "node", args: [value] } } }),
+    ).resolves.toMatch(/^Invalid MCP configuration\./);
   },
 );
 
@@ -257,7 +285,7 @@ test("validates expanded values rather than letting substitution bypass safety c
     { type: "http", url: "${URL}" },
   ])
     await expect(
-      config(
+      serverIssue(
         { mcpServers: { a: server } },
         {
           BAD: "SECRET\0",
@@ -265,7 +293,7 @@ test("validates expanded values rather than letting substitution bypass safety c
           URL: "https://SECRET:password@example.test",
         },
       ),
-    ).rejects.toThrow(/^Invalid MCP configuration\./);
+    ).resolves.toMatch(/^Invalid MCP configuration\./);
 });
 
 test("published schema agrees with structural parser validation", async () => {
@@ -302,9 +330,70 @@ test("published schema agrees with structural parser validation", async () => {
   for (const server of cases) {
     const value = { mcpServers: { a: server } };
     const accepted = await config(value).then(
-      () => true,
+      (result) => result?.issues.length === 0,
       () => false,
     );
     expect(validate(value), JSON.stringify(server)).toBe(accepted);
   }
+});
+
+test("retains healthy servers beside an invalid configuration entry", async () => {
+  const result = await config({
+    mcpServers: {
+      healthy: { command: "node" },
+      invalid: { command: "node", timeout: 0 },
+    },
+  });
+  expect(result?.servers.map((server) => server.name)).toEqual(["healthy"]);
+  expect(result?.issues).toEqual([
+    {
+      name: "invalid",
+      field: "timeout",
+      message: expect.stringContaining("milliseconds"),
+    },
+  ]);
+});
+
+test("collects entry errors in order and redacts unsafe names, keys, and values", async () => {
+  const result = await config({
+    mcpServers: {
+      healthy: { command: "node" },
+      "SECRET\nname": { command: "node" },
+      malformed: null,
+      unknown: { command: "SECRET", "SECRET-field": true },
+      unset: { command: "${SECRET}" },
+      disabled: { disabled: true },
+      legacy: { command: "SECRET", timeoutMs: 960000 },
+      second: { type: "http", url: "https://example.test" },
+    },
+  });
+  expect(result?.servers.map((server) => server.name)).toEqual([
+    "healthy",
+    "second",
+  ]);
+  expect(result?.issues.map((issue) => issue.name)).toEqual([
+    "Invalid server #2",
+    "malformed",
+    "unknown",
+    "unset",
+    "legacy",
+  ]);
+  expect(JSON.stringify(result?.issues)).not.toContain("SECRET");
+  expect(result?.issues.at(-1)?.message).toContain("Removed; use timeout");
+});
+
+test("file-size and server-count limits remain fatal before isolation", async () => {
+  const definitions = Object.fromEntries(
+    Array.from({ length: 32 }, (_, index) => [
+      `server${index}`,
+      { command: "node" },
+    ]),
+  );
+  expect((await config({ mcpServers: definitions }))?.servers).toHaveLength(32);
+  await expect(
+    config({ mcpServers: { ...definitions, extra: { command: "node" } } }),
+  ).rejects.toThrow("At most 32");
+  await expect(
+    config({ mcpServers: { a: { command: "SECRET".repeat(50000) } } }),
+  ).rejects.toThrow("exceeds 256 KiB");
 });
