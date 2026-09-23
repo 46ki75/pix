@@ -48,7 +48,8 @@ keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
 `mise run test --project pix-websearch` for its tests.
 
 [`@ikuma.cloud/pix-webfetch`](packages/webfetch/README.md) adds an independent
-`webfetch` tool for reading URLs as text, including static HTML extraction. Run
+`webfetch` tool for reading URLs as Markdown or text, with full-output files for
+truncated previews. Run
 `mise run webfetch:dev` to try it or `mise run web:dev` to use both web tools.
 Its tests run with `mise run test --project pix-webfetch`.
 

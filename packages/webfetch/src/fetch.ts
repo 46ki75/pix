@@ -5,6 +5,8 @@ export const MAX_RESPONSE_BYTES = 1024 * 1024;
 export const REQUEST_TIMEOUT_MS = 25_000;
 export const MAX_REDIRECTS = 5;
 
+export type FetchFormat = "markdown" | "text";
+
 export interface FetchedPage {
   url: string;
   contentType: string;
@@ -29,7 +31,11 @@ export function createWebFetch(options: FetchOptions = {}) {
   const fetch = options.fetch ?? globalThis.fetch;
   const byteLimit = options.maxResponseBytes ?? MAX_RESPONSE_BYTES;
 
-  return async (input: string, signal?: AbortSignal): Promise<FetchedPage> => {
+  return async (
+    input: string,
+    signal?: AbortSignal,
+    format: FetchFormat = "markdown",
+  ): Promise<FetchedPage> => {
     signal?.throwIfAborted();
     let url = parseUrl(input);
     const timeout = AbortSignal.timeout(
@@ -51,7 +57,9 @@ export function createWebFetch(options: FetchOptions = {}) {
           redirect: "manual",
           headers: {
             Accept:
-              "text/html, application/xhtml+xml, text/plain, text/markdown, application/json, application/xml;q=0.9, */*;q=0.1",
+              format === "markdown"
+                ? "text/markdown, text/html;q=0.9, application/xhtml+xml;q=0.9, text/plain;q=0.8, application/json;q=0.8, application/xml;q=0.8, */*;q=0.1"
+                : "text/plain, text/html;q=0.9, application/xhtml+xml;q=0.9, application/json;q=0.8, application/xml;q=0.8, */*;q=0.1",
             "User-Agent": "pix-webfetch/0.0.0",
           },
           signal: requestSignal,

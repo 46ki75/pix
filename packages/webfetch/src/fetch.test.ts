@@ -48,6 +48,24 @@ describe("HTTP fetching", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test.each(["markdown", "text"] as const)(
+    "negotiates %s and preserves server-provided Markdown",
+    async (format) => {
+      const text = "# Server Markdown\n\n```js\nconst x = 1;\n```\n";
+      const { read, fetch } = fixture(
+        new Response(text, { headers: { "Content-Type": "text/markdown" } }),
+      );
+      await expect(read(url, undefined, format)).resolves.toMatchObject({
+        text,
+        contentType: "text/markdown",
+      });
+      const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+      expect(headers.get("accept")?.split(",")[0]).toBe(
+        format === "markdown" ? "text/markdown" : "text/plain",
+      );
+    },
+  );
+
   test("rejects oversized URLs", async () => {
     const { read, fetch } = fixture(new Response("Hello"));
     await expect(
