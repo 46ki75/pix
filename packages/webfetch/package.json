@@ -1,7 +1,9 @@
 {
   "name": "@ikuma.cloud/pix-webfetch",
   "version": "0.0.1",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "Fetch web pages as Markdown or readable text for Pi Coding Agent",
   "keywords": [

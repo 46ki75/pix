@@ -25,8 +25,7 @@ mise run mcp:dev --mcp-config /absolute/path/to/mcp.json
 ```
 
 For an existing Pi installation, load this package with
-`pi --no-extensions -e /absolute/path/to/pix/packages/mcp`. The package is private
-while developing.
+`pi --no-extensions -e /absolute/path/to/pix/packages/mcp`.
 
 ## Configuration and trust
 
