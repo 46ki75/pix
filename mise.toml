@@ -67,6 +67,13 @@ raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
+[tasks."bg:dev"]
+description = "Launch Pi with only @ikuma.cloud/pix-bg; accepts Pi arguments"
+dir = "{{config_root}}/packages/bg"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e ."
+
 [tasks."web:dev"]
 description = "Launch Pi with web search and web fetch"
 dir = "{{config_root}}/packages/webfetch"
