@@ -4,28 +4,17 @@ A small Pi MCP adapter: discover tools, load their schemas on demand, then call
 those tools natively. No scripting engine or model-provider-specific API is
 required.
 
-**Read [CONTRIBUTING.md](../../CONTRIBUTING.md) before making changes.**
+## Usage
 
-## Development
-
-From the repository root:
+To load this package in an existing Pi installation:
 
 ```sh
-mise run mcp:dev
-mise run test --project pix-mcp
-mise run check
+pi --no-extensions -e /absolute/path/to/pix/packages/mcp
 ```
 
-The development task runs from `packages/mcp` and disables other extensions so
-another MCP adapter cannot collide with the `mcp` tool or flags. Pass arguments
-through the task, for example:
-
-```sh
-mise run mcp:dev --mcp-config /absolute/path/to/mcp.json
-```
-
-For an existing Pi installation, load this package with
-`pi --no-extensions -e /absolute/path/to/pix/packages/mcp`.
+This disables other extensions so another MCP adapter cannot collide with the
+`mcp` tool or flags. Review the configuration and trust requirements below before
+connecting servers.
 
 ## Configuration and trust
 
@@ -237,5 +226,6 @@ OAuth, legacy SSE transport, MCP prompts/resources APIs, sampling, elicitation,
 MCP apps, task execution, semantic search, scripting, config UI, and persistent
 catalog caching. Use a fuller adapter when those capabilities are required.
 
-Tests use local stdio/HTTP fixture servers and isolated Pi configuration, without
-model requests or personal credentials.
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.

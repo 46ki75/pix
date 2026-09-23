@@ -4,21 +4,7 @@ A native [Pi Coding Agent](https://pi.dev/) `websearch` tool backed by Exa,
 Parallel, Firecrawl, Tavily, and TinyFish. Keyless access works without account
 setup; optional API keys use the corresponding provider account's limits.
 
-Contributors must read [CONTRIBUTING.md](../../CONTRIBUTING.md) before making changes.
-
-## Run locally
-
-From the repository root, follow the [workspace setup](../../README.md#setup), then:
-
-```sh
-mise run websearch:dev
-```
-
-Ask Pi to search for something, for example:
-
-```text
-Search for the latest TypeScript release and summarize the changes with sources.
-```
+## Usage
 
 To load this package in an existing Pi installation, use its absolute path:
 
@@ -28,13 +14,19 @@ pi -e /absolute/path/to/pix/packages/websearch
 
 Pi loads the package's TypeScript source directly; no build step is needed.
 
+Ask Pi to search for something, for example:
+
+```text
+Search for the latest TypeScript release and summarize the changes with sources.
+```
+
 ## Configuration
 
 `PIX_WEBSEARCH_PROVIDER` defaults to `auto`. Set it to `exa`, `parallel`,
 `firecrawl`, `tavily`, or `tinyfish` to select a fixed provider:
 
 ```sh
-PIX_WEBSEARCH_PROVIDER=tavily mise run websearch:dev
+PIX_WEBSEARCH_PROVIDER=tavily pi -e /absolute/path/to/pix/packages/websearch
 ```
 
 Optional credentials are read when Pi loads the extension:
@@ -87,29 +79,6 @@ websearch({ query: string })
   try up to five providers after rate limits. Pi cancellation stops further work.
 - The tool works in interactive and headless modes.
 
-## Development
+## Contributing
 
-```sh
-mise run test --project pix-websearch
-mise run check
-```
-
-Tests mock HTTP and isolate Pi discovery from personal configuration. They cover
-provider request/response contracts, JSON and SSE handling, bounded response
-reads, cancellation, rate-limit fallback, output limits, and Pi package loading.
-
-## Implementation references
-
-The endpoint contracts and selection behavior were researched from
-[OpenCode v2 at `1746672`](https://github.com/anomalyco/opencode/tree/1746672c4229527106c9db39d25c34adbe834230/packages/core/src/plugin/websearch)
-and the provider documentation:
-[Exa](https://exa.ai/docs/reference/exa-mcp),
-[Parallel](https://docs.parallel.ai/integrations/mcp/search-mcp),
-[Firecrawl](https://docs.firecrawl.dev/mcp-server/keyless),
-[Tavily](https://docs.tavily.com/documentation/keyless), and
-[TinyFish](https://docs.tinyfish.ai/mcp-integration/index).
-
-The MCP adapters make endpoint-specific `tools/call` POSTs and accept JSON or SSE.
-These endpoints accept calls without initialization; this transport is not a
-general-purpose MCP client. The implementation uses native `fetch` and no search
-provider SDKs.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.

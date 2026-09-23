@@ -5,21 +5,7 @@ HTTP(S) URL. Static HTML becomes Markdown by default, with a readable-text
 option. Other text formats retain their original formatting. Large results
 include a preview and a path to the full converted output.
 
-Contributors must read [CONTRIBUTING.md](../../CONTRIBUTING.md) before making changes.
-
-## Run locally
-
-Follow the [workspace setup](../../README.md#setup), then run:
-
-```sh
-mise run webfetch:dev
-```
-
-Ask Pi to read a page, for example:
-
-```text
-Fetch https://www.typescriptlang.org/docs/ and summarize the available guides.
-```
+## Usage
 
 To load the package in an existing Pi installation:
 
@@ -29,6 +15,12 @@ pi -e /absolute/path/to/pix/packages/webfetch
 
 Pi loads the TypeScript source directly. No build step or API key is required.
 
+Ask Pi to read a page, for example:
+
+```text
+Fetch https://www.typescriptlang.org/docs/ and summarize the available guides.
+```
+
 ### Use with web search
 
 [`@ikuma.cloud/pix-websearch`](../websearch/README.md) discovers source URLs;
@@ -36,14 +28,12 @@ Pi loads the TypeScript source directly. No build step or API key is required.
 own tool, owns its runtime dependencies, and can be installed and versioned
 independently.
 
-To launch Pi with both packages from this workspace:
+To load both packages in an existing Pi installation, supply both package paths
+with separate `-e` arguments:
 
 ```sh
-mise run web:dev
+pi -e /absolute/path/to/pix/packages/websearch -e /absolute/path/to/pix/packages/webfetch
 ```
-
-For an existing Pi installation, supply both package paths with separate `-e`
-arguments.
 
 ## Tool contract
 
@@ -134,17 +124,6 @@ HTTP errors, unsupported encodings, and network failures are reported through
 Pi's tool-error mechanism.
 Cancellation stops the active request/body read and further redirects.
 
-## Development
+## Contributing
 
-```sh
-mise run test --project pix-webfetch
-mise run check
-```
-
-Tests cover HTTP negotiation, redirects, cancellation, timeouts, character
-decoding, Markdown/text extraction, table rendering, conversion performance,
-output limits, artifact persistence, and retention. A local HTTP server checks
-native fetch's decompression behavior.
-Pi-loader integration tests exercise both output formats, loading alongside
-websearch, and reading later sections from an overflow artifact through Pi's
-real `read` tool, without model calls or external network access.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.
