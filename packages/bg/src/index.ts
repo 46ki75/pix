@@ -1,4 +1,4 @@
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import {
@@ -33,7 +33,12 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     await shutdown();
     const tasks = new Registry({
       shell: getShellConfig(),
-      outputDir: join(tmpdir(), "pi-bg", ctx.sessionManager.getSessionId()),
+      // Linux /tmp is shared: a 0700 parent must be namespaced per OS user.
+      outputDir: join(
+        tmpdir(),
+        `pi-bg-${userInfo().uid}`,
+        ctx.sessionManager.getSessionId(),
+      ),
       maxOutputBytes: outputLimit(process.env),
     });
     const notifier = new Notifier(

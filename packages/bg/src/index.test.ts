@@ -1,6 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir, userInfo } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   discoverAndLoadExtensions,
@@ -16,6 +16,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
   async (mode) => {
     const directory = await mkdtemp(join(tmpdir(), "pix-bg-load-"));
     const sessionId = `pix-bg-test-${directory.split("/").pop()}`;
+    let outputDir: string | undefined;
     const ctx = {
       mode,
       hasUI: mode === "rpc" || mode === "tui",
@@ -69,6 +70,12 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         name: "test sleeper",
       });
       const task = result.details.task as Task;
+      outputDir = dirname(task.outputPath);
+      // A private shared /tmp/pi-bg parent would exclude every other OS user.
+      expect(dirname(outputDir)).toBe(
+        join(tmpdir(), `pi-bg-${userInfo().uid}`),
+      );
+      expect((await stat(dirname(outputDir))).mode & 0o777).toBe(0o700);
       expect(task.pid).toBeGreaterThan(0);
       expect(result.content[0]).toMatchObject({
         text: expect.stringContaining(task.outputPath),
@@ -107,10 +114,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       await emit("session_shutdown", "quit");
       await emit("session_shutdown", "quit");
       await rm(directory, { recursive: true, force: true });
-      await rm(join(tmpdir(), "pi-bg", sessionId), {
-        recursive: true,
-        force: true,
-      });
+      if (outputDir) await rm(outputDir, { recursive: true, force: true });
     }
   },
 );

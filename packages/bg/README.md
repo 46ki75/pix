@@ -60,11 +60,12 @@ unsafe control characters are stripped before storage. The byte cap may split
 a final UTF-8 character.
 
 Logs are stored with owner-only file permissions under
-`os.tmpdir()/pi-bg/<session-id>/<task-id>.log`. They remain after tasks finish
-and after reload so that result paths stay useful. Remove old logs yourself;
-they may contain sensitive command output. Task metadata in tool results and
-completion-message `details` remains in the session, but the live registry is
-not reconstructed from history.
+`os.tmpdir()/pi-bg-<uid>/<session-id>/<task-id>.log`. The private parent is
+namespaced by OS user so that Linux users sharing `/tmp` do not block one another.
+Logs remain after tasks finish and after reload so that result paths stay useful.
+Remove old logs yourself; they may contain sensitive command output. Task metadata
+in tool results and completion-message `details` remains in the session, but the
+live registry is not reconstructed from history.
 
 ## Lifecycle and limits
 
