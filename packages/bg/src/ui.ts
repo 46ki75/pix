@@ -123,6 +123,9 @@ export class TaskListView {
     // Leave room for the title and a task before spending rows on decoration.
     const border = height >= 4 ? this.border.render(width) : [];
     const rows = height - 2 * border.length;
+    // Collapse spacing on short viewports rather than hide the selected task.
+    const margin = rows >= 6 ? [""] : [];
+    const contentRows = rows - 2 * margin.length;
     const legendText =
       this.theme.fg("dim", "Legend: ") +
       legend
@@ -134,14 +137,16 @@ export class TaskListView {
     // On tiny terminals prioritize at least one task row over the full legend.
     const legendLines = wrapTextWithAnsi(legendText, width).slice(
       0,
-      Math.max(0, rows - 4),
+      Math.max(0, contentRows - 4),
     );
-    const listHeight = Math.max(1, rows - legendLines.length - 2);
+    const listHeight = Math.max(1, contentRows - legendLines.length - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
     const content = [
       this.theme.fg("accent", "Background tasks"),
+      ...margin,
       ...this.list.render(width).slice(0, listHeight),
+      ...margin,
       ...legendLines,
       this.theme.fg(
         "dim",

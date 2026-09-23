@@ -127,6 +127,30 @@ test("top and bottom borders follow the viewport width and current theme without
   expect(h.text()).toContain("→ ⏺ abc |");
 });
 
+test.each([1, 40])(
+  "task list has one blank row above and below (%i tasks)",
+  (count) => {
+    const h = harness(
+      Array.from({ length: count }, (_, i) => ({ ...task, id: `task-${i}` })),
+    );
+    for (const width of [40, 120]) {
+      for (const rows of [12, 24]) {
+        h.height(rows);
+        const lines = h.view.render(width).map(stripVTControlCharacters);
+        const title = lines.indexOf("Background tasks");
+        const legend = lines.findIndex((line) => line.startsWith("Legend:"));
+        expect(lines[title + 1]).toBe("");
+        expect(lines[title + 2]).toContain("⏺ task-");
+        expect(legend).toBeGreaterThan(title + 2);
+        expect(lines[legend - 1]).toBe("");
+        expect(lines[legend - 2]).not.toBe("");
+        expect(lines.filter((line) => line === "")).toHaveLength(2);
+        expect(lines.length).toBeLessThanOrEqual(rows);
+      }
+    }
+  },
+);
+
 test("legend covers every color and uses the current theme on each render", () => {
   const h = harness([
     { ...task, status: "finished", outcome: { kind: "exited", code: 0 } },
