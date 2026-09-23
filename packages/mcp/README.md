@@ -9,12 +9,12 @@ required.
 To load this package in an existing Pi installation:
 
 ```sh
-pi --no-extensions -e /absolute/path/to/pix/packages/mcp
+pi -e /absolute/path/to/pix/packages/mcp
 ```
 
-This disables other extensions so another MCP adapter cannot collide with the
-`mcp` tool or flags. Review the configuration and trust requirements below before
-connecting servers.
+Disable any other MCP adapter that would collide with the `mcp` tool or flags,
+but keep any permission-control extensions enabled. Review the configuration
+and trust requirements below before connecting servers.
 
 ## Configuration and trust
 
@@ -50,8 +50,7 @@ contact remote services. Configuration trust is not an OS sandbox.
       "description": "Issue tracking tools",
       "timeout": 960000,
       "startupTimeoutMs": 30000,
-      "catalogTimeoutMs": 30000,
-      "approve": true
+      "catalogTimeoutMs": 30000
     }
   }
 }
@@ -80,7 +79,6 @@ URLs, and HTTP headers.
 | `description` | Discovery extension: optional summary, truncated to 500 characters |
 | `startupTimeoutMs` | pix extension: complete connection/initialization handshake deadline; default 30000 |
 | `catalogTimeoutMs` | pix extension: complete catalog snapshot deadline, including all pages; default 30000 |
-| `approve` | pix policy: require confirmation for every invocation, default `true` |
 | `disabled` | Skip the server's value validation and environment expansion when `true`; unknown fields are still errors |
 
 `command`, `args`, `cwd`, `env` values, `url`, and `headers` values expand `${VAR}`
@@ -107,14 +105,14 @@ reports that no valid servers remain. Disabled entries are omitted, not reported
 as failed connections. Correct the file and reload Pi to retry.
 
 Configuration trust still applies before any valid server is started or its
-metadata exposed. Per-call approval remains independent of configuration errors.
+metadata exposed.
 
 ### Deadlines and migration
 
 All three deadline fields accept integers from 1 through 2,147,483,647 milliseconds
 (Node's timer-safe maximum). Each defaults independently to 30 seconds. Setting
 `"timeout": 960000` permits a 16-minute tool call without lengthening startup or
-discovery. The call clock starts after invocation approval and connection startup;
+discovery. The call clock starts after connection startup;
 progress does not reset it. Catalog deadlines cover all pages of one snapshot;
 a subsequent list-change refresh starts a new deadline.
 
@@ -135,14 +133,22 @@ Upstream proxies and servers may still impose their own limits.
 The 120-second call ceiling is removed. This is a configuration migration, not a
 promise to finish a remote operation within its deadline.
 
-### Invocation approval
+### Tool-call control
 
-Tool invocation requires confirmation independently of config trust. In headless
-mode, calls fail closed unless the reviewed configuration explicitly sets
-`"approve": false` for that server. Native calls still pass through Pi's normal
-tool hooks. Server annotations never grant permission. Child stderr and raw SDK
-errors are not printed because they can contain credentials; debug a failing
-server separately in a trusted environment.
+Like Pi's built-in tools, loaded MCP tools execute without adapter-specific
+permission prompts in both interactive and headless sessions. Native calls pass
+through Pi's normal `tool_call` and `tool_result` hooks. For approvals or access
+policies, install a Pi extension that handles `tool_call` so it can manage MCP
+and other tools together. Server annotations do not bypass those hooks.
+Configuration trust above is separate: it authorizes startup, not individual calls.
+
+**Migration from 0.0.2:** Remove the server-level `approve` field. Entries that
+still contain it are rejected with migration guidance rather than silently
+ignoring an existing policy. If you relied on `approve: true`, configure an
+external permission extension before removing it.
+
+Child stderr and raw SDK errors are not printed because they can contain
+credentials; debug a failing server separately in a trusted environment.
 
 ## Discovery and execution
 
@@ -169,10 +175,9 @@ Selection is tied to the current schema fingerprint: use `search`/`load`, not
 Pi's generic tool-name toggles, to enable a native MCP tool.
 
 Native names include a readable server/tool prefix and a deterministic hash to
-avoid normalization collisions. Independent, preapproved native calls can run
-concurrently. Calls requiring confirmation run sequentially to avoid overlapping
-approval dialogs. Discovered tools stay active until session shutdown or a server
-catalog change.
+avoid normalization collisions. Independent native calls can run concurrently;
+permission extensions must coordinate any shared approval UI. Discovered tools
+stay active until session shutdown or a server catalog change.
 Changed and removed definitions are withdrawn; changed tools require loading
 again. Unsupported input schemas or metadata, name collisions, and task-only
 tools are counted as `unsupportedTools` in discovery results. An unsupported

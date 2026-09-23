@@ -10,6 +10,7 @@ import {
   type AssistantMessage,
   type JsonObject,
   type Tool,
+  type ToolCall,
 } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
@@ -32,7 +33,7 @@ afterEach(async () => {
 async function setup(
   options: {
     trust?: boolean;
-    approve?: boolean;
+    extension?: (pi: ExtensionAPI) => void;
     broken?: boolean;
     invalidSchema?: boolean;
     legacySchema?: boolean;
@@ -52,7 +53,6 @@ async function setup(
   const definition = {
     command: process.execPath,
     args: [fixture],
-    approve: options.approve ?? false,
     timeout: 2000,
     startupTimeoutMs: 2000,
     catalogTimeoutMs: 2000,
@@ -98,6 +98,7 @@ async function setup(
     extensionFactories: [
       (pi) => {
         unrelatedApi = pi;
+        options.extension?.(pi);
       },
     ],
     noSkills: true,
@@ -179,7 +180,7 @@ async function setup(
       },
     });
   }
-  async function requestTools() {
+  async function requestTools(toolCalls: ToolCall[] = []) {
     let observed: Tool[] | undefined;
     session.agent.state.model = {
       id: "fixture",
@@ -195,10 +196,12 @@ async function setup(
     };
     session.agent.getApiKey = () => "fixture-not-a-credential";
     session.agent.streamFunction = (model, context) => {
+      const callTools = observed === undefined && toolCalls.length > 0;
+      const stopReason = callTools ? "toolUse" : "stop";
       observed = getCurrentTools(context.messages);
       const message: AssistantMessage = {
         role: "assistant",
-        content: [{ type: "text", text: "fixture" }],
+        content: callTools ? toolCalls : [{ type: "text", text: "fixture" }],
         api: model.api,
         provider: model.provider,
         model: model.id,
@@ -210,11 +213,11 @@ async function setup(
           totalTokens: 0,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
-        stopReason: "stop",
+        stopReason,
         timestamp: Date.now(),
       };
       const stream = createAssistantMessageEventStream();
-      stream.push({ type: "done", reason: "stop", message });
+      stream.push({ type: "done", reason: stopReason, message });
       stream.end();
       return stream;
     };
@@ -307,7 +310,7 @@ test.each([false, true])(
   },
 );
 
-test("headless sessions do not trust a bare project config or implicitly approve calls", async () => {
+test("headless sessions do not trust a bare project config", async () => {
   const untrusted = await setup({ trust: false });
   expect((await untrusted.discover({ action: "list" })).status).toContain(
     "not trusted",
@@ -317,15 +320,101 @@ test("headless sessions do not trust a bare project config or implicitly approve
       .getAllTools()
       .filter((tool) => tool.name.startsWith("mcp_")),
   ).toEqual([]);
-  const gated = await setup({ approve: true });
-  const found = await gated.discover({ action: "search", query: "echo" });
-  expect(
-    gated.session.getToolDefinition(found.items[0]?.name ?? "")?.executionMode,
-  ).toBe("sequential");
-  await expect(
-    gated.call(found.items[0]?.name ?? "", { message: "denied" }),
-  ).rejects.toThrow("approval required");
 });
+
+test.each([false, true])(
+  "trusted native calls need no adapter approval (interactive=%s)",
+  async (interactive) => {
+    const { session, discover, call } = await setup();
+    const confirm = vi.fn(async () => false);
+    if (interactive)
+      session.extensionRunner.setUIContext(
+        { ...session.extensionRunner.getUIContext(), confirm },
+        "tui",
+      );
+    expect(session.extensionRunner.hasUI()).toBe(interactive);
+    const found = await discover({ action: "search", query: "echo" });
+    const name = found.items[0]?.name ?? "";
+    expect(session.getToolDefinition(name)?.executionMode).toBe("parallel");
+    const message = "x".repeat(9000);
+    expect((await call(name, { message })).content[0]).toMatchObject({
+      text: expect.stringContaining(message),
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["allow", "block", "error"] as const)(
+  "external Pi policy can %s native MCP calls through normal tool hooks",
+  async (policy) => {
+    const name = toolName("fixture", "change");
+    const onCall = vi.fn();
+    const onResult = vi.fn();
+    const { session, discover, requestTools } = await setup({
+      extension(pi) {
+        pi.on("tool_call", (event) => {
+          if (event.toolName !== name) return;
+          onCall(event);
+          if (policy === "error") throw new Error("Fixture policy failed");
+          if (policy === "block")
+            return { block: true, reason: "Blocked by fixture policy" };
+        });
+        pi.on("tool_result", (event) => {
+          if (event.toolName === name) onResult(event);
+        });
+      },
+    });
+    await discover({ action: "load", names: [name] });
+    await requestTools([
+      {
+        type: "toolCall",
+        id: "policy-call",
+        name,
+        arguments: { message: "rename" },
+      },
+    ]);
+    expect(onCall).toHaveBeenCalledExactlyOnceWith({
+      type: "tool_call",
+      toolName: name,
+      toolCallId: "policy-call",
+      input: { message: "rename" },
+    });
+    const result = session.agent.state.messages.find(
+      (message) =>
+        message.role === "toolResult" && message.toolCallId === "policy-call",
+    );
+    expect(result).toMatchObject({
+      isError: policy !== "allow",
+      content: [
+        {
+          type: "text",
+          text: expect.stringContaining(
+            policy === "allow"
+              ? "rename"
+              : policy === "block"
+                ? "Blocked by fixture policy"
+                : "Fixture policy failed",
+          ),
+        },
+      ],
+    });
+    // The change tool renames echo, so a blocked call must leave it unchanged.
+    if (policy === "allow") {
+      expect(onResult).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ toolName: name, isError: false }),
+      );
+      await expect
+        .poll(async () => (await discover({ action: "list" })).items)
+        .toContainEqual(expect.objectContaining({ tool: "echo_v2" }));
+    } else {
+      // Pi's tool_result hook runs only for executed calls, not policy denials.
+      expect(onResult).not.toHaveBeenCalled();
+      expect((await discover({ action: "list" })).items).toContainEqual(
+        expect.objectContaining({ tool: "echo" }),
+      );
+    }
+  },
+);
 
 test("one failed server does not hide healthy tools or leak transport errors", async () => {
   const { discover } = await setup({ broken: true });
@@ -337,7 +426,7 @@ test("one failed server does not hide healthy tools or leak transport errors", a
   expect(JSON.stringify(result)).not.toContain("SECRET");
 });
 
-test("configuration failures are visible while healthy tools remain gated and usable", async () => {
+test("configuration failures are visible while healthy tools remain trust-gated and usable", async () => {
   vi.stubEnv("PIX_FIXTURE_UNSET_SECRET", undefined);
   const extraServers = {
     invalid: { command: "SECRET-command", timeout: 0 },
@@ -372,11 +461,6 @@ test("configuration failures are visible while healthy tools remain gated and us
   expect(blocked.status).toContain("not trusted");
   expect(blocked.servers).toEqual([]);
   expect(blocked.items).toEqual([]);
-  const approved = await setup({ extraServers, approve: true });
-  const gated = await approved.discover({ action: "search", query: "echo" });
-  await expect(
-    approved.call(gated.items[0]?.name ?? "", { message: "denied" }),
-  ).rejects.toThrow("approval required");
 });
 
 test("invalid-only configuration and root errors have safe, distinct discovery results", async () => {
