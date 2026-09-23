@@ -37,22 +37,16 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | --- | --- |
 | `mise run setup` | Install locked dependencies and Git hooks |
 | `mise run test` | Run all Vitest projects once |
-| `mise run test --project hello` | Run one test project |
+| `mise run test --project pix-websearch` | Run one test project |
 | `mise run test:watch` | Watch tests |
 | `mise run typecheck` | Check root configuration and all packages |
 | `mise run lint` | Lint tracked TypeScript, JavaScript, and JSON files |
 | `mise run fmt` | Format those files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run hello:dev` | Launch Pi with the starter extension |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
-
-`packages/hello` contains a minimal `/hello [name]` command. Run
-`mise run hello:dev`, then enter `/hello Pi`. Restart that command after editing
-the extension. Its integration test loads the actual Pi package manifest and
-invokes the command without making model requests.
 
 [`@ikuma.cloud/pix-websearch`](packages/websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run

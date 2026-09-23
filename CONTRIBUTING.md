@@ -32,9 +32,9 @@ explicitly with repository-root-relative paths; repeated `--file` arguments are
 supported, including from package directories:
 
 ```sh
-mise run fmt --file packages/hello/src/index.ts
-mise run fmt-check --file packages/hello/src/index.ts
-mise run lint --file packages/hello/src/index.ts
+mise run fmt --file packages/websearch/src/index.ts
+mise run fmt-check --file packages/websearch/src/index.ts
+mise run lint --file packages/websearch/src/index.ts
 ```
 
 Verify that the expected jobs actually run; an empty selection is a skip, not
@@ -47,7 +47,7 @@ mise explicitly, so make mise available on your editor's Git PATH and run
 
 ## Adding an extension
 
-Use `packages/hello` as the smallest working example:
+Use `packages/websearch` as a reference for package layout and Pi tool registration:
 
 1. Create `packages/<name>/package.json` with a unique name, `type: "module"`, and
    `pi.extensions` pointing to `./src/index.ts`. Keep new packages private while
