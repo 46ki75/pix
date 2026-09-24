@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.5 targets macOS and Linux and is developed against Pi 0.87.1.
+Version 0.0.6 targets macOS and Linux and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -94,9 +94,12 @@ output or kill a running task after confirmation, which defaults to No.
 
 The output viewer starts with a full-width separator above its header. It shows
 the last 8 KiB between scroll-indicator dividers and refreshes once per second
-while the task runs. Paired up/down arrows appear in each scroll divider
-only when the displayed tail has more content in that direction. Narrow terminals
-use one arrow; short viewports reduce metadata and decoration to preserve output.
+while the task runs. Like Pi's input editor, the dividers show centered counts
+such as `── ↑ 4 more ──` and `── ↓ 12 more ──` when content is hidden in that
+direction. Counts refer to wrapped display rows within the loaded tail, not the
+entire log file. Narrow terminals omit `more`, then the count, keeping the arrow
+rather than showing a partial number. Short viewports reduce metadata and
+decoration to preserve output.
 Views reserve six rows for the indicator, Pi's spacer and default footer, and one
 transcript row. Below nine terminal rows, Pi's minimum editor height can still
 clip the surrounding indicator or footer.
@@ -168,9 +171,9 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.5.
+- Windows and reload survival are not supported in v0.0.6.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.5` and publish the package from
+After merging the reviewed changes, tag `bg-v0.0.6` and publish the package from
 `packages/pix-bg` manually. The repository has no automated publish workflow.
