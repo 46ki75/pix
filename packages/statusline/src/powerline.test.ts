@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ANSI } from "./ansi.ts";
 import { POWERLINE, powerline } from "./powerline.ts";
 
@@ -24,6 +24,45 @@ test("accepts a custom foreground color", () => {
       { text: "main", background: "blue", foreground: "brightWhite" },
     ]),
   ).toContain(`${ANSI.bg.blue}${ANSI.fg.brightWhite} main `);
+});
+
+test("accepts foreground callbacks without recoloring caps or transitions", () => {
+  const foreground = vi.fn(
+    (text: string) => `${ANSI.fg.white}${text}${ANSI.reset.fg}`,
+  );
+  const result = powerline([
+    { text: "directory", background: "blue", foreground },
+    { text: "main", background: "brightBlue", foreground },
+  ]);
+  expect(foreground).toHaveBeenCalledWith(" directory ");
+  expect(foreground).toHaveBeenCalledWith(" main ");
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.white} directory ${ANSI.reset.fg}` +
+      `${ANSI.fg.blue}${ANSI.bg.brightBlue}${ANSI.bg.brightBlue}${ANSI.fg.white} main ${ANSI.reset.fg}` +
+      `${ANSI.reset.bg}${ANSI.fg.brightBlue}${ANSI.reset.fg}`,
+  );
+});
+
+test("applies foreground callbacks after sanitizing and truncating labels", () => {
+  const foreground = vi.fn(
+    (text: string) => `${ANSI.fg.white}${text}${ANSI.reset.fg}`,
+  );
+  const expected = " direc... ";
+  const result = powerline(
+    [
+      {
+        text: `${ANSI.fg.red}directory${ANSI.reset.all}\r\nlabel\tvalue`,
+        background: "blue",
+        foreground,
+      },
+    ],
+    visibleWidth(expected),
+  );
+  expect(foreground).toHaveBeenCalledExactlyOnceWith(" direc... ");
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.white} direc... ${ANSI.reset.fg}${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.reset.fg}`,
+  );
+  expect(visibleWidth(result)).toBe(visibleWidth(expected));
 });
 
 test("connects segments using the previous background as the arrow foreground", () => {

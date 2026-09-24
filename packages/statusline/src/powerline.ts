@@ -11,7 +11,7 @@ export const POWERLINE = {
 export interface PowerlineSegment {
   text: string;
   background: TerminalColor;
-  foreground?: TerminalColor;
+  foreground?: TerminalColor | ((text: string) => string);
 }
 
 export function powerline(
@@ -49,10 +49,12 @@ export function powerline(
           ? " ".repeat(remaining)
           : ` ${stripVTControlCharacters(truncateToWidth(next ? `${text} ...` : text, remaining - 2, "...", true))} `;
     }
+    // Apply foreground styling last so label sanitization does not strip theme colors.
     result +=
       colorCode("bg", segment.background) +
-      colorCode("fg", segment.foreground ?? "black") +
-      content;
+      (typeof segment.foreground === "function"
+        ? segment.foreground(content)
+        : colorCode("fg", segment.foreground ?? "black") + content);
 
     if (showNext) {
       result +=

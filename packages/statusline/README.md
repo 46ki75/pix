@@ -55,16 +55,24 @@ messages from other extensions. The directory segment uses:
   Linked worktrees use their own root directory name.
 
 A blank row separates the model/usage line from the directory/branch line.
-The directory and branch use rounded Powerline segments with black text:
-`#d9d3cc` for the directory, followed by `#efecea` for the branch prefixed with
-``. The optional session name appears beside the branch, separated by `•`.
-If neither is present, the branch segment is omitted.
+The directory/branch row uses rounded Powerline segments with fixed RGB colors:
 
-When space allows, a separate `#f7f5f4` background segment fills the rest of the
-row after another ``, ending in `` at the right edge. This filler is omitted on
-narrow terminals rather than shortening labels. Long labels are truncated before
-the final space and cap. These fixed backgrounds require a truecolor terminal
-for exact colors and do not follow Pi's theme.
+| Segment | Background | Foreground |
+| --- | --- | --- |
+| Directory | `#bda68b` | `#40444c` |
+| Branch/session | `#c6b5a2` | `#393e46` |
+| Filler | `#cabfb2` | `#31353a` |
+
+The branch is prefixed with ``. The optional session name appears beside it,
+separated by `•`. If neither is present, the branch segment is omitted.
+Foreground colors apply to labels and icons; caps and separators match the
+segment backgrounds.
+
+When space allows, the filler segment fills the rest of the row after another
+``, ending in `` at the right edge. This filler is omitted on narrow terminals
+rather than shortening labels. Long labels are truncated before the final space
+and cap. These fixed foreground and background colors require a truecolor
+terminal for exact colors and do not follow Pi's theme.
 
 Use a Nerd Font in your terminal to display these icons. Git detection runs once
 at session startup; use `/reload` after initializing or removing a repository.
@@ -150,8 +158,8 @@ background resets restore terminal defaults, not an enclosing theme color;
 reapply theme colors to subsequent segments when needed. Use `reset.all` only
 when you also want to clear other styling.
 
-For fixed RGB colors, `colorCode("fg", "#d9d3cc")` and
-`colorCode("bg", "#d9d3cc")` from `src/ansi.ts` emit 24-bit truecolor sequences.
+For fixed RGB colors, `colorCode("fg", "#40444c")` and
+`colorCode("bg", "#bda68b")` from `src/ansi.ts` emit 24-bit truecolor sequences.
 The `TerminalColor` type accepts named ANSI colors or six-digit `#RRGGBB` hex
 colors; invalid hex values throw an error. Hex colors are independent of the
 terminal palette and Pi's theme; no 256-color fallback is applied.
@@ -165,9 +173,9 @@ rounded ends and arrow separators. Supply all connected segments in one call:
 import { powerline } from "./powerline.ts";
 
 const bar = powerline([
-  { text: " pix/packages/statusline", background: "#d9d3cc" },
-  { text: " main", background: "#efecea" },
-  { text: "", background: "#f7f5f4" },
+  { text: " pix/packages/statusline", background: "#bda68b", foreground: "#40444c" },
+  { text: " main", background: "#c6b5a2", foreground: "#393e46" },
+  { text: "", background: "#cabfb2", foreground: "#31353a" },
 ]);
 ```
 
@@ -179,11 +187,15 @@ fills the available space. Without a width, labels are not padded to fill a row
 or truncated.
 
 Background colors are required; foreground defaults to `black`. Both accept
-named ANSI colors or six-digit hex colors, including mixed palettes. Segments
-have space padding on both sides, except at extremely narrow widths. Embedded
-ANSI styling is stripped, and line breaks and tabs become spaces, keeping the
-segment's background intact. The renderer restores terminal-default foreground
-and background colors afterward.
+named ANSI colors or six-digit hex colors, including mixed palettes. A foreground
+callback can apply theme colors, such as `(text) => theme.fg("text", text)` using
+the footer factory's `theme`. It runs after padding, sanitization, and truncation,
+and must preserve the visible text and background color.
+
+Segments have space padding on both sides, except at extremely narrow widths.
+Embedded ANSI styling is stripped from labels, and line breaks and tabs become
+spaces, keeping the segment's background intact. The renderer restores
+terminal-default foreground and background colors afterward.
 
 Use a Nerd Font for the ``, ``, and `` glyphs. The renderer returns a string
 that fits the supplied width, preserving both rounded caps whenever at least
