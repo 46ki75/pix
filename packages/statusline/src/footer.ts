@@ -107,17 +107,26 @@ export function createFooter(
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
       const modelText = model
-        ? `󱘖 ${model.provider}  ${model.id} (${windowText})${model.reasoning ? ` ${THINKING_ICONS[thinking]} ${thinking}` : ""}`
+        ? ` ${model.id} (${windowText})${model.reasoning ? ` ${THINKING_ICONS[thinking]} ${thinking}` : ""}`
         : `no-model (${windowText})`;
-      const left = theme.fg("dim", singleLine(modelText));
+      let left = theme.fg(
+        "dim",
+        singleLine(model ? `󱘖 ${model.provider} ${modelText}` : modelText),
+      );
       // Only the bar changes to warning colors; the icon and percentage stay bright green.
-      const right = [
-        theme.fg("dim", cacheText),
+      const contextMetrics = [
         `${ANSI.fg.brightGreen}󰓅 ${contextText}${ANSI.reset.fg}`,
         formatContextBar(percent),
       ]
         .filter(Boolean)
         .join(" ");
+      let right = `${theme.fg("dim", cacheText)} ${contextMetrics}`;
+      if (model && visibleWidth(left) + 2 + visibleWidth(right) > width) {
+        left = theme.fg("dim", singleLine(modelText));
+      }
+      if (visibleWidth(left) + 2 + visibleWidth(right) > width) {
+        right = contextMetrics;
+      }
       const padding = " ".repeat(
         Math.max(2, width - visibleWidth(left) - visibleWidth(right)),
       );

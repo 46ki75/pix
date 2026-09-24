@@ -94,8 +94,10 @@ This is a starting point, not an exact copy of Pi's built-in footer:
   Unknown context-window sizes are shown as `(?)` beside the model.
 - Cache-hit rate uses the latest recorded assistant prompt. Streaming usage
   appears once recorded.
-- Narrow terminals truncate the right end of each row, potentially hiding
-  usage metrics.
+- When the first row does not fit, the provider name and icon are hidden first,
+  then the cache-hit rate and its icon. Both return when space allows. If the row
+  still does not fit, its right end is truncated, potentially hiding context
+  metrics. Other rows truncate as needed.
 - RPC, JSON, and print modes are unchanged. Only one extension can own the footer;
   do not combine this with another `setFooter()` extension.
 
