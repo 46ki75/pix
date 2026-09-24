@@ -284,9 +284,9 @@ test.each(["h", "q", "\x1b[104u", "\x1b[113u", "\x1b", "\x03"])(
         ["\x1b[106u", "\x1b[107u"],
       ] as const) {
         view.handleInput(down);
-        expect(view.render(80)[2]?.trimEnd()).toBe("line 1 界");
+        expect(view.render(80)[4]?.trimEnd()).toBe("line 1 界");
         view.handleInput(up);
-        expect(view.render(80)[2]?.trimEnd()).toBe("line 0 界");
+        expect(view.render(80)[4]?.trimEnd()).toBe("line 0 界");
       }
       expect(view.render(120).at(-1)).toBe(
         " up k down j scroll · pageUp pageDown page · home top · end follow · escape ctrl+c h q back",
@@ -357,17 +357,17 @@ test("viewer honors remapped and disabled scroll, jump, and cancel actions", () 
     ])
       view.handleInput(key);
     expect(done).not.toHaveBeenCalled();
-    expect(view.render(120)[2]?.trimEnd()).toBe("line 15");
+    expect(view.render(120)[4]?.trimEnd()).toBe("line 18");
     for (const [key, line] of [
       ["t", 0],
       ["s", 1],
       ["w", 0],
-      ["d", 5],
+      ["d", 2],
       ["u", 0],
-      ["b", 15],
+      ["b", 18],
     ] as const) {
       view.handleInput(key);
-      expect(view.render(120)[2]?.trimEnd()).toBe(`line ${line}`);
+      expect(view.render(120)[4]?.trimEnd()).toBe(`line ${line}`);
     }
     keys.setUserBindings(
       Object.fromEntries(Object.keys(bindings).map((action) => [action, []])),
@@ -388,7 +388,7 @@ test("viewer honors remapped and disabled scroll, jump, and cancel actions", () 
     ])
       view.handleInput(key);
     expect(done).not.toHaveBeenCalled();
-    expect(view.render(120)[2]?.trimEnd()).toBe("line 15");
+    expect(view.render(120)[4]?.trimEnd()).toBe("line 18");
     keys.setUserBindings({ "tui.select.cancel": "z" });
     expect(view.render(120).at(-1)).toContain(" z back");
     view.handleInput("z");

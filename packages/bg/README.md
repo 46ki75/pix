@@ -78,10 +78,14 @@ from the task rows by a blank line. Short viewports reduce spacing and prioritiz
 task rows. Select a task to view output or kill a running task after confirmation,
 which defaults to No.
 
-The output viewer shows the last 8 KiB and refreshes once per second while the
-task runs. Jumping to the bottom resumes following the tail. Read the log file for
-older output. No global shortcut is registered. The viewer is interactive-only;
-tools also work in RPC, JSON, and print modes.
+The output viewer starts with a full-width separator above its header. It shows
+the last 8 KiB between scroll-indicator dividers and refreshes once per second
+while the task runs. Paired up/down arrows appear in each scroll divider
+only when the displayed tail has more content in that direction. Narrow terminals
+use one arrow; short viewports reduce metadata and decoration to preserve output.
+Jumping to the bottom resumes following the tail. Read the log file for older
+output. No global shortcut is registered. The viewer is interactive-only; tools
+also work in RPC, JSON, and print modes.
 
 ### Keybindings
 

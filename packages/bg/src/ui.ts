@@ -277,36 +277,67 @@ export class OutputView {
     this.renderRequest();
   }
 
+  private renderBorder(
+    width: number,
+    arrow: "↑" | "↓",
+    canScroll: boolean,
+  ): string {
+    const rule = (length: number) =>
+      this.theme.fg("border", "─".repeat(length));
+    if (!canScroll) return rule(width);
+    const marker = this.theme.fg("muted", arrow);
+    if (width < 3) return marker + rule(width - 1);
+    if (width < 10) {
+      const left = Math.floor((width - 3) / 2);
+      return `${rule(left)} ${marker} ${rule(width - 3 - left)}`;
+    }
+    return `${rule(2)} ${marker} ${rule(width - 10)} ${marker} ${rule(2)}`;
+  }
+
   render(width: number): string[] {
     if (this.disposed || width < 1) return [];
     const rows = Math.max(1, this.height());
-    const content = this.scroll.render(Math.max(1, width));
+    // Drop metadata and hints on short screens before sacrificing output rows.
+    const header =
+      rows >= 5
+        ? [
+            this.theme.fg("border", "─".repeat(width)),
+            this.theme.fg("accent", statusLine(this.task())),
+          ]
+        : [];
+    if (rows >= 7)
+      header.push(
+        this.theme.fg("muted", `Last 8 KiB: ${this.task().outputPath}`),
+      );
+    const hints =
+      rows >= 6
+        ? [
+            renderHint(this.theme, this.keys, [
+              [["tui.select.up", "tui.select.down"], "scroll"],
+              [["tui.select.pageUp", "tui.select.pageDown"], "page"],
+              [["tui.altScreen.top"], "top"],
+              [["tui.altScreen.bottom"], "follow"],
+              [["tui.select.cancel"], "back"],
+            ]),
+          ]
+        : [];
+    const framed = rows >= 3;
+    const content = this.scroll.render(width);
     // Clip explicitly so this works in both regular and fullscreen Pi layouts.
     this.scroll.updateLayout(
       content.length,
-      Math.max(1, rows - 3),
+      rows - header.length - hints.length - (framed ? 2 : 0),
       this.renderRequest,
     );
+    const start = this.scroll.scrollTop;
+    const end = start + this.scroll.viewportHeight;
     return [
-      this.theme.fg("accent", truncateToWidth(statusLine(this.task()), width)),
-      this.theme.fg(
-        "muted",
-        truncateToWidth(`Last 8 KiB: ${this.task().outputPath}`, width),
-      ),
-      ...content.slice(
-        this.scroll.scrollTop,
-        this.scroll.scrollTop + this.scroll.viewportHeight,
-      ),
-      renderHint(this.theme, this.keys, [
-        [["tui.select.up", "tui.select.down"], "scroll"],
-        [["tui.select.pageUp", "tui.select.pageDown"], "page"],
-        [["tui.altScreen.top"], "top"],
-        [["tui.altScreen.bottom"], "follow"],
-        [["tui.select.cancel"], "back"],
-      ]),
-    ]
-      .slice(0, rows)
-      .map((line) => truncateToWidth(line, width));
+      ...header,
+      ...(framed ? [this.renderBorder(width, "↑", start > 0)] : []),
+      ...content.slice(start, end),
+      ...(framed ? [this.renderBorder(width, "↓", end < content.length)] : []),
+      ...hints,
+    ].map((line) => truncateToWidth(line, width));
   }
 
   invalidate(): void {
