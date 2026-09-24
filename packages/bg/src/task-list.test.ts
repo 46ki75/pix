@@ -109,6 +109,149 @@ test("task rows and output headers match the compact format", () => {
   }
 });
 
+test("task names align exit codes and durations like the requested example", () => {
+  const h = harness([
+    {
+      ...task,
+      id: "a2cdec80d7cc",
+      name: "runtime-smoke-test",
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+    },
+    {
+      ...task,
+      id: "5f2e2ed719c9",
+      name: "computation-smoke-test",
+      status: "finished",
+      endedAt: 100,
+      outcome: { kind: "exited", code: 0 },
+    },
+  ]);
+  const rows = h.view
+    .render(80)
+    .map(stripVTControlCharacters)
+    .filter((line) => line.includes(""));
+  expect(rows.map((line) => line.trimEnd())).toEqual([
+    "→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s",
+    "   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s",
+  ]);
+});
+
+test("task columns align by terminal cells across Unicode names, outcomes, and resizing", () => {
+  const cases: [string, Outcome, string, number][] = [
+    ["界".repeat(40), { kind: "exited", code: 0 }, "󰐦 0", 100],
+    ["\x1b[41m🙂e\u0301\x1b[0m", { kind: "exited", code: 137 }, "󰐦 137", 2000],
+    [
+      "e\u0301".repeat(70),
+      { kind: "signaled", code: 137, signal: "SIGKILL" },
+      "󰐦 137 (SIGKILL)",
+      100000,
+    ],
+    ["short", { kind: "timed_out" }, "timed out", 300],
+  ];
+  const tasks: Task[] = cases.map(([name, outcome, , endedAt], i) => ({
+    ...task,
+    id: String(i).padStart(12, "0"),
+    name,
+    status: "finished",
+    outcome,
+    endedAt,
+  }));
+  const h = harness(tasks);
+  for (const width of [120, 60, 80]) {
+    const rendered = h.view.render(width);
+    const rows = rendered
+      .map(stripVTControlCharacters)
+      .filter((line) => line.includes(""));
+    expect(rows).toHaveLength(4);
+    const resultColumns = cases.map(([, , result], i) => {
+      const row =
+        rows.find((line) => line.includes(String(i).padStart(12, "0"))) ?? "";
+      expect(row).toContain(result);
+      return visibleWidth(row.slice(0, row.indexOf(result)));
+    });
+    expect(new Set(resultColumns).size).toBe(1);
+    expect(
+      new Set(rows.map((row) => visibleWidth(row.slice(0, row.indexOf("󰔛")))))
+        .size,
+    ).toBe(1);
+    expect(rows.every((row) => /󰔛 \d+\.\ds$/.test(row.trimEnd()))).toBe(true);
+    expect(rendered.every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(rendered.join("\n")).not.toContain("\x1b[41m");
+  }
+});
+
+test("column padding gives way to task details when the viewport is too narrow", () => {
+  const h = harness([
+    {
+      ...task,
+      id: "a2cdec80d7cc",
+      name: "short",
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+    },
+    {
+      ...task,
+      id: "5f2e2ed719c9",
+      name: "long name".repeat(20),
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "failed", message: "long error ".repeat(20) },
+    },
+  ]);
+  for (const width of [1, 12, 40, 80]) {
+    const lines = h.view.render(width);
+    expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+    if (width >= 40) {
+      const row = lines
+        .map(stripVTControlCharacters)
+        .find((line) => line.includes("a2cdec80d7cc"));
+      expect(row).toContain("󰐦 0 󰔛 0.0s");
+    }
+  }
+});
+
+test("columns include offscreen names and refresh without changing selection", () => {
+  const tasks: Task[] = Array.from({ length: 15 }, (_, i) => ({
+    ...task,
+    id: String(i).padStart(12, "0"),
+    name: i === 0 ? "computation-smoke-test" : "runtime",
+    status: "finished",
+    endedAt: 0,
+    outcome: { kind: "exited", code: 0 },
+  }));
+  const h = harness(tasks);
+  h.height(10);
+  const selected = () =>
+    h.view
+      .render(80)
+      .map(stripVTControlCharacters)
+      .find((line) => line.startsWith("→")) ?? "";
+  const column = (line: string) =>
+    visibleWidth(line.slice(0, line.indexOf("󰐦")));
+  const initial = selected();
+  for (let i = 0; i < 14; i++) h.view.handleInput("j");
+  const last = selected();
+  expect(last).toContain("→  000000000000  computation-smoke-test");
+  expect(column(last)).toBe(column(initial));
+  h.tasks([
+    ...tasks,
+    {
+      ...task,
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+      id: "ffffffffffff",
+      name: "an even longer background task name",
+    },
+  ]);
+  const updated = selected();
+  expect(updated).toContain("→  000000000000  computation-smoke-test");
+  expect(column(updated)).toBeGreaterThan(column(last));
+});
+
 const outcomes: [Outcome, number, string, string][] = [
   [{ kind: "exited", code: 0 }, 32, "", "󰐦 0"],
   [{ kind: "exited", code: 3 }, 31, "", "󰐦 3"],

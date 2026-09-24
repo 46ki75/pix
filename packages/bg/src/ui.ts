@@ -68,29 +68,50 @@ function statusIcon(theme: StatusTheme, color: StatusColor): string {
     : theme.fg(color, icon);
 }
 
+type TaskColumns = {
+  prefix: number;
+  nameEnd: number;
+  result: number;
+  time: number;
+};
+
+function taskResult(task: Task): string {
+  const outcome = task.outcome;
+  return outcome?.kind === "exited"
+    ? `󰐦 ${outcome.code}`
+    : outcome?.kind === "signaled"
+      ? `󰐦 ${outcome.code} (${outcome.signal})`
+      : outcome
+        ? outcomeText(outcome)
+        : task.status;
+}
+
+function padToWidth(text: string, width: number): string {
+  return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+}
+
 function renderTaskLine(
   theme: StatusTheme,
   task: Task,
   width: number,
   color: "accent" | "text",
+  now = Date.now(),
+  columns?: TaskColumns,
 ): string {
   const icon = `${statusIcon(theme, statusColor(task))} `;
-  const outcome = task.outcome;
-  const result =
-    outcome?.kind === "exited"
-      ? `󰐦 ${outcome.code}`
-      : outcome?.kind === "signaled"
-        ? `󰐦 ${outcome.code} (${outcome.signal})`
-        : outcome
-          ? outcomeText(outcome)
-          : task.status;
   const prefix = `${task.id}  `;
-  const suffix = ` ${result} 󰔛 ${duration(task)}`;
+  const tailWidth = columns ? columns.result + columns.time + 2 : 0;
+  // Drop padding before truncating details when the shared fixed columns cannot fit.
+  const aligned =
+    columns && width >= columns.prefix + tailWidth ? columns : undefined;
+  const result = padToWidth(taskResult(task), aligned?.result ?? 0);
+  const suffix = ` ${result} 󰔛 ${duration(task, now)}`;
   // Reserve the ID, outcome, and duration before budgeting a long name in either view.
-  const name = truncateToWidth(
-    oneLine(task.name),
-    Math.max(0, width - visibleWidth(icon + prefix + suffix)),
-  );
+  const nameWidth = aligned
+    ? Math.min(aligned.nameEnd, width - tailWidth) - visibleWidth(icon + prefix)
+    : Math.max(0, width - visibleWidth(icon + prefix + suffix));
+  const truncated = truncateToWidth(oneLine(task.name), nameWidth);
+  const name = aligned ? padToWidth(truncated, nameWidth) : truncated;
   // Pi's fg() does not restore an enclosing color after a nested reset.
   // Style the text separately so the icon keeps its status color.
   return truncateToWidth(
@@ -175,10 +196,28 @@ export class TaskListView {
   private createList(maxVisible: number): SelectList {
     const selected = this.list?.getSelectedItem()?.value;
     const tasks = this.tasks().toReversed();
+    const now = Date.now();
+    const columns: TaskColumns = { prefix: 0, nameEnd: 0, result: 0, time: 0 };
+    // Measure all tasks at one instant so columns stay stable while scrolling.
+    for (const task of tasks) {
+      const prefix = visibleWidth(
+        `${statusIcons[statusColor(task)]} ${task.id}  `,
+      );
+      columns.prefix = Math.max(columns.prefix, prefix);
+      columns.nameEnd = Math.max(
+        columns.nameEnd,
+        prefix + visibleWidth(oneLine(task.name)),
+      );
+      columns.result = Math.max(columns.result, visibleWidth(taskResult(task)));
+      columns.time = Math.max(
+        columns.time,
+        visibleWidth(`󰔛 ${duration(task, now)}`),
+      );
+    }
     const byId = new Map(tasks.map((task) => [task.id, task]));
     this.ids = tasks.map((task) => task.id);
     const list = new SelectList(
-      tasks.map((task) => ({ value: task.id, label: statusLine(task) })),
+      tasks.map((task) => ({ value: task.id, label: statusLine(task, now) })),
       maxVisible,
       {
         selectedPrefix: (text) => this.theme.fg("accent", text),
@@ -196,6 +235,8 @@ export class TaskListView {
             task,
             maxWidth,
             isSelected ? "accent" : "text",
+            now,
+            columns,
           );
         },
       },
@@ -435,8 +476,9 @@ export class TaskUI {
 
   private async choose(
     ctx: ExtensionCommandContext,
-    title: string,
+    task: Task,
     options: string[],
+    prompt = "",
   ): Promise<string | undefined> {
     try {
       return await ctx.ui.custom<string | undefined>(
@@ -473,7 +515,7 @@ export class TaskUI {
               handleListInput(list, options, keys, data);
               tui.requestRender();
             },
-            render(width: number) {
+            render: (width: number) => {
               if (closed || width < 1) return [];
               const borders = border.render(width);
               const rows =
@@ -484,8 +526,15 @@ export class TaskUI {
                 Math.max(1, listHeight - 1),
                 list.getSelectedItem()?.value,
               );
+              const prefix = prompt ? theme.fg("accent", prompt) : "";
               const content = [
-                theme.fg("accent", title),
+                prefix +
+                  renderTaskLine(
+                    theme,
+                    this.registry.get(task.id),
+                    Math.max(0, width - visibleWidth(prefix)),
+                    "accent",
+                  ),
                 ...margin,
                 ...list.render(width).slice(0, listHeight),
                 ...margin,
@@ -539,7 +588,7 @@ export class TaskUI {
       this.closeView = undefined;
       if (this.disposed || !selected) return;
       const task = this.registry.get(selected);
-      const action = await this.choose(ctx, statusLine(task), [
+      const action = await this.choose(ctx, task, [
         "View output",
         ...(task.status === "running" ? ["Kill"] : []),
         "Back",
@@ -565,10 +614,12 @@ export class TaskUI {
       } else if (
         action === "Kill" &&
         // Default to No so repeated selection keys cannot accidentally kill a task.
-        (await this.choose(ctx, `Kill background task? ${statusLine(task)}`, [
-          "No",
-          "Yes",
-        ])) === "Yes"
+        (await this.choose(
+          ctx,
+          task,
+          ["No", "Yes"],
+          "Kill background task? ",
+        )) === "Yes"
       ) {
         if (this.disposed) return;
         try {

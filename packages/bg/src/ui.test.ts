@@ -441,6 +441,35 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(harness.ui.select).not.toHaveBeenCalled();
 });
 
+test("task action menu shows the compact summary instead of pipe-separated text", async () => {
+  const current: Task = {
+    ...task,
+    id: "09e8a86e51e9",
+    name: "checksum-check",
+    status: "finished",
+    endedAt: 0,
+    outcome: { kind: "exited", code: 0 },
+  };
+  const harness = indicatorContext();
+  const screens = interact(harness, [["l"], ["q"], ["q"]]);
+  const ui = new TaskUI(
+    { list: () => [current], get: () => current } as unknown as Registry,
+    harness.ctx,
+  );
+  try {
+    await ui.show(harness.ctx);
+    expect(screens[1]?.split("\n")[1]).toBe(
+      " 09e8a86e51e9  checksum-check 󰐦 0 󰔛 0.0s",
+    );
+    expect(screens[1]).toContain("→ View output");
+    expect(screens[1]).not.toContain("Kill");
+    expect(screens[2]).toContain("Background tasks");
+    expect(harness.ui.theme.fg).toHaveBeenCalledWith("success", "");
+  } finally {
+    ui.dispose();
+  }
+});
+
 test.each([
   ["j", "l", "q"],
   ["\x1b[106u", "\x1b[108u", "\x1b[113u"],
@@ -465,7 +494,9 @@ test.each([
     const ui = new TaskUI(registry, ctx);
     await ui.show(ctx);
     expect(stop).toHaveBeenCalledWith("abc", "user");
-    expect(screens[2]).toContain("Kill background task?");
+    expect(screens[2]).toContain(
+      "Kill background task?  abc  界 test running 󰔛",
+    );
     expect(screens[2]).toContain("→ No");
     expect(harness.text().split("\n")[1]).toBe(
       "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
@@ -507,7 +538,12 @@ test("task menus and confirmation use the injected bindings instead of literal k
   }
 });
 
-test("task menus preserve selection when resized and close on disposal", async () => {
+test("task menus refresh compact headers, preserve selection when resized, and close on disposal", async () => {
+  const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+  let current: Task = {
+    ...task,
+    name: `\x1b[41m${"界🙂".repeat(40)}\x1b[0m\nname`,
+  };
   const harness = indicatorContext();
   const terminal = { rows: 24 };
   let view: Component | undefined;
@@ -523,7 +559,7 @@ test("task menus preserve selection when resized and close on disposal", async (
       }),
   );
   const ui = new TaskUI(
-    { list: () => [task], get: () => task } as unknown as Registry,
+    { list: () => [current], get: () => current } as unknown as Registry,
     harness.ctx,
   );
   const showing = ui.show(harness.ctx);
@@ -531,24 +567,47 @@ test("task menus preserve selection when resized and close on disposal", async (
     view?.handleInput?.("l");
     await Promise.resolve();
     expect(harness.ui.custom).toHaveBeenCalledTimes(2);
+    const header = () => view?.render(120)[1] ?? "";
+    expect(header()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
+    expect(stripVTControlCharacters(header())).toContain("running 󰔛 1.0s");
+    now.mockReturnValue(2000);
+    expect(stripVTControlCharacters(header())).toContain("running 󰔛 2.0s");
     view?.handleInput?.("j");
     for (const rows of [8, 12, 24]) {
       terminal.rows = rows;
-      for (const width of [1, 12, 40, 120]) {
+      for (const width of [1, 12, 40, 80, 120]) {
         const lines = view?.render(width) ?? [];
         expect(lines.length).toBeLessThanOrEqual(rows - 4);
         expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+        expect(lines.join("\n")).not.toContain("\x1b[41m");
+        if (width >= 40) {
+          const title = stripVTControlCharacters(lines[1] ?? "");
+          expect(title).toContain(" abc ");
+          expect(title).toContain("running 󰔛 2.0s");
+        }
         if (width >= 12)
           expect(stripVTControlCharacters(lines.join("\n"))).toContain(
             "→ Kill",
           );
       }
     }
+    current = {
+      ...current,
+      status: "finished",
+      endedAt: 2000,
+      outcome: { kind: "exited", code: 3 },
+    };
+    harness.requestRender.mockClear();
+    ui.update();
+    expect(harness.requestRender).toHaveBeenCalled();
+    expect(header()).toContain("\x1b[31m\x1b[39m");
+    expect(stripVTControlCharacters(header())).toContain("󰐦 3 󰔛 2.0s");
     harness.ui.theme.fg.mockImplementation(
       (_color, text) => `\x1b[36m${text}\x1b[39m`,
     );
     view?.invalidate();
-    expect(view?.render(120).join("\n")).toContain("\x1b[36m");
+    expect(header()).toContain("\x1b[36m\x1b[39m");
+    expect(header()).not.toContain("\x1b[31m");
     harness.keys.setUserBindings({
       "tui.select.up": [],
       "tui.select.down": [],
@@ -566,6 +625,7 @@ test("task menus preserve selection when resized and close on disposal", async (
       stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
     ).toContain("→ Kill");
   } finally {
+    now.mockRestore();
     ui.dispose();
     await showing;
   }
