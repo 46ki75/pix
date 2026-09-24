@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.3 targets macOS and Linux and is developed against Pi 0.87.1.
+Version 0.0.4 targets macOS and Linux and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -32,8 +32,9 @@ tool to inspect the returned log path. Logs combine stdout and stderr; ordering
 between the two streams depends on pipe delivery.
 
 For example, ask Pi to run `sleep 2; echo done` with `bg_run`. Continue independent
-work or end the turn rather than polling. In interactive and RPC modes, natural
-exits, timeouts, and output-cap stops deliver a follow-up message and start a turn.
+work or end the turn; do not use blocking sleeps or poll status/logs to wait.
+In interactive and RPC modes, natural exits, timeouts, and output-cap stops deliver
+a follow-up message and start a turn without user input.
 Completions within 250 ms are batched. Messages include outcomes, duration, log
 paths, and bounded output tails. Signal termination is distinct from success:
 `kill -KILL $$` reports `SIGKILL (exit code 137)`.
@@ -116,9 +117,9 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.3.
+- Windows and reload survival are not supported in v0.0.4.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.3` and publish the package from
+After merging the reviewed changes, tag `bg-v0.0.4` and publish the package from
 `packages/bg` manually. The repository has no automated publish workflow.

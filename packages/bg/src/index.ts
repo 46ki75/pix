@@ -62,7 +62,8 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     promptSnippet:
       "Run a shell command in the background with completion notification.",
     promptGuidelines: [
-      "After bg_run, continue independent work or end the turn; completion wakes you in interactive/RPC mode. Do not poll bg_status or log files to wait.",
+      "Never use bash sleep, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
+      "After bg_run, continue independent work or end the turn. In interactive/RPC mode, completion automatically starts another turn without user input.",
     ],
     parameters: Type.Object({
       command: Type.String({ minLength: 1, description: "Shell command" }),
