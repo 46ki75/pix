@@ -1,10 +1,14 @@
 import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type KeybindingsConfig,
+  KeybindingsManager,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
-import { outcomeText } from "./format.ts";
 import type { Outcome, Task } from "./registry.ts";
-import { TaskListView } from "./ui.ts";
+import { OutputView, TaskListView } from "./ui.ts";
 
 const task: Task = {
   id: "abc",
@@ -18,7 +22,15 @@ const task: Task = {
   status: "running",
 };
 
-function harness(initial: Task[] = [task]) {
+const vimBindings: KeybindingsConfig = {
+  "tui.select.up": ["up", "k"],
+  "tui.select.down": ["down", "j"],
+  "tui.select.confirm": ["enter", "l"],
+  "tui.select.cancel": ["escape", "ctrl+c", "h", "q"],
+};
+
+function harness(initial: Task[] = [task], bindings = vimBindings) {
+  const keys = new KeybindingsManager(TUI_KEYBINDINGS, bindings);
   let tasks = initial;
   let rows = 20;
   const codes: Record<string, number> = {
@@ -44,9 +56,11 @@ function harness(initial: Task[] = [task]) {
     () => rows,
     requestRender,
     done,
+    keys,
   );
   return {
     view,
+    keys,
     theme,
     done,
     requestRender,
@@ -61,59 +75,271 @@ function harness(initial: Task[] = [task]) {
     row: (id = "abc") =>
       view
         .render(120)
-        .find((line) => stripVTControlCharacters(line).includes(`${id} |`)) ??
+        .find((line) => stripVTControlCharacters(line).includes(`${id} `)) ??
       "",
   };
 }
 
-const outcomes: [Outcome, number][] = [
-  [{ kind: "exited", code: 0 }, 32],
-  [{ kind: "exited", code: 3 }, 31],
-  [{ kind: "signaled", signal: "SIGKILL", code: 137 }, 31],
-  [{ kind: "failed", message: "I/O error" }, 31],
-  [{ kind: "timed_out" }, 33],
-  [{ kind: "output_capped" }, 33],
-  [{ kind: "killed", by: "user" }, 90],
-  [{ kind: "killed", by: "agent" }, 90],
-  [{ kind: "killed", by: "shutdown" }, 90],
+test("task rows and output headers match the compact format", () => {
+  const current: Task = {
+    ...task,
+    id: "434c3aa0b5e2",
+    name: "100-line output test",
+    status: "finished",
+    endedAt: 0,
+    outcome: { kind: "exited", code: 0 },
+  };
+  const h = harness([current]);
+  const viewer = new OutputView(
+    () => current,
+    h.theme,
+    () => 20,
+    vi.fn(),
+    vi.fn(),
+    h.keys,
+  );
+  try {
+    const expected = " 434c3aa0b5e2  100-line output test 󰐦 0 󰔛 0.0s";
+    expect.soft(h.text()).toContain(`→ ${expected}`);
+    expect
+      .soft(stripVTControlCharacters(viewer.render(120)[1] ?? ""))
+      .toBe(expected);
+  } finally {
+    viewer.dispose();
+  }
+});
+
+test("task names align exit codes and durations like the requested example", () => {
+  const h = harness([
+    {
+      ...task,
+      id: "a2cdec80d7cc",
+      name: "runtime-smoke-test",
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+    },
+    {
+      ...task,
+      id: "5f2e2ed719c9",
+      name: "computation-smoke-test",
+      status: "finished",
+      endedAt: 100,
+      outcome: { kind: "exited", code: 0 },
+    },
+  ]);
+  const rows = h.view
+    .render(80)
+    .map(stripVTControlCharacters)
+    .filter((line) => line.includes(""));
+  expect(rows.map((line) => line.trimEnd())).toEqual([
+    "→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s",
+    "   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s",
+  ]);
+});
+
+test("task columns align by terminal cells across Unicode names, outcomes, and resizing", () => {
+  const cases: [string, Outcome, string, number][] = [
+    ["界".repeat(40), { kind: "exited", code: 0 }, "󰐦 0", 100],
+    ["\x1b[41m🙂e\u0301\x1b[0m", { kind: "exited", code: 137 }, "󰐦 137", 2000],
+    [
+      "e\u0301".repeat(70),
+      { kind: "signaled", code: 137, signal: "SIGKILL" },
+      "󰐦 137 (SIGKILL)",
+      100000,
+    ],
+    ["short", { kind: "timed_out" }, "timed out", 300],
+  ];
+  const tasks: Task[] = cases.map(([name, outcome, , endedAt], i) => ({
+    ...task,
+    id: String(i).padStart(12, "0"),
+    name,
+    status: "finished",
+    outcome,
+    endedAt,
+  }));
+  const h = harness(tasks);
+  for (const width of [120, 60, 80]) {
+    const rendered = h.view.render(width);
+    const rows = rendered
+      .map(stripVTControlCharacters)
+      .filter((line) => line.includes(""));
+    expect(rows).toHaveLength(4);
+    const resultColumns = cases.map(([, , result], i) => {
+      const row =
+        rows.find((line) => line.includes(String(i).padStart(12, "0"))) ?? "";
+      expect(row).toContain(result);
+      return visibleWidth(row.slice(0, row.indexOf(result)));
+    });
+    expect(new Set(resultColumns).size).toBe(1);
+    expect(
+      new Set(rows.map((row) => visibleWidth(row.slice(0, row.indexOf("󰔛")))))
+        .size,
+    ).toBe(1);
+    expect(rows.every((row) => /󰔛 \d+\.\ds$/.test(row.trimEnd()))).toBe(true);
+    expect(rendered.every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(rendered.join("\n")).not.toContain("\x1b[41m");
+  }
+});
+
+test("column padding gives way to task details when the viewport is too narrow", () => {
+  const h = harness([
+    {
+      ...task,
+      id: "a2cdec80d7cc",
+      name: "short",
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+    },
+    {
+      ...task,
+      id: "5f2e2ed719c9",
+      name: "long name".repeat(20),
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "failed", message: "long error ".repeat(20) },
+    },
+  ]);
+  for (const width of [1, 12, 40, 80]) {
+    const lines = h.view.render(width);
+    expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+    if (width >= 40) {
+      const row = lines
+        .map(stripVTControlCharacters)
+        .find((line) => line.includes("a2cdec80d7cc"));
+      expect(row).toContain("󰐦 0 󰔛 0.0s");
+    }
+  }
+});
+
+test("columns include offscreen names and refresh without changing selection", () => {
+  const tasks: Task[] = Array.from({ length: 15 }, (_, i) => ({
+    ...task,
+    id: String(i).padStart(12, "0"),
+    name: i === 0 ? "computation-smoke-test" : "runtime",
+    status: "finished",
+    endedAt: 0,
+    outcome: { kind: "exited", code: 0 },
+  }));
+  const h = harness(tasks);
+  h.height(10);
+  const selected = () =>
+    h.view
+      .render(80)
+      .map(stripVTControlCharacters)
+      .find((line) => line.startsWith("→")) ?? "";
+  const column = (line: string) =>
+    visibleWidth(line.slice(0, line.indexOf("󰐦")));
+  const initial = selected();
+  for (let i = 0; i < 14; i++) h.view.handleInput("j");
+  const last = selected();
+  expect(last).toContain("→  000000000000  computation-smoke-test");
+  expect(column(last)).toBe(column(initial));
+  h.tasks([
+    ...tasks,
+    {
+      ...task,
+      status: "finished",
+      endedAt: 0,
+      outcome: { kind: "exited", code: 0 },
+      id: "ffffffffffff",
+      name: "an even longer background task name",
+    },
+  ]);
+  const updated = selected();
+  expect(updated).toContain("→  000000000000  computation-smoke-test");
+  expect(column(updated)).toBeGreaterThan(column(last));
+});
+
+const outcomes: [Outcome, number, string, string][] = [
+  [{ kind: "exited", code: 0 }, 32, "", "󰐦 0"],
+  [{ kind: "exited", code: 3 }, 31, "", "󰐦 3"],
+  [
+    { kind: "signaled", signal: "SIGKILL", code: 137 },
+    31,
+    "",
+    "󰐦 137 (SIGKILL)",
+  ],
+  [{ kind: "failed", message: "I/O error" }, 31, "", "failed: I/O error"],
+  [{ kind: "timed_out" }, 33, "", "timed out"],
+  [{ kind: "output_capped" }, 33, "", "output cap reached"],
+  [{ kind: "killed", by: "user" }, 90, "", "killed by user"],
+  [{ kind: "killed", by: "agent" }, 90, "", "killed by agent"],
+  [{ kind: "killed", by: "shutdown" }, 90, "", "killed by shutdown"],
 ];
 
 test.each(outcomes)(
-  "task dot distinguishes finished outcome %j",
-  (outcome, code) => {
-    const h = harness([
-      { ...task, status: "finished", endedAt: 2000, outcome },
-    ]);
-    expect(h.row()).toContain(`\x1b[${code}m⏺\x1b[39m`);
-    // Resetting only the dot would otherwise lose the selected row's accent color.
-    expect(h.row()).toContain("⏺\x1b[39m \x1b[36mabc |");
-    expect(h.text()).toContain("| 2.0s");
+  "task rows and output headers distinguish finished outcome %j",
+  (outcome, code, icon, result) => {
+    const current: Task = {
+      ...task,
+      status: "finished",
+      endedAt: 2000,
+      outcome,
+    };
+    const h = harness([current]);
+    const viewer = new OutputView(
+      () => current,
+      h.theme,
+      () => 20,
+      vi.fn(),
+      vi.fn(),
+      h.keys,
+    );
+    try {
+      for (const line of [h.row(), viewer.render(120)[1] ?? ""]) {
+        expect(line).toContain(`\x1b[${code}m${icon}\x1b[39m`);
+        // Resetting only the icon would otherwise lose the text's accent color.
+        expect(line).toContain(`${icon}\x1b[39m \x1b[36mabc `);
+        expect(stripVTControlCharacters(line)).toContain(
+          `${icon} abc  wide 界 task ${result} 󰔛 2.0s`,
+        );
+      }
+    } finally {
+      viewer.dispose();
+    }
   },
 );
 
 test.each(outcomes)(
-  "long names retain the detailed outcome at 80 columns: %j",
-  (outcome) => {
+  "long names retain the detailed outcome in both views at 80 columns: %j",
+  (outcome, _code, _icon, result) => {
     for (const name of ["x".repeat(80), "界".repeat(80), "🙂".repeat(40)]) {
       const ids = ["112233445566", "66778899aabb"];
-      const h = harness(
-        ids.map((id) => ({
-          ...task,
-          id,
-          name,
-          status: "finished",
-          endedAt: 2000,
-          outcome,
-        })),
-      );
+      const tasks: Task[] = ids.map((id) => ({
+        ...task,
+        id,
+        name,
+        status: "finished",
+        endedAt: 2000,
+        outcome,
+      }));
+      const h = harness(tasks);
       const lines = h.view.render(80);
-      for (const id of ids) {
-        const row = lines
-          .map(stripVTControlCharacters)
-          .find((line) => line.includes(`${id} |`));
-        expect(row).toContain(outcomeText(outcome));
-        expect(row).toContain("| 2.0s");
-        expect(row).not.toContain(name);
+      for (const current of tasks) {
+        const viewer = new OutputView(
+          () => current,
+          h.theme,
+          () => 20,
+          vi.fn(),
+          vi.fn(),
+          h.keys,
+        );
+        try {
+          const row = lines
+            .map(stripVTControlCharacters)
+            .find((line) => line.includes(`${current.id} `));
+          const header = stripVTControlCharacters(viewer.render(80)[1] ?? "");
+          for (const line of [row, header]) {
+            expect(line).toContain(result);
+            expect(line).toContain("󰔛 2.0s");
+            expect(line).not.toContain(name);
+          }
+          expect(visibleWidth(header)).toBeLessThanOrEqual(80);
+        } finally {
+          viewer.dispose();
+        }
       }
       expect(lines.every((line) => visibleWidth(line) <= 80)).toBe(true);
       expect(lines.length).toBeLessThanOrEqual(20);
@@ -121,15 +347,15 @@ test.each(outcomes)(
   },
 );
 
-test("running and stopping dots match the footer blue, including the palette fallback", () => {
+test("running and stopping icons match the footer blue, including the palette fallback", () => {
   const h = harness();
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.tasks([
     { ...task, status: "stopping", outcome: { kind: "killed", by: "user" } },
   ]);
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.theme.getColorMode.mockReturnValue("256color");
-  expect(h.row()).toContain("\x1b[38;5;67m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;5;67m\x1b[39m");
 });
 
 test("top and bottom borders follow the viewport width and current theme without crowding out tasks", () => {
@@ -152,14 +378,14 @@ test("top and bottom borders follow the viewport width and current theme without
   expect(lines[0]).toBe(`\x1b[35m${"─".repeat(40)}\x1b[39m`);
   expect(lines.at(-1)).toBe(lines[0]);
   // Keep the selected task visible even when little room remains for borders.
-  h.height(4);
-  expect(h.text()).toContain("→ ⏺ abc |");
-  h.height(3);
-  expect(h.text()).toContain("→ ⏺ abc |");
+  for (const rows of [3, 4, 6, 8, 9, 10]) {
+    h.height(rows);
+    expect(h.text()).toContain("→  abc ");
+  }
 });
 
 test.each([1, 40])(
-  "task list has one blank row above and below (%i tasks)",
+  "task list has one blank row above and below its tasks and an indented hint (%i tasks)",
   (count) => {
     const h = harness(
       Array.from({ length: count }, (_, i) => ({ ...task, id: `task-${i}` })),
@@ -169,100 +395,97 @@ test.each([1, 40])(
         h.height(rows);
         const lines = h.view.render(width).map(stripVTControlCharacters);
         const title = lines.indexOf("Background tasks");
-        const legend = lines.findIndex((line) => line.startsWith("Legend:"));
+        const hint = lines.findIndex((line) => line.startsWith(" up k down j"));
         expect(lines[title + 1]).toBe("");
-        expect(lines[title + 2]).toContain("⏺ task-");
-        expect(legend).toBeGreaterThan(title + 2);
-        expect(lines[legend - 1]).toBe("");
-        expect(lines[legend - 2]).not.toBe("");
+        expect(lines[title + 2]).toContain(" task-");
+        expect(hint).toBeGreaterThan(title + 2);
+        expect(lines[hint - 1]).toBe("");
+        expect(lines[hint - 2]).not.toBe("");
         expect(lines.filter((line) => line === "")).toHaveLength(2);
+        expect(lines.filter((line) => line.includes(" task-"))).toHaveLength(
+          Math.min(count, rows - 7),
+        );
         expect(lines.length).toBeLessThanOrEqual(rows);
       }
     }
   },
 );
 
-test("legend covers every color and uses the current theme on each render", () => {
+test("navigation hint uses muted keys and dim separators and action labels", () => {
+  const h = harness();
+  const hint =
+    h.view
+      .render(120)
+      .find((line) =>
+        stripVTControlCharacters(line).startsWith(" up k down j"),
+      ) ?? "";
+  expect(stripVTControlCharacters(hint)).toBe(
+    " up k down j navigate · enter l select · escape ctrl+c h q cancel",
+  );
+  for (const key of ["up k down j", "enter l", "escape ctrl+c h q"])
+    expect(hint).toContain(`\x1b[90m${key}\x1b[39m`);
+  for (const label of ["navigate", "select", "cancel"])
+    expect(hint).toContain(`\x1b[2m${label}\x1b[39m`);
+});
+
+test("task list omits the duplicate legend and uses the current theme for task icons", () => {
   const h = harness([
     { ...task, status: "finished", outcome: { kind: "exited", code: 0 } },
   ]);
   const first = h.view.render(120).join("\n");
-  for (const label of [
-    "Legend:",
-    "Running/stopping",
-    "Succeeded",
-    "Failed",
-    "Timeout/cap",
-    "Killed",
-  ])
-    expect(h.text()).toContain(label);
-  for (const color of [
-    "\x1b[38;2;104;119;159m",
-    "\x1b[32m",
-    "\x1b[31m",
-    "\x1b[33m",
-    "\x1b[90m",
-  ])
-    expect(first).toContain(`${color}⏺\x1b[39m`);
+  for (const label of ["Running", "Succeeded", "Failed", "Timeout", "Killed"])
+    expect(h.text()).not.toContain(label);
+  expect(h.row()).toContain("\x1b[32m\x1b[39m");
   h.theme.fg.mockImplementation((_color, text) => `\x1b[35m${text}\x1b[39m`);
   h.view.invalidate();
   const next = h.view.render(120).join("\n");
   expect(next).not.toBe(first);
-  expect(h.row()).toContain("\x1b[35m⏺\x1b[39m \x1b[35mabc");
+  expect(h.row()).toContain("\x1b[35m\x1b[39m \x1b[35mabc");
   expect(next).not.toContain("\x1b[32m");
 });
 
 test("live task changes retain selection by ID and preserve unselected text colors", () => {
   const h = harness([task, { ...task, id: "newer" }]);
-  expect(h.text()).toContain("→ ⏺ newer |");
-  expect(h.row()).toContain("⏺\x1b[39m \x1b[37mabc |");
+  expect(h.text()).toContain("→  newer ");
+  expect(h.row()).toContain("\x1b[39m \x1b[37mabc ");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→ ⏺ abc |");
+  expect(h.text()).toContain("→  abc ");
   h.tasks([
     { ...task, status: "finished", outcome: { kind: "exited", code: 3 } },
     { ...task, id: "newer" },
     { ...task, id: "newest" },
   ]);
-  expect(h.text()).toContain("→ ⏺ abc |");
-  expect(h.row()).toContain("\x1b[31m⏺");
-  expect(h.row()).toContain("exit code 3");
+  expect(h.text()).toContain("→  abc ");
+  expect(h.row()).toContain("\x1b[31m");
+  expect(h.row()).toContain("󰐦 3");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
   expect(h.requestRender).toHaveBeenCalled();
 });
 
-test("legend wraps and the task list remains bounded and navigable after resizing", () => {
+test("task list remains bounded and navigable after resizing", () => {
   const h = harness(
     Array.from({ length: 40 }, (_, i) => ({ ...task, id: `task-${i}` })),
   );
   for (const width of [1, 12, 40, 80, 120]) {
-    for (const rows of [1, 4, 10, 24]) {
+    for (const rows of [1, 4, 6, 8, 9, 10, 12, 24]) {
       h.height(rows);
       const lines = h.view.render(width);
       expect(lines.length).toBeLessThanOrEqual(rows);
       expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
     }
   }
-  h.height(24);
-  for (const label of [
-    "Running/stopping",
-    "Succeeded",
-    "Failed",
-    "Timeout/cap",
-    "Killed",
-  ])
-    expect(h.text(40)).toContain(label);
   h.height(10);
   h.view.render(80);
   for (let i = 0; i < 35; i++) h.view.handleInput("j");
-  expect(h.text(80)).toContain("→ ⏺ task-4 |");
+  expect(h.text(80)).toContain("→  task-4 ");
   h.view.handleInput("k");
-  expect(h.text(80)).toContain("→ ⏺ task-5 |");
+  expect(h.text(80)).toContain("→  task-5 ");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("task-5");
 });
 
-test.each(["\x1b", "\x03"])(
+test.each(["h", "q", "\x1b[104u", "\x1b[113u", "\x1b", "\x03"])(
   "cancel %j resolves once and disposal ignores further input",
   (key) => {
     const h = harness();
@@ -276,8 +499,146 @@ test.each(["\x1b", "\x03"])(
   },
 );
 
+test.each([
+  ["j", "k", "l"],
+  ["\x1b[106u", "\x1b[107u", "\x1b[108u"],
+])("navigate and select with %j / %j / %j", (down, up, select) => {
+  const h = harness([task, { ...task, id: "newer" }]);
+  h.view.handleInput(down);
+  expect(h.text()).toContain("→  abc ");
+  h.view.handleInput(up);
+  expect(h.text()).toContain("→  newer ");
+  h.view.handleInput(select);
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
+  h.view.handleInput(select);
+  expect(h.done).toHaveBeenCalledTimes(1);
+});
+
+test("task list follows injected semantic bindings and updates its hints", () => {
+  const h = harness([task, { ...task, id: "newer" }], {
+    "tui.select.up": "w",
+    "tui.select.down": "s",
+    "tui.select.confirm": "d",
+    "tui.select.cancel": "a",
+  });
+  expect(h.text()).toContain(" w s navigate · d select · a cancel");
+  for (const key of ["j", "k", "l", "h", "q", "\x1b[B", "\r", "\x1b", "\x03"])
+    h.view.handleInput(key);
+  expect(h.text()).toContain("→  newer ");
+  expect(h.done).not.toHaveBeenCalled();
+  h.view.handleInput("s");
+  expect(h.text()).toContain("→  abc ");
+  h.view.handleInput("w");
+  expect(h.text()).toContain("→  newer ");
+
+  h.keys.setUserBindings({
+    "tui.select.up": [],
+    "tui.select.down": [],
+    "tui.select.confirm": "f",
+    "tui.select.cancel": [],
+  });
+  h.view.invalidate();
+  expect(h.text()).toContain(" f select");
+  expect(h.text()).not.toContain("navigate");
+  expect(h.text()).not.toContain("cancel");
+  for (const key of [
+    "s",
+    "w",
+    "d",
+    "a",
+    "j",
+    "k",
+    "l",
+    "h",
+    "q",
+    "\r",
+    "\x1b[B",
+    "\x1b",
+  ])
+    h.view.handleInput(key);
+  expect(h.done).not.toHaveBeenCalled();
+  expect(h.text()).toContain("→  newer ");
+  h.view.handleInput("f");
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
+});
+
+test("task list uses Pi defaults without implicit letter aliases", () => {
+  const h = harness([task, { ...task, id: "newer" }], {});
+  expect(h.text()).toContain(
+    " up down navigate · enter select · escape ctrl+c cancel",
+  );
+  for (const key of ["j", "k", "l", "h", "q"]) h.view.handleInput(key);
+  expect(h.done).not.toHaveBeenCalled();
+  expect(h.text()).toContain("→  newer ");
+  h.view.handleInput("\x1b[B");
+  expect(h.text()).toContain("→  abc ");
+  h.view.handleInput("\r");
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
+});
+
 test("task labels stay single-line and cannot inject terminal styling", () => {
   const h = harness([{ ...task, name: "\x1b[31munsafe\nname\x1b[0m" }]);
   expect(h.row()).not.toContain("\x1b[31m");
   expect(stripVTControlCharacters(h.row())).toContain("unsafe name");
 });
+
+test.each([
+  [{}, "\x1b[A", "\x1b[B"],
+  [vimBindings, "k", "j"],
+  [vimBindings, "\x1b[107u", "\x1b[106u"],
+  [{ "tui.select.up": "w", "tui.select.down": "s" }, "w", "s"],
+] satisfies [KeybindingsConfig, string, string][])(
+  "task-list boundaries wrap for semantic bindings %j",
+  (bindings, up, down) => {
+    const h = harness(
+      [task, { ...task, id: "middle" }, { ...task, id: "newest" }],
+      bindings,
+    );
+    expect(h.text()).toContain("→  newest ");
+    for (const [key, id] of [
+      [up, "abc"],
+      [down, "newest"],
+      [down, "middle"],
+      [down, "abc"],
+      [down, "newest"],
+      [up, "abc"],
+    ]) {
+      h.view.handleInput(key ?? "");
+      expect(h.text()).toContain(`→  ${id} `);
+    }
+    h.keys.setUserBindings({ "tui.select.up": [], "tui.select.down": [] });
+    for (const key of [up, down, "\x1b[A", "\x1b[B", "j", "k"]) {
+      h.view.handleInput(key);
+      expect(h.text()).toContain("→  abc ");
+    }
+    expect(h.text()).not.toContain("navigate");
+    h.view.dispose();
+  },
+);
+
+test.each([0, 1])(
+  "task-list navigation handles %i tasks without invalid selection",
+  (count) => {
+    const h = harness(count ? [task] : []);
+    for (const key of [
+      "\x1b[A",
+      "\x1b[B",
+      "k",
+      "j",
+      "\x1b[107u",
+      "\x1b[106u",
+    ]) {
+      h.view.handleInput(key);
+      if (count) expect(h.text()).toContain("→  abc ");
+      else expect(h.text()).not.toContain("→");
+    }
+    h.view.handleInput("\r");
+    if (count) expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
+    else {
+      expect(h.done).not.toHaveBeenCalled();
+      h.view.handleInput("\x1b");
+      expect(h.done).toHaveBeenCalledExactlyOnceWith(undefined);
+    }
+    h.view.dispose();
+  },
+);

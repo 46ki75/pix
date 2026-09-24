@@ -144,7 +144,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         expect(ctx.ui.setWidget).toHaveBeenCalledWith(
           "pix-bg",
           expect.any(Function),
-          { placement: "belowEditor" },
+          { placement: "aboveEditor" },
         );
       else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       outputDir = dirname(task.outputPath);

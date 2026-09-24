@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.4 targets macOS and Linux and is developed against Pi 0.87.1.
+Version 0.0.5 targets macOS and Linux and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -44,43 +44,94 @@ Stopping from `/bg` queues a next-turn message without waking the agent.
 
 ## Interactive UI
 
-After the first task starts, a one-line indicator appears below the editor,
-above Pi's existing footer:
+After the first task starts, a two-line indicator appears above the input editor:
 
 ```text
-| ⏺ Running: 2 ⏺ Finished: 8 | /bg → Show BG Tasks |
+──  Background Tasks ──────────────────────────────────────
+  Running: 0  Succeeded: 2  Failed: 0  Timeout: 0  Killed: 0
 ```
 
-Running includes tasks still stopping and uses blue `#68779f` (approximated in
-256-color terminals). Finished includes every terminal outcome, not just success,
-and uses the theme's `muted` color; separators and the hint use `dim`. Theme colors
-refresh when the theme changes, and the line is truncated on narrow terminals.
-Finished counts remain visible while idle and reset on reload or session
-replacement; they are not restored from history. Commands that fail to launch
-are not counted.
+The title divider fills the available width; the counts line starts with one
+space. The `` icon uses the theme's `muted` color. Divider lines use `borderMuted`,
+heading text and status labels use `dim`, and numeric counts use `text`. Each
+status icon uses the color below; blue is approximated in 256-color terminals.
+Theme colors refresh when the theme changes, and both lines are truncated on
+narrow terminals. Counts remain visible while idle and reset on reload or session
+replacement; they are not restored from history. Commands that fail to launch are
+not counted.
 
-`/bg` lists detailed outcomes with a colored `⏺` before each task ID and a matching
-legend below the list:
+`/bg` lists detailed outcomes with the same colored status icons as the indicator,
+without repeating its legend. Use a Nerd Font to display these icons:
 
-| Legend | Dot color | Meaning |
+| Status | Icon color | Meaning |
 | --- | --- | --- |
-| Running/stopping | Blue `#68779f` | Still running or cleaning up |
-| Succeeded | Theme `success` | Exit code 0 |
-| Failed | Theme `error` | Nonzero exit, signal, or execution error |
-| Timeout/cap | Theme `warning` | Timeout or output limit reached |
-| Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
+|  Running | Blue `#68779f` | Still running or cleaning up |
+|  Succeeded | Theme `success` | Exit code 0 |
+|  Failed | Theme `error` | Nonzero exit, signal, or execution error |
+|  Timeout | Theme `warning` | Timeout or output limit reached |
+|  Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
 
-Rows prioritize IDs, outcomes, and durations over long task names. Status and
-theme colors refresh while the list is open, without moving your selection when
-another task starts. The legend wraps on narrow terminals; very
-short viewports prioritize task rows. Use Up/Down or j/k to navigate, Enter to
-select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a running
-task after confirmation. The footer keeps its simpler Running/Finished totals.
+Task-list rows, menu titles, and output-view headers share a compact summary.
+The task list aligns outcomes and durations across entries:
 
-The output viewer shows the last 8 KiB and refreshes once per second while the
-task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following
-the tail. Read the log file for older output. No keyboard shortcut is registered.
-The viewer is interactive-only; tools also work in RPC, JSON, and print modes.
+```text
+→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s
+   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s
+```
+
+`` marks the task name, `󰐦` precedes the exit code, and `󰔛` precedes elapsed
+time. Signals retain their names, such as `󰐦 137 (SIGKILL)`; tasks without an
+exit code show their status or reason instead. These summaries prioritize IDs,
+outcomes, and durations over long task names. Columns stay stable while scrolling;
+narrow terminals truncate names or drop alignment padding to preserve details.
+
+Status and theme colors refresh while the list is open, without moving your
+selection when another task starts. The navigation hint is indented by one space
+and separated from the task rows by a blank line. Short viewports reduce spacing
+and prioritize task rows. Navigation wraps between the first and last tasks;
+action and confirmation menus stop at their boundaries. Select a task to view
+output or kill a running task after confirmation, which defaults to No.
+
+The output viewer starts with a full-width separator above its header. It shows
+the last 8 KiB between scroll-indicator dividers and refreshes once per second
+while the task runs. Paired up/down arrows appear in each scroll divider
+only when the displayed tail has more content in that direction. Narrow terminals
+use one arrow; short viewports reduce metadata and decoration to preserve output.
+Views reserve six rows for the indicator, Pi's spacer and default footer, and one
+transcript row. Below nine terminal rows, Pi's minimum editor height can still
+clip the surrounding indicator or footer.
+Jumping to the bottom resumes following the tail. Read the log file for older
+output. No global shortcut is registered. The viewer is interactive-only; tools
+also work in RPC, JSON, and print modes.
+
+### Keybindings
+
+All views use Pi's semantic keybindings. Hints show the configured keys and omit
+disabled actions; the extension does not add hardcoded aliases or change Pi's
+configuration.
+
+| Behavior | Pi actions | Default keys |
+| --- | --- | --- |
+| Navigate lists or scroll output | `tui.select.up`, `tui.select.down` | Up, Down |
+| Select a task or menu item | `tui.select.confirm` | Enter |
+| Cancel or return to the task list | `tui.select.cancel` | Esc, Ctrl+C |
+| Page through output | `tui.select.pageUp`, `tui.select.pageDown` | Page Up, Page Down |
+| Jump to the start or follow output | `tui.altScreen.top`, `tui.altScreen.bottom` | Home, End |
+
+For Vim-style selection keys, merge these entries into Pi's `keybindings.json`
+(`~/.pi/agent/keybindings.json` by default), then run `/reload`:
+
+```json
+{
+  "tui.select.up": ["up", "k"],
+  "tui.select.down": ["down", "j"],
+  "tui.select.confirm": ["enter", "l"],
+  "tui.select.cancel": ["escape", "ctrl+c", "h", "q"]
+}
+```
+
+These settings apply wherever Pi uses the same actions, not just `/bg`. See
+[Pi's keybinding reference](https://pi.dev/docs/latest/keybindings) for details.
 
 ## Output cap
 
@@ -117,9 +168,9 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.4.
+- Windows and reload survival are not supported in v0.0.5.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.4` and publish the package from
+After merging the reviewed changes, tag `bg-v0.0.5` and publish the package from
 `packages/bg` manually. The repository has no automated publish workflow.

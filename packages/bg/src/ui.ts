@@ -2,22 +2,37 @@ import {
   DynamicBorder,
   type ExtensionCommandContext,
   type ExtensionContext,
+  type KeybindingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
-  matchesKey,
+  type Keybinding,
   ScrollView,
   SelectList,
   Text,
   truncateToWidth,
   visibleWidth,
-  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { oneLine, readTail, statusLine } from "./format.ts";
+import {
+  duration,
+  oneLine,
+  outcomeText,
+  readTail,
+  statusLine,
+} from "./format.ts";
 import type { Registry, Task } from "./registry.ts";
 
 type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
 type StatusColor = "running" | "success" | "error" | "warning" | "muted";
+type UIKeys = Pick<KeybindingsManager, "matches" | "getKeys">;
+
+// Pi's fullscreen dock needs two indicator rows, its leading spacer, two
+// default footer rows, and at least one transcript row outside the custom view.
+const surroundingRows = 6;
+
+function viewHeight(terminalRows: number, minimum = 1): number {
+  return Math.max(minimum, terminalRows - surroundingRows);
+}
 
 function runningColor(theme: StatusTheme, text: string): string {
   // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
@@ -46,17 +61,131 @@ function statusColor(task: Task): StatusColor {
   }
 }
 
-function statusDot(theme: StatusTheme, color: StatusColor): string {
-  return color === "running" ? runningColor(theme, "⏺") : theme.fg(color, "⏺");
+const statusIcons: Record<StatusColor, string> = {
+  running: "",
+  success: "",
+  error: "",
+  warning: "",
+  muted: "",
+};
+
+function statusIcon(theme: StatusTheme, color: StatusColor): string {
+  const icon = statusIcons[color];
+  return color === "running"
+    ? runningColor(theme, icon)
+    : theme.fg(color, icon);
 }
 
-const legend: readonly (readonly [StatusColor, string])[] = [
-  ["running", "Running/stopping"],
+type TaskColumns = {
+  prefix: number;
+  nameEnd: number;
+  result: number;
+  time: number;
+};
+
+function taskResult(task: Task): string {
+  const outcome = task.outcome;
+  return outcome?.kind === "exited"
+    ? `󰐦 ${outcome.code}`
+    : outcome?.kind === "signaled"
+      ? `󰐦 ${outcome.code} (${outcome.signal})`
+      : outcome
+        ? outcomeText(outcome)
+        : task.status;
+}
+
+function padToWidth(text: string, width: number): string {
+  return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+}
+
+function renderTaskLine(
+  theme: StatusTheme,
+  task: Task,
+  width: number,
+  color: "accent" | "text",
+  now = Date.now(),
+  columns?: TaskColumns,
+): string {
+  const icon = `${statusIcon(theme, statusColor(task))} `;
+  const prefix = `${task.id}  `;
+  const tailWidth = columns ? columns.result + columns.time + 2 : 0;
+  // Drop padding before truncating details when the shared fixed columns cannot fit.
+  const aligned =
+    columns && width >= columns.prefix + tailWidth ? columns : undefined;
+  const result = padToWidth(taskResult(task), aligned?.result ?? 0);
+  const suffix = ` ${result} 󰔛 ${duration(task, now)}`;
+  // Reserve the ID, outcome, and duration before budgeting a long name in either view.
+  const nameWidth = aligned
+    ? Math.min(aligned.nameEnd, width - tailWidth) - visibleWidth(icon + prefix)
+    : Math.max(0, width - visibleWidth(icon + prefix + suffix));
+  const truncated = truncateToWidth(oneLine(task.name), nameWidth);
+  const name = aligned ? padToWidth(truncated, nameWidth) : truncated;
+  // Pi's fg() does not restore an enclosing color after a nested reset.
+  // Style the text separately so the icon keeps its status color.
+  return truncateToWidth(
+    icon + theme.fg(color, prefix + name + suffix),
+    Math.max(0, width),
+    "",
+  );
+}
+
+const statusLabels: readonly (readonly [StatusColor, string])[] = [
+  ["running", "Running"],
   ["success", "Succeeded"],
   ["error", "Failed"],
-  ["warning", "Timeout/cap"],
+  ["warning", "Timeout"],
   ["muted", "Killed"],
 ];
+
+function renderCounts(
+  theme: StatusTheme,
+  counts: Partial<Record<StatusColor, number>>,
+): string {
+  return statusLabels
+    .map(([color, label]) => {
+      const text = `${theme.fg("dim", `${label}:`)} ${theme.fg("text", String(counts[color] ?? 0))}`;
+      return `${statusIcon(theme, color)} ${text}`;
+    })
+    .join(" ");
+}
+
+function renderHint(
+  theme: Pick<Theme, "fg">,
+  keys: UIKeys,
+  actions: [Keybinding[], string][],
+): string {
+  const hints = actions.flatMap(([bindings, label]) => {
+    const bound = [
+      ...new Set(bindings.flatMap((binding) => keys.getKeys(binding))),
+    ];
+    return bound.length
+      ? [`${theme.fg("muted", bound.join(" "))} ${theme.fg("dim", label)}`]
+      : [];
+  });
+  return hints.length ? ` ${hints.join(theme.fg("dim", " · "))}` : "";
+}
+
+function handleListInput(
+  list: SelectList,
+  ids: string[],
+  keys: UIKeys,
+  data: string,
+  wrap = false,
+): void {
+  // SelectList reads module-global bindings, which may differ from Pi's injected manager.
+  const selected = list.getSelectedItem();
+  const index = ids.indexOf(selected?.value ?? "");
+  const move = (delta: number) => {
+    if (!ids.length) return;
+    const next = index + delta;
+    list.setSelectedIndex(wrap ? (next + ids.length) % ids.length : next);
+  };
+  if (keys.matches(data, "tui.select.up")) move(-1);
+  else if (keys.matches(data, "tui.select.down")) move(1);
+  else if (keys.matches(data, "tui.select.confirm")) {
+    if (selected) list.onSelect?.(selected);
+  } else if (keys.matches(data, "tui.select.cancel")) list.onCancel?.();
+}
 
 export class TaskListView {
   private border: DynamicBorder;
@@ -70,6 +199,7 @@ export class TaskListView {
     private height: () => number,
     private renderRequest: () => void,
     private done: (id: string | undefined) => void,
+    private keys: UIKeys,
   ) {
     // Extension-loaded DynamicBorder cannot rely on Pi's global theme instance.
     this.border = new DynamicBorder((text) => this.theme.fg("border", text));
@@ -79,10 +209,28 @@ export class TaskListView {
   private createList(maxVisible: number): SelectList {
     const selected = this.list?.getSelectedItem()?.value;
     const tasks = this.tasks().toReversed();
+    const now = Date.now();
+    const columns: TaskColumns = { prefix: 0, nameEnd: 0, result: 0, time: 0 };
+    // Measure all tasks at one instant so columns stay stable while scrolling.
+    for (const task of tasks) {
+      const prefix = visibleWidth(
+        `${statusIcons[statusColor(task)]} ${task.id}  `,
+      );
+      columns.prefix = Math.max(columns.prefix, prefix);
+      columns.nameEnd = Math.max(
+        columns.nameEnd,
+        prefix + visibleWidth(oneLine(task.name)),
+      );
+      columns.result = Math.max(columns.result, visibleWidth(taskResult(task)));
+      columns.time = Math.max(
+        columns.time,
+        visibleWidth(`󰔛 ${duration(task, now)}`),
+      );
+    }
     const byId = new Map(tasks.map((task) => [task.id, task]));
     this.ids = tasks.map((task) => task.id);
     const list = new SelectList(
-      tasks.map((task) => ({ value: task.id, label: statusLine(task) })),
+      tasks.map((task) => ({ value: task.id, label: statusLine(task, now) })),
       maxVisible,
       {
         selectedPrefix: (text) => this.theme.fg("accent", text),
@@ -95,22 +243,14 @@ export class TaskListView {
         truncatePrimary: ({ item, isSelected, maxWidth }) => {
           const task = byId.get(item.value);
           if (!task) return "";
-          const dot = `${statusDot(this.theme, statusColor(task))} `;
-          const now = Date.now();
-          // Reserve the ID, outcome, and duration before budgeting a long name.
-          const fixedWidth = visibleWidth(
-            dot + statusLine({ ...task, name: "" }, now),
+          return renderTaskLine(
+            this.theme,
+            task,
+            maxWidth,
+            isSelected ? "accent" : "text",
+            now,
+            columns,
           );
-          const name = truncateToWidth(
-            oneLine(task.name),
-            Math.max(0, maxWidth - fixedWidth),
-          );
-          const text = statusLine({ ...task, name }, now);
-          // Pi's fg() does not restore an enclosing color after a nested reset.
-          // Style the row text separately so the dot keeps its status color.
-          const line =
-            dot + this.theme.fg(isSelected ? "accent" : "text", text);
-          return truncateToWidth(line, Math.max(0, maxWidth), "");
         },
       },
     );
@@ -122,10 +262,7 @@ export class TaskListView {
 
   handleInput(data: string): void {
     if (this.disposed) return;
-    if (data === "j" || data === "k") {
-      const index = this.ids.indexOf(this.list.getSelectedItem()?.value ?? "");
-      this.list.setSelectedIndex(index + (data === "j" ? 1 : -1));
-    } else this.list.handleInput(data);
+    handleListInput(this.list, this.ids, this.keys, data, true);
     this.renderRequest();
   }
 
@@ -138,20 +275,7 @@ export class TaskListView {
     // Collapse spacing on short viewports rather than hide the selected task.
     const margin = rows >= 6 ? [""] : [];
     const contentRows = rows - 2 * margin.length;
-    const legendText =
-      this.theme.fg("dim", "Legend: ") +
-      legend
-        .map(
-          ([color, label]) =>
-            `${statusDot(this.theme, color)} ${this.theme.fg("muted", label)}`,
-        )
-        .join(this.theme.fg("dim", " · "));
-    // On tiny terminals prioritize at least one task row over the full legend.
-    const legendLines = wrapTextWithAnsi(legendText, width).slice(
-      0,
-      Math.max(0, contentRows - 4),
-    );
-    const listHeight = Math.max(1, contentRows - legendLines.length - 2);
+    const listHeight = Math.max(1, contentRows - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
     const content = [
@@ -159,11 +283,11 @@ export class TaskListView {
       ...margin,
       ...this.list.render(width).slice(0, listHeight),
       ...margin,
-      ...legendLines,
-      this.theme.fg(
-        "dim",
-        "↑↓ / j k navigate · enter select · esc/ctrl+c cancel",
-      ),
+      renderHint(this.theme, this.keys, [
+        [["tui.select.up", "tui.select.down"], "navigate"],
+        [["tui.select.confirm"], "select"],
+        [["tui.select.cancel"], "cancel"],
+      ]),
     ].slice(0, rows);
     return [...border, ...content, ...border].map((line) =>
       truncateToWidth(line, width),
@@ -191,10 +315,11 @@ export class OutputView {
 
   constructor(
     private task: () => Task,
-    private theme: Pick<Theme, "fg">,
+    private theme: StatusTheme,
     private height: () => number,
     private renderRequest: () => void,
     private close: () => void,
+    private keys: UIKeys,
   ) {
     this.refresh();
     if (this.task().status !== "finished")
@@ -214,51 +339,87 @@ export class OutputView {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+    if (this.disposed) return;
+    if (this.keys.matches(data, "tui.select.cancel")) {
       this.dispose();
       this.close();
       return;
     }
-    if (matchesKey(data, "up")) this.scroll.scrollBy(-1);
-    else if (matchesKey(data, "down")) this.scroll.scrollBy(1);
-    else if (matchesKey(data, "pageUp"))
+    if (this.keys.matches(data, "tui.select.up")) this.scroll.scrollBy(-1);
+    else if (this.keys.matches(data, "tui.select.down"))
+      this.scroll.scrollBy(1);
+    else if (this.keys.matches(data, "tui.select.pageUp"))
       this.scroll.scrollBy(-this.scroll.viewportHeight);
-    else if (matchesKey(data, "pageDown"))
+    else if (this.keys.matches(data, "tui.select.pageDown"))
       this.scroll.scrollBy(this.scroll.viewportHeight);
-    else if (matchesKey(data, "home")) this.scroll.scrollToStart();
-    else if (matchesKey(data, "end")) this.scroll.scrollToEnd();
+    else if (this.keys.matches(data, "tui.altScreen.top"))
+      this.scroll.scrollToStart();
+    else if (this.keys.matches(data, "tui.altScreen.bottom"))
+      this.scroll.scrollToEnd();
     this.renderRequest();
   }
 
+  private renderBorder(
+    width: number,
+    arrow: "↑" | "↓",
+    canScroll: boolean,
+  ): string {
+    const rule = (length: number) =>
+      this.theme.fg("border", "─".repeat(length));
+    if (!canScroll) return rule(width);
+    const marker = this.theme.fg("muted", arrow);
+    if (width < 3) return marker + rule(width - 1);
+    if (width < 10) {
+      const left = Math.floor((width - 3) / 2);
+      return `${rule(left)} ${marker} ${rule(width - 3 - left)}`;
+    }
+    return `${rule(2)} ${marker} ${rule(width - 10)} ${marker} ${rule(2)}`;
+  }
+
   render(width: number): string[] {
+    if (this.disposed || width < 1) return [];
     const rows = Math.max(1, this.height());
-    const content = this.scroll.render(Math.max(1, width));
+    // Drop metadata and hints on short screens before sacrificing output rows.
+    const header =
+      rows >= 5
+        ? [
+            this.theme.fg("border", "─".repeat(width)),
+            renderTaskLine(this.theme, this.task(), width, "accent"),
+          ]
+        : [];
+    if (rows >= 7)
+      header.push(
+        this.theme.fg("muted", `Last 8 KiB: ${this.task().outputPath}`),
+      );
+    const hints =
+      rows >= 6
+        ? [
+            renderHint(this.theme, this.keys, [
+              [["tui.select.up", "tui.select.down"], "scroll"],
+              [["tui.select.pageUp", "tui.select.pageDown"], "page"],
+              [["tui.altScreen.top"], "top"],
+              [["tui.altScreen.bottom"], "follow"],
+              [["tui.select.cancel"], "back"],
+            ]),
+          ]
+        : [];
+    const framed = rows >= 3;
+    const content = this.scroll.render(width);
     // Clip explicitly so this works in both regular and fullscreen Pi layouts.
     this.scroll.updateLayout(
       content.length,
-      Math.max(1, rows - 3),
+      rows - header.length - hints.length - (framed ? 2 : 0),
       this.renderRequest,
     );
+    const start = this.scroll.scrollTop;
+    const end = start + this.scroll.viewportHeight;
     return [
-      this.theme.fg("accent", truncateToWidth(statusLine(this.task()), width)),
-      this.theme.fg(
-        "muted",
-        truncateToWidth(`Last 8 KiB: ${this.task().outputPath}`, width),
-      ),
-      ...content.slice(
-        this.scroll.scrollTop,
-        this.scroll.scrollTop + this.scroll.viewportHeight,
-      ),
-      this.theme.fg(
-        "dim",
-        truncateToWidth(
-          "↑↓ / PgUp PgDn scroll · End follow · Esc close",
-          width,
-        ),
-      ),
-    ]
-      .slice(0, rows)
-      .map((line) => truncateToWidth(line, width));
+      ...header,
+      ...(framed ? [this.renderBorder(width, "↑", start > 0)] : []),
+      ...content.slice(start, end),
+      ...(framed ? [this.renderBorder(width, "↓", end < content.length)] : []),
+      ...hints,
+    ].map((line) => truncateToWidth(line, width));
   }
 
   invalidate(): void {
@@ -275,8 +436,7 @@ export class TaskUI {
   private disposed = false;
   private closeView: (() => void) | undefined;
   private renderIndicator: (() => void) | undefined;
-  private running = 0;
-  private finished = 0;
+  private counts: Partial<Record<StatusColor, number>> = {};
 
   constructor(
     private registry: Registry,
@@ -289,8 +449,11 @@ export class TaskUI {
     if (this.disposed) return;
     const tasks = this.registry.list();
     if (!tasks.length) return;
-    this.running = tasks.filter((task) => task.status !== "finished").length;
-    this.finished = tasks.length - this.running;
+    this.counts = {};
+    for (const task of tasks) {
+      const color = statusColor(task);
+      this.counts[color] = (this.counts[color] ?? 0) + 1;
+    }
     if (this.renderIndicator) {
       this.renderIndicator();
       return;
@@ -306,17 +469,108 @@ export class TaskUI {
           render: (width: number) => {
             if (this.disposed || width < 1) return [];
             const theme = this.ctx.ui.theme;
-            const line =
-              theme.fg("dim", "| ") +
-              runningColor(theme, `⏺ Running: ${this.running}`) +
-              theme.fg("muted", ` ⏺ Finished: ${this.finished}`) +
-              theme.fg("dim", " | /bg → Show BG Tasks |");
-            return [truncateToWidth(line, width)];
+            const heading =
+              theme.fg("borderMuted", "── ") +
+              `${theme.fg("muted", "")} ${theme.fg("dim", "Background Tasks")} `;
+            const rule = theme.fg(
+              "borderMuted",
+              "─".repeat(Math.max(0, width - visibleWidth(heading))),
+            );
+            return [
+              truncateToWidth(heading + rule, width),
+              truncateToWidth(` ${renderCounts(theme, this.counts)}`, width),
+            ];
           },
         };
       },
-      { placement: "belowEditor" },
+      { placement: "aboveEditor" },
     );
+  }
+
+  private async choose(
+    ctx: ExtensionCommandContext,
+    task: Task,
+    options: string[],
+    prompt = "",
+  ): Promise<string | undefined> {
+    try {
+      return await ctx.ui.custom<string | undefined>(
+        (tui, theme, keys, done) => {
+          let closed = false;
+          const finish = (value: string | undefined) => {
+            if (closed) return;
+            closed = true;
+            done(value);
+          };
+          const createList = (maxVisible: number, selected?: string) => {
+            const list = new SelectList(
+              options.map((value) => ({ value, label: value })),
+              maxVisible,
+              {
+                selectedPrefix: (text) => theme.fg("accent", text),
+                selectedText: (text) => theme.fg("accent", text),
+                description: (text) => theme.fg("muted", text),
+                scrollInfo: (text) => theme.fg("dim", text),
+                noMatch: (text) => theme.fg("muted", text),
+              },
+            );
+            list.setSelectedIndex(Math.max(0, options.indexOf(selected ?? "")));
+            list.onSelect = (item) => finish(item.value);
+            list.onCancel = () => finish(undefined);
+            return list;
+          };
+          let list = createList(1);
+          const border = new DynamicBorder((text) => theme.fg("border", text));
+          this.closeView = () => finish(undefined);
+          return {
+            handleInput(data: string) {
+              if (closed) return;
+              handleListInput(list, options, keys, data);
+              tui.requestRender();
+            },
+            render: (width: number) => {
+              if (closed || width < 1) return [];
+              const height = viewHeight(tui.terminal.rows, 2);
+              const borders = height >= 4 ? border.render(width) : [];
+              const rows = height - 2 * borders.length;
+              const margin = rows >= 6 ? [""] : [];
+              const listHeight = Math.max(1, rows - 2 * margin.length - 2);
+              list = createList(
+                Math.max(1, listHeight - 1),
+                list.getSelectedItem()?.value,
+              );
+              const prefix = prompt ? theme.fg("accent", prompt) : "";
+              const content = [
+                prefix +
+                  renderTaskLine(
+                    theme,
+                    this.registry.get(task.id),
+                    Math.max(0, width - visibleWidth(prefix)),
+                    "accent",
+                  ),
+                ...margin,
+                ...list.render(width).slice(0, listHeight),
+                ...margin,
+                renderHint(theme, keys, [
+                  [["tui.select.up", "tui.select.down"], "navigate"],
+                  [["tui.select.confirm"], "select"],
+                  [["tui.select.cancel"], "back"],
+                ]),
+              ].slice(0, rows);
+              return [...borders, ...content, ...borders].map((line) =>
+                truncateToWidth(line, width),
+              );
+            },
+            invalidate() {},
+            dispose() {
+              closed = true;
+            },
+          };
+        },
+      );
+    } finally {
+      this.closeView = undefined;
+    }
   }
 
   async show(ctx: ExtensionCommandContext): Promise<void> {
@@ -326,13 +580,14 @@ export class TaskUI {
         return;
       }
       const selected = await ctx.ui.custom<string | undefined>(
-        (tui, theme, _keys, done) => {
+        (tui, theme, keys, done) => {
           const view = new TaskListView(
             () => this.registry.list(),
             theme,
-            () => Math.max(4, tui.terminal.rows - 4),
+            () => viewHeight(tui.terminal.rows, 2),
             () => tui.requestRender(),
             done,
+            keys,
           );
           this.closeView = () => {
             view.dispose();
@@ -346,20 +601,21 @@ export class TaskUI {
       this.closeView = undefined;
       if (this.disposed || !selected) return;
       const task = this.registry.get(selected);
-      const action = await ctx.ui.select(statusLine(task), [
+      const action = await this.choose(ctx, task, [
         "View output",
         ...(task.status === "running" ? ["Kill"] : []),
         "Back",
       ]);
       if (this.disposed) return;
       if (action === "View output") {
-        await ctx.ui.custom<void>((tui, theme, _keys, done) => {
+        await ctx.ui.custom<void>((tui, theme, keys, done) => {
           const view = new OutputView(
             () => this.registry.get(task.id),
             theme,
-            () => Math.max(4, tui.terminal.rows - 4),
+            () => viewHeight(tui.terminal.rows),
             () => tui.requestRender(),
             () => done(),
+            keys,
           );
           this.closeView = () => {
             view.dispose();
@@ -370,7 +626,13 @@ export class TaskUI {
         this.closeView = undefined;
       } else if (
         action === "Kill" &&
-        (await ctx.ui.confirm("Kill background task?", statusLine(task)))
+        // Default to No so repeated selection keys cannot accidentally kill a task.
+        (await this.choose(
+          ctx,
+          task,
+          ["No", "Yes"],
+          "Kill background task? ",
+        )) === "Yes"
       ) {
         if (this.disposed) return;
         try {
@@ -378,7 +640,7 @@ export class TaskUI {
         } catch (error) {
           ctx.ui.notify(String(error), "error");
         }
-      } else if (!action) return;
+      }
     }
   }
 
