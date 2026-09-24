@@ -269,6 +269,88 @@ test.each([0, 1, 40])(
 );
 
 test.each([
+  ["openai-codex", "test-model", true],
+  ["openai-codex", "test-model", false],
+  ["提供元🚀", "モデル🚀", true],
+] as const)(
+  "hides provider %s then cache-hit rate before truncating model %s (reasoning: %s)",
+  (provider, id, reasoning) => {
+    const { ctx, sessionManager, tui, footerData } = fixture();
+    if (!ctx.model) throw new Error("Missing fixture model");
+    Object.assign(ctx.model, { provider, id, reasoning });
+    sessionManager.appendMessage(assistant());
+    const theme = {
+      fg: (_color: string, text: string) =>
+        `${ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
+    };
+    const footer = createFooter(ctx, tui, theme, footerData);
+    const model = ` ${id} (272k)${reasoning ? " 󱩔 high" : ""}`;
+    const fullModel = `󱘖 ${provider} ${model}`;
+    const contextMetrics = "󰓅 36.1% █▓░░";
+    const metrics = ` 90.0% ${contextMetrics}`;
+    const fullWidth = visibleWidth(fullModel) + 2 + visibleWidth(metrics);
+    const compactWidth = visibleWidth(model) + 2 + visibleWidth(metrics);
+    const minimumWidth = visibleWidth(model) + 2 + visibleWidth(contextMetrics);
+
+    expect(stripVTControlCharacters(footer.render(fullWidth)[0] ?? "")).toBe(
+      `${fullModel}  ${metrics}`,
+    );
+    for (let width = fullWidth - 1; width >= compactWidth; width--) {
+      const line = footer.render(width)[0] ?? "";
+      expect(stripVTControlCharacters(line)).toBe(
+        model + " ".repeat(width - compactWidth + 2) + metrics,
+      );
+      expect(line).toContain(`${ANSI.fg.brightBlack}${model}${ANSI.reset.fg}`);
+      expect(visibleWidth(line)).toBe(width);
+    }
+    for (let width = compactWidth - 1; width >= minimumWidth; width--) {
+      const line = footer.render(width)[0] ?? "";
+      expect(stripVTControlCharacters(line)).toBe(
+        model + " ".repeat(width - minimumWidth + 2) + contextMetrics,
+      );
+      expect(line).toContain(
+        `${ANSI.fg.brightGreen}󰓅 36.1%${ANSI.reset.fg} ${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`,
+      );
+      expect(visibleWidth(line)).toBe(width);
+    }
+    for (const width of [1, 2, 3, 10, minimumWidth - 1]) {
+      const line = footer.render(width)[0] ?? "";
+      expect(line).not.toContain("󱘖");
+      expect(line).not.toContain(provider);
+      expect(line).not.toContain("");
+      expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    }
+    expect(stripVTControlCharacters(footer.render(compactWidth)[0] ?? "")).toBe(
+      `${model}  ${metrics}`,
+    );
+    expect(stripVTControlCharacters(footer.render(fullWidth)[0] ?? "")).toBe(
+      `${fullModel}  ${metrics}`,
+    );
+    footer.dispose();
+  },
+);
+
+test.each([true, false])(
+  "hides unknown cache-hit rate before unknown context usage (has model: %s)",
+  (hasModel) => {
+    const { ctx, tui, theme, footerData } = fixture();
+    if (!hasModel) ctx.model = undefined;
+    ctx.getContextUsage = () => undefined;
+    const footer = createFooter(ctx, tui, theme, footerData);
+    const model = hasModel ? " test-model (272k) 󱩔 high" : "no-model (?)";
+    const width = visibleWidth(model) + 2 + visibleWidth("󰓅 ?");
+    expect(stripVTControlCharacters(footer.render(width)[0] ?? "")).toBe(
+      `${model}  󰓅 ?`,
+    );
+    const restoredWidth = width + visibleWidth(" ? ");
+    expect(
+      stripVTControlCharacters(footer.render(restoredWidth)[0] ?? ""),
+    ).toBe(`${model}   ? 󰓅 ?`);
+    footer.dispose();
+  },
+);
+
+test.each([
   [undefined, "?"],
   [assistant(0, 0), "?"],
   [assistant(100, 0), "0.0%"],
