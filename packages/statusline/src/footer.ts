@@ -97,6 +97,7 @@ export function createFooter(
     invalidate() {},
     render(width) {
       if (width <= 0) return [];
+      const metricsWidth = Math.max(0, width - 2);
       const usage = collectUsage(ctx.sessionManager.getEntries());
       const cacheText = ` ${usage.cacheHitRate === undefined ? "?" : `${usage.cacheHitRate.toFixed(1)}%`}`;
 
@@ -122,14 +123,17 @@ export function createFooter(
         .filter(Boolean)
         .join(" ");
       let right = `${theme.fg("dim", cacheText)} ${contextMetrics}`;
-      if (model && visibleWidth(left) + 2 + visibleWidth(right) > width) {
+      if (
+        model &&
+        visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth
+      ) {
         left = theme.fg("dim", singleLine(modelText));
       }
-      if (visibleWidth(left) + 2 + visibleWidth(right) > width) {
+      if (visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth) {
         right = contextMetrics;
       }
       const padding = " ".repeat(
-        Math.max(2, width - visibleWidth(left) - visibleWidth(right)),
+        Math.max(2, metricsWidth - visibleWidth(left) - visibleWidth(right)),
       );
       const gitBranch = footerData.getGitBranch();
       const branch = gitBranch ? ` ${gitBranch}` : undefined;
@@ -151,7 +155,9 @@ export function createFooter(
         segments.push(filler);
       }
       const lines = [
-        truncateToWidth(left + padding + right, width),
+        width === 1
+          ? " "
+          : ` ${truncateToWidth(left + padding + right, metricsWidth, "...", true)} `,
         "",
         powerline(segments, width),
       ];

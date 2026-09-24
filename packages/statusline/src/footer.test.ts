@@ -352,11 +352,11 @@ test.each([0, 1, 40])(
     const footer = createFooter(ctx, tui, theme, footerData);
     const model = "󱘖 openai-codex  test-model (272k) 󱩔 high";
     const metrics = " ? 󰓅 36.1% █▓░░";
-    const width = visibleWidth(model) + 2 + visibleWidth(metrics) + extra;
+    const width = visibleWidth(` ${model}  ${metrics} `) + extra;
     const lines = footer.render(width);
     expect(lines).toHaveLength(3);
     expect(stripVTControlCharacters(lines[0] ?? "")).toBe(
-      model + " ".repeat(2 + extra) + metrics,
+      ` ${model}${" ".repeat(2 + extra)}${metrics} `,
     );
     expect(visibleWidth(lines[0] ?? "")).toBe(width);
     footer.dispose();
@@ -383,17 +383,17 @@ test.each([
     const fullModel = `󱘖 ${provider} ${model}`;
     const contextMetrics = "󰓅 36.1% █▓░░";
     const metrics = ` 90.0% ${contextMetrics}`;
-    const fullWidth = visibleWidth(fullModel) + 2 + visibleWidth(metrics);
-    const compactWidth = visibleWidth(model) + 2 + visibleWidth(metrics);
-    const minimumWidth = visibleWidth(model) + 2 + visibleWidth(contextMetrics);
+    const fullWidth = visibleWidth(` ${fullModel}  ${metrics} `);
+    const compactWidth = visibleWidth(` ${model}  ${metrics} `);
+    const minimumWidth = visibleWidth(` ${model}  ${contextMetrics} `);
 
     expect(stripVTControlCharacters(footer.render(fullWidth)[0] ?? "")).toBe(
-      `${fullModel}  ${metrics}`,
+      ` ${fullModel}  ${metrics} `,
     );
     for (let width = fullWidth - 1; width >= compactWidth; width--) {
       const line = footer.render(width)[0] ?? "";
       expect(stripVTControlCharacters(line)).toBe(
-        model + " ".repeat(width - compactWidth + 2) + metrics,
+        ` ${model}${" ".repeat(width - compactWidth + 2)}${metrics} `,
       );
       expect(line).toContain(`${ANSI.fg.brightBlack}${model}${ANSI.reset.fg}`);
       expect(visibleWidth(line)).toBe(width);
@@ -401,7 +401,7 @@ test.each([
     for (let width = compactWidth - 1; width >= minimumWidth; width--) {
       const line = footer.render(width)[0] ?? "";
       expect(stripVTControlCharacters(line)).toBe(
-        model + " ".repeat(width - minimumWidth + 2) + contextMetrics,
+        ` ${model}${" ".repeat(width - minimumWidth + 2)}${contextMetrics} `,
       );
       expect(line).toContain(
         `${ANSI.fg.brightGreen}󰓅 36.1%${ANSI.reset.fg} ${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`,
@@ -416,10 +416,10 @@ test.each([
       expect(visibleWidth(line)).toBeLessThanOrEqual(width);
     }
     expect(stripVTControlCharacters(footer.render(compactWidth)[0] ?? "")).toBe(
-      `${model}  ${metrics}`,
+      ` ${model}  ${metrics} `,
     );
     expect(stripVTControlCharacters(footer.render(fullWidth)[0] ?? "")).toBe(
-      `${fullModel}  ${metrics}`,
+      ` ${fullModel}  ${metrics} `,
     );
     footer.dispose();
   },
@@ -433,14 +433,14 @@ test.each([true, false])(
     ctx.getContextUsage = () => undefined;
     const footer = createFooter(ctx, tui, theme, footerData);
     const model = hasModel ? " test-model (272k) 󱩔 high" : "no-model (?)";
-    const width = visibleWidth(model) + 2 + visibleWidth("󰓅 ?");
+    const width = visibleWidth(` ${model}  󰓅 ? `);
     expect(stripVTControlCharacters(footer.render(width)[0] ?? "")).toBe(
-      `${model}  󰓅 ?`,
+      ` ${model}  󰓅 ? `,
     );
     const restoredWidth = width + visibleWidth(" ? ");
     expect(
       stripVTControlCharacters(footer.render(restoredWidth)[0] ?? ""),
-    ).toBe(`${model}   ? 󰓅 ?`);
+    ).toBe(` ${model}   ? 󰓅 ? `);
     footer.dispose();
   },
 );
@@ -517,7 +517,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   const lines = footer.render(120);
   expect(lines).toHaveLength(4);
   expect(stripVTControlCharacters(lines[0] ?? "")).toMatch(
-    /^󱘖 openai-codex  test-model \(272k\) 󱩔 high {2,} 90.0% 󰓅 36.1% █▓░░$/,
+    /^ 󱘖 openai-codex  test-model \(272k\) 󱩔 high {2,} 90.0% 󰓅 36.1% █▓░░ $/,
   );
   expect(lines[0]).toContain(`${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`);
   expect(visibleWidth(lines[0] ?? "")).toBe(120);
@@ -549,7 +549,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   ctx.model = undefined;
   ctx.getContextUsage = () => undefined;
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^no-model \(\?\) {2,} 80.0% 󰓅 \?$/,
+    /^ no-model \(\?\) {2,} 80.0% 󰓅 \? $/,
   );
   expect(footer.render(120)[0]).not.toMatch(/[█▓░]/);
   expect(footer.render(120)[0]).toContain(
@@ -579,7 +579,7 @@ test.each([
     const footer = createFooter(ctx, tui, theme, footerData);
     const stats = stripVTControlCharacters(footer.render(120)[0] ?? "");
     expect(stats).toContain(`󱘖 openai-codex  test-model (${expected}) 󱩔 high`);
-    expect(stats).toMatch(/ {2,} \? 󰓅 \?$/);
+    expect(stats).toMatch(/ {2,} \? 󰓅 \? $/);
     expect(stats).not.toContain("$");
     footer.dispose();
   },
@@ -614,11 +614,11 @@ test("omits thinking effort for non-reasoning and missing models", () => {
   ctx.model.reasoning = false;
   const footer = createFooter(ctx, tui, theme, footerData);
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^󱘖 openai-codex  test-model \(272k\) {2,} \? 󰓅 36.1% █▓░░$/,
+    /^ 󱘖 openai-codex  test-model \(272k\) {2,} \? 󰓅 36.1% █▓░░ $/,
   );
   ctx.model = undefined;
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^no-model \(272k\) {2,} \? 󰓅 36.1% █▓░░$/,
+    /^ no-model \(272k\) {2,} \? 󰓅 36.1% █▓░░ $/,
   );
   footer.dispose();
 });
@@ -636,7 +636,11 @@ test("fits ANSI and wide text at narrow widths and reads theme changes", () => {
   const footer = createFooter(ctx, tui, theme, footerData);
   expect(footer.render(0)).toEqual([]);
   for (const width of [1, 2, 3, 10, 40, 80, 120]) {
-    for (const line of footer.render(width)) {
+    const lines = footer.render(width);
+    expect(lines[0]?.startsWith(" ")).toBe(true);
+    expect(lines[0]?.endsWith(" ")).toBe(true);
+    expect(visibleWidth(lines[0] ?? "")).toBe(width);
+    for (const line of lines) {
       expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       expect(line).not.toMatch(/[\r\n\t]/);
     }

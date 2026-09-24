@@ -42,7 +42,7 @@ pi install ./packages/statusline
 The footer is installed automatically in interactive terminal mode:
 
 ```text
-󱘖 openai-codex  test-model (272k) 󱩔 high                    98.4% 󰓅 36.1% █▓░░
+ 󱘖 openai-codex  test-model (272k) 󱩔 high                  98.4% 󰓅 36.1% █▓░░
 
   pix/packages/statusline   main                                          
 ```
@@ -69,11 +69,12 @@ Use a Nerd Font in your terminal to display these icons. Git detection runs once
 at session startup; use `/reload` after initializing or removing a repository.
 If Git is unavailable or detection fails, the footer uses the folder format.
 
-The first row places the selected provider/model and thinking level on the left,
-with the latest assistant prompt's cache-hit rate and context utilization aligned
-to the right: ` 98.4% 󰓅 36.1% █▓░░`. The context-window size appears beside the
-model name, as in ` test-model (272k)`. The cache-hit rate uses the same theme
-`dim` color as the model details. An unavailable cache-hit rate shows ` ?`.
+The first row has one space of padding at each end. It places the selected
+provider/model and thinking level on the left, with the latest assistant prompt's
+cache-hit rate and context utilization aligned to the right: ` 98.4% 󰓅 36.1% █▓░░`.
+The context-window size appears beside the model name, as in ` test-model (272k)`.
+The cache-hit rate uses the same theme `dim` color as the model details. An
+unavailable cache-hit rate shows ` ?`.
 Token counts, cache read/write totals, and cost are not displayed.
 Extension status messages appear below the directory/branch row.
 
