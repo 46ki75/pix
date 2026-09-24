@@ -14,31 +14,32 @@ pi -e /absolute/path/to/pix/packages/pix-mcp
 
 Disable any other MCP adapter that would collide with the `mcp` tool or flags,
 but keep any permission-control extensions enabled. Review the configuration
-and trust requirements below before connecting servers.
+and automatic startup behavior below before connecting servers.
 
-## Configuration and trust
+## Configuration
 
 By default, read only `.mcp.json` in Pi's working directory. There is no ancestor
 search, global config merge, automatic import, or persistent metadata cache.
 Relative `--mcp-config` paths resolve from that working directory; a stdio
 server's `cwd` resolves from the config directory and defaults to that directory.
 
-A bare `.mcp.json` is not protected by Pi's project-trust mechanism. This adapter
-asks before using the default file. In a headless session, it remains disabled
-unless explicitly trusted. Either of these authorizes the file for one session:
+The adapter automatically loads the selected file and starts its enabled servers
+in all modes, without a confirmation prompt. Use `--mcp-config <path>` to select
+a different file.
 
-- `--mcp-config <path>`: select **and trust** a file.
-- `--mcp-trust-config`: trust the default `.mcp.json`.
+**Breaking change:** `--mcp-trust-config` has been removed. Remove it from existing
+launch commands; print and JSON sessions also load the default file automatically.
 
-Review the file first: trusting it can launch arbitrary local programs and
-contact remote services. Configuration trust is not an OS sandbox.
+Review the file before starting Pi: it can launch arbitrary local programs and
+contact remote services. A bare `.mcp.json` is not protected by Pi's project-trust
+mechanism, and the adapter is not an OS sandbox. Set a server's `disabled` field
+to `true` to prevent it from starting.
 
 At session startup, interactive and RPC sessions receive an `MCP config: <path>`
-notice with the resolved absolute path after the file is read and trusted, even
-when a flag skips the trust prompt. The notice identifies the configuration file,
-not whether every server connected; it never includes configuration contents.
-Missing, unreadable, or malformed files and declined trust produce no notice.
-Print and JSON sessions remain silent.
+notice with the resolved absolute path after the file is read. The notice
+identifies the configuration file, not whether every server connected; it never
+includes configuration contents. Missing, unreadable, or malformed files produce
+no notice. Print and JSON sessions remain silent.
 
 ```json
 {
@@ -111,9 +112,6 @@ count limits remain fatal for the whole file. An invalid-only configuration
 reports that no valid servers remain. Disabled entries are omitted, not reported
 as failed connections. Correct the file and reload Pi to retry.
 
-Configuration trust still applies before any valid server is started or its
-metadata exposed.
-
 ### Deadlines and migration
 
 All three deadline fields accept integers from 1 through 2,147,483,647 milliseconds
@@ -147,7 +145,7 @@ permission prompts in both interactive and headless sessions. Native calls pass
 through Pi's normal `tool_call` and `tool_result` hooks. For approvals or access
 policies, install a Pi extension that handles `tool_call` so it can manage MCP
 and other tools together. Server annotations do not bypass those hooks.
-Configuration trust above is separate: it authorizes startup, not individual calls.
+These hooks govern tool calls, not automatic server startup.
 
 **Migration from 0.0.2:** Remove the server-level `approve` field. Entries that
 still contain it are rejected with migration guidance rather than silently
@@ -159,7 +157,7 @@ credentials; debug a failing server separately in a trusted environment.
 
 ## Discovery and execution
 
-At session startup, the adapter connects to trusted servers and fetches their
+At session startup, the adapter connects to enabled servers and fetches their
 paginated tool catalogs. A server's configuration, connection, or discovery
 failure does not hide tools from other servers.
 Full schemas stay out of model context until selected. **Schema exposure is lazy;

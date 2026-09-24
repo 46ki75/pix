@@ -60,13 +60,7 @@ export default function mcp(pi: ExtensionAPI) {
   pi.registerFlag("mcp-config", {
     type: "string",
     description:
-      "Read and trust this MCP config file for this session (default: .mcp.json, with confirmation).",
-  });
-  pi.registerFlag("mcp-trust-config", {
-    type: "boolean",
-    default: false,
-    description:
-      "Trust the default .mcp.json for this session; it can launch processes and contact servers.",
+      "Read this MCP config file for this session (default: .mcp.json).",
   });
 
   function deactivate(names: Iterable<string>) {
@@ -373,20 +367,6 @@ export default function mcp(pi: ExtensionAPI) {
         if (explicit)
           owner.status =
             "The explicitly selected MCP configuration does not exist.";
-        return;
-      }
-      // A bare .mcp.json is not among Pi's project-trust resources. Require our
-      // own decision rather than assuming Pi has approved launching its commands.
-      let trusted = explicit || pi.getFlag("mcp-trust-config") === true;
-      if (!trusted && ctx.hasUI)
-        trusted = await ctx.ui.confirm(
-          "Trust MCP configuration for this session?",
-          `${path}\nThis file can launch local processes and contact remote servers. Review it before approving.`,
-        );
-      current(owner);
-      if (!trusted) {
-        owner.status =
-          "MCP configuration not trusted. Review it, then restart with --mcp-trust-config or --mcp-config <path>.";
         return;
       }
       if (ctx.hasUI) ctx.ui.notify(`MCP config: ${path}`, "info");
