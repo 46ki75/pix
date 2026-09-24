@@ -82,7 +82,7 @@ test("Pi loads webfetch independently and can load it alongside websearch", asyn
     const combined = await discoverAndLoadExtensions(
       [
         packagePath,
-        fileURLToPath(new URL("../../websearch/", import.meta.url)),
+        fileURLToPath(new URL("../../pix-websearch/", import.meta.url)),
       ],
       directory,
       join(directory, "agent"),

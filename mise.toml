@@ -50,39 +50,39 @@ depends = ["fmt-check --all-files", "lint --all-files", "typecheck", "test"]
 
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
-dir = "{{config_root}}/packages/websearch"
+dir = "{{config_root}}/packages/pix-websearch"
 raw = true
 run = "pnpm exec pi -e ."
 
 [tasks."webfetch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-webfetch"
-dir = "{{config_root}}/packages/webfetch"
+dir = "{{config_root}}/packages/pix-webfetch"
 raw = true
 run = "pnpm exec pi -e ."
 
 [tasks."mcp:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-mcp; accepts Pi arguments"
-dir = "{{config_root}}/packages/mcp"
+dir = "{{config_root}}/packages/pix-mcp"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
 [tasks."bg:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-bg; accepts Pi arguments"
-dir = "{{config_root}}/packages/bg"
+dir = "{{config_root}}/packages/pix-bg"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
 [tasks."statusline:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-statusline; accepts Pi arguments"
-dir = "{{config_root}}/packages/statusline"
+dir = "{{config_root}}/packages/pix-statusline"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
 [tasks."web:dev"]
 description = "Launch Pi with web search and web fetch"
-dir = "{{config_root}}/packages/webfetch"
+dir = "{{config_root}}/packages/pix-webfetch"
 raw = true
-run = "pnpm exec pi -e ../websearch -e ."
+run = "pnpm exec pi -e ../pix-websearch -e ."

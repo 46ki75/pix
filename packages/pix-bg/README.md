@@ -173,4 +173,4 @@ live registry is not reconstructed from history.
 ## Release
 
 After merging the reviewed changes, tag `bg-v0.0.5` and publish the package from
-`packages/bg` manually. The repository has no automated publish workflow.
+`packages/pix-bg` manually. The repository has no automated publish workflow.

@@ -28,13 +28,13 @@ This launches Pi with only this extension enabled. To load it alongside your
 usual extensions without saving configuration:
 
 ```sh
-pi -e ./packages/statusline
+pi -e ./packages/pix-statusline
 ```
 
 To keep using the local package:
 
 ```sh
-pi install ./packages/statusline
+pi install ./packages/pix-statusline
 ```
 
 ## Layout
@@ -44,7 +44,7 @@ The footer is installed automatically in interactive terminal mode:
 ```text
  󱘖 openai-codex  test-model · 272k 󱩔 high                  98.4%  36.1% █▓░░
 
-  pix/packages/statusline   main                                          
+  pix/packages/pix-statusline   main                                      
 ```
 
 It retains the working directory, Git branch, optional session name, and status
@@ -150,7 +150,7 @@ For example, inside `src/footer.ts`:
 import { ANSI } from "./ansi.ts";
 
 const icon = `${ANSI.fg.red}${ANSI.reset.fg}`;
-const path = `${ANSI.fg.cyan}pix/packages/statusline${ANSI.reset.fg}`;
+const path = `${ANSI.fg.cyan}pix/packages/pix-statusline${ANSI.reset.fg}`;
 ```
 
 These colors follow your terminal's palette, not Pi's theme. Foreground and
@@ -173,7 +173,7 @@ rounded ends and arrow separators. Supply all connected segments in one call:
 import { powerline } from "./powerline.ts";
 
 const bar = powerline([
-  { text: " pix/packages/statusline", background: "#bda68b", foreground: "#40444c" },
+  { text: " pix/packages/pix-statusline", background: "#bda68b", foreground: "#40444c" },
   { text: " main", background: "#c6b5a2", foreground: "#393e46" },
   { text: "", background: "#cabfb2", foreground: "#31353a" },
 ]);
