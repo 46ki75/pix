@@ -2,7 +2,7 @@
 
 Read the [repository contribution guide](../../CONTRIBUTING.md) first.
 This document covers package-specific development. For usage, configuration,
-and trust requirements, see [README.md](README.md).
+and automatic startup behavior, see [README.md](README.md).
 
 ## Run locally
 

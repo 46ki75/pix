@@ -35,11 +35,9 @@ afterEach(async () => {
 
 async function setup(
   options: {
-    trust?: boolean;
     explicitConfig?: "relative" | "absolute";
     missingConfig?: boolean;
     mode?: ExtensionContext["mode"];
-    confirm?: boolean;
     extension?: (pi: ExtensionAPI) => void;
     broken?: boolean;
     invalidSchema?: boolean;
@@ -127,10 +125,6 @@ async function setup(
   });
   await resourceLoader.reload();
   expect(resourceLoader.getExtensions().errors).toEqual([]);
-  if (options.trust !== false)
-    resourceLoader
-      .getExtensions()
-      .runtime.flagValues.set("mcp-trust-config", true);
   if (options.explicitConfig)
     resourceLoader
       .getExtensions()
@@ -164,7 +158,7 @@ async function setup(
   const errors: string[] = [];
   const ui = session.extensionRunner.getUIContext();
   const notify = vi.spyOn(ui, "notify");
-  const confirm = vi.fn(async () => options.confirm ?? false);
+  const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
   const hasUI = options.mode === "tui" || options.mode === "rpc";
   await session.bindExtensions({
     mode: options.mode ?? "print",
@@ -279,6 +273,9 @@ async function setup(
     configPath,
     notify,
     confirm,
+    flags: resourceLoader
+      .getExtensions()
+      .extensions.flatMap((extension) => [...extension.flags.keys()]),
   };
 }
 
@@ -363,20 +360,8 @@ test.each([false, true])(
   },
 );
 
-test("headless sessions do not trust a bare project config", async () => {
-  const untrusted = await setup({ trust: false });
-  expect((await untrusted.discover({ action: "list" })).status).toContain(
-    "not trusted",
-  );
-  expect(
-    untrusted.session
-      .getAllTools()
-      .filter((tool) => tool.name.startsWith("mcp_")),
-  ).toEqual([]);
-});
-
 test.each(["tui", "rpc"] as const)(
-  "startup announces the trusted default config once (%s)",
+  "startup loads and announces the default config once without prompting (%s)",
   async (mode) => {
     const { configPath, notify, confirm, discover } = await setup({ mode });
     expect(confirm).not.toHaveBeenCalled();
@@ -395,7 +380,6 @@ test.each(["relative", "absolute"] as const)(
   async (explicitConfig) => {
     const { configPath, notify, confirm } = await setup({
       mode: "tui",
-      trust: false,
       explicitConfig,
     });
     expect(confirm).not.toHaveBeenCalled();
@@ -406,31 +390,31 @@ test.each(["relative", "absolute"] as const)(
   },
 );
 
-test("startup announces the config only after interactive trust is granted", async () => {
-  const { configPath, notify, confirm } = await setup({
-    mode: "tui",
-    trust: false,
-    confirm: true,
-  });
-  expect(confirm).toHaveBeenCalledTimes(1);
-  expect(notify).toHaveBeenCalledExactlyOnceWith(
-    `MCP config: ${configPath}`,
-    "info",
-  );
-  expect(confirm.mock.invocationCallOrder[0]).toBeLessThan(
-    notify.mock.invocationCallOrder[0] ?? 0,
-  );
+test("only the config-selection flag is registered", async () => {
+  const { flags } = await setup({ configValue: { mcpServers: {} } });
+  expect(flags).toEqual(["mcp-config"]);
 });
 
-test("startup does not announce a config when trust is declined", async () => {
-  const { notify, confirm, discover } = await setup({
-    mode: "tui",
-    trust: false,
-  });
-  expect(confirm).toHaveBeenCalledTimes(1);
-  expect(notify).not.toHaveBeenCalled();
-  expect((await discover({ action: "list" })).status).toContain("not trusted");
-});
+test.each([{}, { fixture: { disabled: true } }])(
+  "startup announces configs with no enabled servers without prompting (%j)",
+  async (mcpServers) => {
+    const { configPath, notify, confirm, discover } = await setup({
+      mode: "tui",
+      configValue: { mcpServers },
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      `MCP config: ${configPath}`,
+      "info",
+    );
+    expect(await discover({ action: "list" })).toMatchObject({
+      status: "No enabled MCP servers configured.",
+      servers: [],
+      items: [],
+      total: 0,
+    });
+  },
+);
 
 test.each([undefined, "relative"] as const)(
   "startup does not announce a missing config (explicit=%s)",
@@ -459,7 +443,7 @@ test.each(['{"SECRET":', JSON.stringify({ mcpServers: [] })])(
 );
 
 test.each(["print", "json"] as const)(
-  "startup stays silent without a UI (%s)",
+  "startup loads the default config silently without a UI (%s)",
   async (mode) => {
     const { notify, confirm, discover } = await setup({ mode });
     expect(confirm).not.toHaveBeenCalled();
@@ -480,17 +464,10 @@ test("startup reports only the config path even when some servers are invalid", 
   expect((await discover({ action: "list" })).status).toContain("invalid");
 });
 
-test.each([false, true])(
-  "trusted native calls need no adapter approval (interactive=%s)",
-  async (interactive) => {
-    const { session, discover, call } = await setup();
-    const confirm = vi.fn(async () => false);
-    if (interactive)
-      session.extensionRunner.setUIContext(
-        { ...session.extensionRunner.getUIContext(), confirm },
-        "tui",
-      );
-    expect(session.extensionRunner.hasUI()).toBe(interactive);
+test.each(["tui", "rpc", "print", "json"] as const)(
+  "startup and native calls need no adapter approval (%s)",
+  async (mode) => {
+    const { session, discover, call, confirm } = await setup({ mode });
     const found = await discover({ action: "search", query: "echo" });
     const name = found.items[0]?.name ?? "";
     expect(session.getToolDefinition(name)?.executionMode).toBe("parallel");
@@ -584,7 +561,7 @@ test("one failed server does not hide healthy tools or leak transport errors", a
   expect(JSON.stringify(result)).not.toContain("SECRET");
 });
 
-test("configuration failures are visible while healthy tools remain trust-gated and usable", async () => {
+test("configuration failures are visible while healthy tools remain usable", async () => {
   vi.stubEnv("PIX_FIXTURE_UNSET_SECRET", undefined);
   const extraServers = {
     invalid: { command: "SECRET-command", timeout: 0 },
@@ -596,7 +573,7 @@ test("configuration failures are visible while healthy tools remain trust-gated 
     legacy: { command: "SECRET-command", timeoutMs: 960000 },
     "SECRET\ninvalid-name": { command: "SECRET-command" },
   };
-  const { discover, call } = await setup({ extraServers });
+  const { discover, call, confirm } = await setup({ extraServers });
   const listed = await discover({ action: "list" });
   expect(listed.total).toBe(5);
   expect(listed.servers).toHaveLength(5);
@@ -614,11 +591,7 @@ test("configuration failures are visible while healthy tools remain trust-gated 
   expect(
     (await call(found.items[0]?.name ?? "", { message: "healthy" })).content[0],
   ).toMatchObject({ text: expect.stringContaining("healthy") });
-  const untrusted = await setup({ extraServers, trust: false });
-  const blocked = await untrusted.discover({ action: "list" });
-  expect(blocked.status).toContain("not trusted");
-  expect(blocked.servers).toEqual([]);
-  expect(blocked.items).toEqual([]);
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 test("invalid-only configuration and root errors have safe, distinct discovery results", async () => {
