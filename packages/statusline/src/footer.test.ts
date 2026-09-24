@@ -142,7 +142,7 @@ test.each([
   ctx.cwd = cwd;
   const footer = createFooter(ctx, tui, theme, footerData);
   expectFullWidthLocation(
-    footer.render(1_000)[1],
+    footer.render(1_000)[2],
     `  ${expected}   main `,
     1_000,
   );
@@ -155,7 +155,7 @@ test.each([" pix", " pix/packages/statusline"])(
     const { ctx, tui, theme, footerData } = fixture();
     const footer = createFooter(ctx, tui, theme, footerData, directory);
     expectFullWidthLocation(
-      footer.render(120)[1],
+      footer.render(120)[2],
       ` ${directory}   main `,
       120,
     );
@@ -178,7 +178,7 @@ test.each([
     vi.spyOn(sessionManager, "getSessionName").mockReturnValue(name);
     const footer = createFooter(ctx, tui, theme, footerData, " pix");
     for (const width of [visibleWidth(expected), 40, 120, 80]) {
-      expectFullWidthLocation(footer.render(width)[1], expected, width);
+      expectFullWidthLocation(footer.render(width)[2], expected, width);
     }
     footer.dispose();
   },
@@ -197,7 +197,7 @@ test("keeps the rounded right cap when truncating a long branch", () => {
   const expected =
     "  pix/packages/statusline   fix/statusline-full-width-loca... ";
   const width = visibleWidth(expected);
-  const line = footer.render(width)[1] ?? "";
+  const line = footer.render(width)[2] ?? "";
   expect(stripVTControlCharacters(line)).toBe(expected);
   expect(visibleWidth(line)).toBe(width);
   expect(line).toContain(
@@ -209,11 +209,11 @@ test("keeps the rounded right cap when truncating a long branch", () => {
 test("refreshes the connected branch segment without reinstalling the footer", () => {
   const { ctx, tui, theme, footerData } = fixture();
   const footer = createFooter(ctx, tui, theme, footerData, " pix");
-  expectFullWidthLocation(footer.render(120)[1], "  pix   main ", 120);
+  expectFullWidthLocation(footer.render(120)[2], "  pix   main ", 120);
   footerData.getGitBranch.mockReturnValue("feature");
-  expectFullWidthLocation(footer.render(120)[1], "  pix   feature ", 120);
+  expectFullWidthLocation(footer.render(120)[2], "  pix   feature ", 120);
   footerData.getGitBranch.mockReturnValue(null);
-  expectFullWidthLocation(footer.render(120)[1], "  pix ", 120);
+  expectFullWidthLocation(footer.render(120)[2], "  pix ", 120);
   footer.dispose();
 });
 
@@ -281,6 +281,20 @@ test("accounts for assistants, tool calls, summaries, and standalone usage", () 
   expect(collectUsage(entries).cacheHitRate).toBeUndefined();
 });
 
+test.each([1, 40, 120])(
+  "separates model metrics and location with a blank row at width %i",
+  (width) => {
+    const { ctx, tui, theme, footerData } = fixture();
+    const footer = createFooter(ctx, tui, theme, footerData);
+    const lines = footer.render(width);
+    expect(lines[1]).toBe("");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).not.toBe("");
+    expect(lines[2]).not.toBe("");
+    footer.dispose();
+  },
+);
+
 test.each([0, 1, 40])(
   "right-aligns compact metrics beside the model with %i extra columns",
   (extra) => {
@@ -290,7 +304,7 @@ test.each([0, 1, 40])(
     const metrics = " ? 󰓅 36.1% █▓░░";
     const width = visibleWidth(model) + 2 + visibleWidth(metrics) + extra;
     const lines = footer.render(width);
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(3);
     expect(stripVTControlCharacters(lines[0] ?? "")).toBe(
       model + " ".repeat(2 + extra) + metrics,
     );
@@ -446,14 +460,15 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   );
   const footer = createFooter(ctx, tui, theme, footerData);
   const lines = footer.render(120);
-  expect(lines).toHaveLength(3);
+  expect(lines).toHaveLength(4);
   expect(stripVTControlCharacters(lines[0] ?? "")).toMatch(
     /^󱘖 openai-codex  test-model \(272k\) 󱩔 high {2,} 90.0% 󰓅 36.1% █▓░░$/,
   );
   expect(lines[0]).toContain(`${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`);
   expect(visibleWidth(lines[0] ?? "")).toBe(120);
-  expectFullWidthLocation(lines[1], "  /workspace   main ", 120);
-  expect(lines[2]).toBe("First Second line");
+  expect(lines[1]).toBe("");
+  expectFullWidthLocation(lines[2], "  /workspace   main ", 120);
+  expect(lines[3]).toBe("First Second line");
 
   sessionManager.appendMessage(assistant(200, 800));
   ctx.thinkingLevel = "off";

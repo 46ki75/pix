@@ -43,6 +43,7 @@ The footer is installed automatically in interactive terminal mode:
 
 ```text
 󱘖 openai-codex  test-model (272k) 󱩔 high                    98.4% 󰓅 36.1% █▓░░
+
   pix/packages/statusline   main                                           
 ```
 
@@ -53,10 +54,11 @@ messages from other extensions. The directory segment uses:
 - Inside Git: ` repository-name/relative/path`, or ` repository-name` at the root.
   Linked worktrees use their own root directory name.
 
-The directory and branch share the second row, using rounded Powerline segments:
-a blue directory segment followed by a bright-blue branch segment prefixed with
-``. The optional session name appears beside the branch, separated by `•`. If
-neither is present, only the directory segment is rendered. The final segment
+A blank row separates the model/usage line from the directory/branch line.
+The directory and branch use rounded Powerline segments: a blue directory
+segment followed by a bright-blue branch segment prefixed with ``. The optional
+session name appears beside the branch, separated by `•`. If neither is present,
+only the directory segment is rendered. The final segment
 fills the remaining row width, placing the rounded cap at the terminal's right
 edge. Long labels are truncated before the final space and cap.
 

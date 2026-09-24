@@ -146,6 +146,7 @@ export function createFooter(
       }
       const lines = [
         truncateToWidth(left + padding + right, width),
+        "",
         powerline(segments, width),
       ];
       const statuses = [...footerData.getExtensionStatuses()]
