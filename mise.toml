@@ -74,6 +74,13 @@ raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
+[tasks."statusline:dev"]
+description = "Launch Pi with only @ikuma.cloud/pix-statusline; accepts Pi arguments"
+dir = "{{config_root}}/packages/statusline"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e ."
+
 [tasks."web:dev"]
 description = "Launch Pi with web search and web fetch"
 dir = "{{config_root}}/packages/webfetch"

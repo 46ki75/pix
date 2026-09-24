@@ -219,6 +219,15 @@ importers:
         specifier: 1.3.27
         version: 1.3.27
 
+  packages/statusline:
+    devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.87.1
+        version: 0.87.1(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(ws@8.21.3)(zod@4.6.5)
+      '@earendil-works/pi-tui':
+        specifier: 0.87.1
+        version: 0.87.1
+
   packages/webfetch:
     dependencies:
       entities:
