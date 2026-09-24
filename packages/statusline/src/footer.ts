@@ -103,9 +103,9 @@ export function createFooter(
       const metricsWidth = Math.max(0, width - 2);
       const usage = collectUsage(ctx.sessionManager.getEntries());
       const cacheText = detail(
-        "",
+        "",
         usage.cacheHitRate === undefined
-          ? "?"
+          ? "----%"
           : `${usage.cacheHitRate.toFixed(1)}%`,
       );
 
@@ -113,7 +113,7 @@ export function createFooter(
       const contextWindow = context?.contextWindow ?? ctx.model?.contextWindow;
       const windowText = contextWindow ? formatTokens(contextWindow) : "?";
       const percent = context?.percent;
-      const contextText = percent == null ? "?" : `${percent.toFixed(1)}%`;
+      const contextText = percent == null ? "----%" : `${percent.toFixed(1)}%`;
 
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
@@ -124,7 +124,7 @@ export function createFooter(
         ? `${detail("󱘖", model.provider)} ${modelText}`
         : modelText;
       const contextMetrics = [
-        `${contextColor(percent ?? 0)}󰓅 ${contextText}${ANSI.reset.fg}`,
+        `${contextColor(percent ?? 0)} ${contextText}${ANSI.reset.fg}`,
         formatContextBar(percent),
       ]
         .filter(Boolean)
