@@ -33,6 +33,13 @@ unless explicitly trusted. Either of these authorizes the file for one session:
 Review the file first: trusting it can launch arbitrary local programs and
 contact remote services. Configuration trust is not an OS sandbox.
 
+At session startup, interactive and RPC sessions receive an `MCP config: <path>`
+notice with the resolved absolute path after the file is read and trusted, even
+when a flag skips the trust prompt. The notice identifies the configuration file,
+not whether every server connected; it never includes configuration contents.
+Missing, unreadable, or malformed files and declined trust produce no notice.
+Print and JSON sessions remain silent.
+
 ```json
 {
   "mcpServers": {

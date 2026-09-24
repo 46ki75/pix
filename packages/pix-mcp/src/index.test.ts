@@ -19,6 +19,7 @@ import {
   SessionManager,
   SettingsManager,
   type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
 import { eagleSchema, tinyPng } from "./fixtures/server.ts";
@@ -29,11 +30,16 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  vi.restoreAllMocks();
 });
 
 async function setup(
   options: {
     trust?: boolean;
+    explicitConfig?: "relative" | "absolute";
+    missingConfig?: boolean;
+    mode?: ExtensionContext["mode"];
+    confirm?: boolean;
     extension?: (pi: ExtensionAPI) => void;
     broken?: boolean;
     invalidSchema?: boolean;
@@ -71,8 +77,12 @@ async function setup(
         : {}),
     },
   };
+  const configName = options.explicitConfig
+    ? "custom config.json"
+    : ".mcp.json";
+  const configPath = join(directory, configName);
   await writeFile(
-    join(directory, ".mcp.json"),
+    configPath,
     options.source ??
       JSON.stringify(
         options.configValue !== undefined
@@ -94,6 +104,7 @@ async function setup(
             },
       ),
   );
+  if (options.missingConfig) await rm(configPath);
   const agentDir = join(directory, "agent");
   const settingsManager = SettingsManager.inMemory();
   let unrelatedApi: ExtensionAPI | undefined;
@@ -120,6 +131,13 @@ async function setup(
     resourceLoader
       .getExtensions()
       .runtime.flagValues.set("mcp-trust-config", true);
+  if (options.explicitConfig)
+    resourceLoader
+      .getExtensions()
+      .runtime.flagValues.set(
+        "mcp-config",
+        options.explicitConfig === "absolute" ? configPath : configName,
+      );
   const modelRuntime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
     modelsPath: null,
@@ -144,9 +162,17 @@ async function setup(
     session.dispose();
   });
   const errors: string[] = [];
+  const ui = session.extensionRunner.getUIContext();
+  const notify = vi.spyOn(ui, "notify");
+  const confirm = vi.fn(async () => options.confirm ?? false);
+  const hasUI = options.mode === "tui" || options.mode === "rpc";
   await session.bindExtensions({
+    mode: options.mode ?? "print",
+    // Supplying a UI context makes Pi's hasUI true regardless of mode.
+    ...(hasUI ? { uiContext: { ...ui, notify, confirm } } : {}),
     onError: (error) => errors.push(error.error),
   });
+  expect(session.extensionRunner.hasUI()).toBe(hasUI);
   expect(errors).toEqual([]);
   async function call(name: string, args: JsonObject, signal?: AbortSignal) {
     const tools = session.agent.state.tools;
@@ -244,7 +270,16 @@ async function setup(
     if (!observed) throw new Error("Provider boundary was not reached");
     return observed;
   }
-  return { session, call, discover, registerUnrelated, requestTools };
+  return {
+    session,
+    call,
+    discover,
+    registerUnrelated,
+    requestTools,
+    configPath,
+    notify,
+    confirm,
+  };
 }
 
 test("Pi loads the package, holds native schemas inactive, then activates and calls a tool", async () => {
@@ -338,6 +373,111 @@ test("headless sessions do not trust a bare project config", async () => {
       .getAllTools()
       .filter((tool) => tool.name.startsWith("mcp_")),
   ).toEqual([]);
+});
+
+test.each(["tui", "rpc"] as const)(
+  "startup announces the trusted default config once (%s)",
+  async (mode) => {
+    const { configPath, notify, confirm, discover } = await setup({ mode });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      `MCP config: ${configPath}`,
+      "info",
+    );
+    expect((await discover({ action: "list" })).total).toBe(5);
+    await discover({ action: "search", query: "echo" });
+    expect(notify).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each(["relative", "absolute"] as const)(
+  "startup announces the resolved explicit config without prompting (%s)",
+  async (explicitConfig) => {
+    const { configPath, notify, confirm } = await setup({
+      mode: "tui",
+      trust: false,
+      explicitConfig,
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      `MCP config: ${configPath}`,
+      "info",
+    );
+  },
+);
+
+test("startup announces the config only after interactive trust is granted", async () => {
+  const { configPath, notify, confirm } = await setup({
+    mode: "tui",
+    trust: false,
+    confirm: true,
+  });
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    `MCP config: ${configPath}`,
+    "info",
+  );
+  expect(confirm.mock.invocationCallOrder[0]).toBeLessThan(
+    notify.mock.invocationCallOrder[0] ?? 0,
+  );
+});
+
+test("startup does not announce a config when trust is declined", async () => {
+  const { notify, confirm, discover } = await setup({
+    mode: "tui",
+    trust: false,
+  });
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(notify).not.toHaveBeenCalled();
+  expect((await discover({ action: "list" })).status).toContain("not trusted");
+});
+
+test.each([undefined, "relative"] as const)(
+  "startup does not announce a missing config (explicit=%s)",
+  async (explicitConfig) => {
+    const { notify, confirm, discover } = await setup({
+      mode: "tui",
+      ...(explicitConfig ? { explicitConfig } : {}),
+      missingConfig: true,
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect((await discover({ action: "list" })).total).toBe(0);
+  },
+);
+
+test.each(['{"SECRET":', JSON.stringify({ mcpServers: [] })])(
+  "startup does not announce an invalid config (%s)",
+  async (source) => {
+    const { notify, confirm, discover } = await setup({ mode: "tui", source });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect((await discover({ action: "list" })).status).toContain(
+      "Invalid MCP configuration",
+    );
+  },
+);
+
+test.each(["print", "json"] as const)(
+  "startup stays silent without a UI (%s)",
+  async (mode) => {
+    const { notify, confirm, discover } = await setup({ mode });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect((await discover({ action: "list" })).total).toBe(5);
+  },
+);
+
+test("startup reports only the config path even when some servers are invalid", async () => {
+  const { configPath, notify, discover } = await setup({
+    mode: "tui",
+    extraServers: { broken: { command: "SECRET-command", timeout: 0 } },
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    `MCP config: ${configPath}`,
+    "info",
+  );
+  expect((await discover({ action: "list" })).status).toContain("invalid");
 });
 
 test.each([false, true])(
