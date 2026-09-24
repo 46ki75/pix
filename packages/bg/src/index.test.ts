@@ -120,6 +120,18 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         "bg_kill",
       ]);
       expect(extension.shortcuts.size).toBe(0);
+      expect(
+        extension.tools.get("bg_run")?.definition.promptGuidelines,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("Never use bash sleep, blocking waits,"),
+          expect.stringContaining("repeated bg_status/log checks"),
+          expect.stringContaining("continue independent work or end the turn"),
+          expect.stringContaining(
+            "In interactive/RPC mode, completion automatically starts another turn without user input.",
+          ),
+        ]),
+      );
       await expect(tool("bg_status")({})).rejects.toThrow("not started");
       await emit("session_start", "startup");
       expect(ctx.ui.setWidget).not.toHaveBeenCalled();

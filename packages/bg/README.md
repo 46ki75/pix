@@ -32,8 +32,9 @@ tool to inspect the returned log path. Logs combine stdout and stderr; ordering
 between the two streams depends on pipe delivery.
 
 For example, ask Pi to run `sleep 2; echo done` with `bg_run`. Continue independent
-work or end the turn rather than polling. In interactive and RPC modes, natural
-exits, timeouts, and output-cap stops deliver a follow-up message and start a turn.
+work or end the turn; do not use blocking sleeps or poll status/logs to wait.
+In interactive and RPC modes, natural exits, timeouts, and output-cap stops deliver
+a follow-up message and start a turn without user input.
 Completions within 250 ms are batched. Messages include outcomes, duration, log
 paths, and bounded output tails. Signal termination is distinct from success:
 `kill -KILL $$` reports `SIGKILL (exit code 137)`.
