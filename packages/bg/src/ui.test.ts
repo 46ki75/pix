@@ -434,7 +434,7 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(harness.requestRender).toHaveBeenCalled();
   expect(
     stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-  ).toContain(" 3");
+  ).toContain("󰐦 3");
   ui.dispose();
   await showing;
   expect(view?.render(120)).toEqual([]);

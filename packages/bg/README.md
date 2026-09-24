@@ -74,11 +74,11 @@ without repeating its legend. Use a Nerd Font to display these icons:
 Task-list rows and output-view headers share a compact summary:
 
 ```text
- 434c3aa0b5e2  100-line output test  0 󰔛 0.0s
+ 434c3aa0b5e2  100-line output test 󰐦 0 󰔛 0.0s
 ```
 
-`` marks the task name, `` precedes the exit code, and `󰔛` precedes elapsed
-time. Signals retain their names, such as ` 137 (SIGKILL)`; tasks without an
+`` marks the task name, `󰐦` precedes the exit code, and `󰔛` precedes elapsed
+time. Signals retain their names, such as `󰐦 137 (SIGKILL)`; tasks without an
 exit code show their status or reason instead. Both views prioritize IDs,
 outcomes, and durations over long task names.
 

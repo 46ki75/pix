@@ -99,7 +99,7 @@ test("task rows and output headers match the compact format", () => {
     h.keys,
   );
   try {
-    const expected = " 434c3aa0b5e2  100-line output test  0 󰔛 0.0s";
+    const expected = " 434c3aa0b5e2  100-line output test 󰐦 0 󰔛 0.0s";
     expect.soft(h.text()).toContain(`→ ${expected}`);
     expect
       .soft(stripVTControlCharacters(viewer.render(120)[1] ?? ""))
@@ -110,13 +110,13 @@ test("task rows and output headers match the compact format", () => {
 });
 
 const outcomes: [Outcome, number, string, string][] = [
-  [{ kind: "exited", code: 0 }, 32, "", " 0"],
-  [{ kind: "exited", code: 3 }, 31, "", " 3"],
+  [{ kind: "exited", code: 0 }, 32, "", "󰐦 0"],
+  [{ kind: "exited", code: 3 }, 31, "", "󰐦 3"],
   [
     { kind: "signaled", signal: "SIGKILL", code: 137 },
     31,
     "",
-    " 137 (SIGKILL)",
+    "󰐦 137 (SIGKILL)",
   ],
   [{ kind: "failed", message: "I/O error" }, 31, "", "failed: I/O error"],
   [{ kind: "timed_out" }, 33, "", "timed out"],
@@ -314,7 +314,7 @@ test("live task changes retain selection by ID and preserve unselected text colo
   ]);
   expect(h.text()).toContain("→  abc ");
   expect(h.row()).toContain("\x1b[31m");
-  expect(h.row()).toContain(" 3");
+  expect(h.row()).toContain("󰐦 3");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
   expect(h.requestRender).toHaveBeenCalled();

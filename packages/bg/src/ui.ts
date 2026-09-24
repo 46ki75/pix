@@ -78,9 +78,9 @@ function renderTaskLine(
   const outcome = task.outcome;
   const result =
     outcome?.kind === "exited"
-      ? ` ${outcome.code}`
+      ? `󰐦 ${outcome.code}`
       : outcome?.kind === "signaled"
-        ? ` ${outcome.code} (${outcome.signal})`
+        ? `󰐦 ${outcome.code} (${outcome.signal})`
         : outcome
           ? outcomeText(outcome)
           : task.status;
