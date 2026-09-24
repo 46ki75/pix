@@ -65,7 +65,7 @@ test.each(["tui", "rpc", "json", "print"] as const)(
         expect(lines).toHaveLength(3);
         expect(lines[1]).toBe("");
         const location = stripVTControlCharacters(lines[2] ?? "");
-        expect(location.replace(/ +$/, " ")).toBe(`  ${directory} `);
+        expect(location.replace(/ +$/, " ")).toBe(`  ${directory}  `);
         expect(visibleWidth(location)).toBe(1_000);
         expect(footer.render(80).join("\n")).toContain("no-model");
         footer.dispose?.();

@@ -44,7 +44,7 @@ The footer is installed automatically in interactive terminal mode:
 ```text
 󱘖 openai-codex  test-model (272k) 󱩔 high                    98.4% 󰓅 36.1% █▓░░
 
-  pix/packages/statusline   main                                           
+  pix/packages/statusline   main                                          
 ```
 
 It retains the working directory, Git branch, optional session name, and status
@@ -58,9 +58,12 @@ A blank row separates the model/usage line from the directory/branch line.
 The directory and branch use rounded Powerline segments: a blue directory
 segment followed by a bright-blue branch segment prefixed with ``. The optional
 session name appears beside the branch, separated by `•`. If neither is present,
-only the directory segment is rendered. The final segment
-fills the remaining row width, placing the rounded cap at the terminal's right
-edge. Long labels are truncated before the final space and cap.
+the branch segment is omitted.
+
+When space allows, a separate bright-black background segment
+(`ANSI.bg.brightBlack`) fills the rest of the row after another ``, ending in
+`` at the right edge. This filler is omitted on narrow terminals rather than
+shortening labels. Long labels are truncated before the final space and cap.
 
 Use a Nerd Font in your terminal to display these icons. Git detection runs once
 at session startup; use `/reload` after initializing or removing a repository.

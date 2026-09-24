@@ -143,7 +143,7 @@ test.each([
   const footer = createFooter(ctx, tui, theme, footerData);
   expectFullWidthLocation(
     footer.render(1_000)[2],
-    `  ${expected}   main `,
+    `  ${expected}   main  `,
     1_000,
   );
   footer.dispose();
@@ -156,7 +156,7 @@ test.each([" pix", " pix/packages/statusline"])(
     const footer = createFooter(ctx, tui, theme, footerData, directory);
     expectFullWidthLocation(
       footer.render(120)[2],
-      ` ${directory}   main `,
+      ` ${directory}   main  `,
       120,
     );
     footer.dispose();
@@ -177,8 +177,54 @@ test.each([
     footerData.getGitBranch.mockReturnValue(branch);
     vi.spyOn(sessionManager, "getSessionName").mockReturnValue(name);
     const footer = createFooter(ctx, tui, theme, footerData, " pix");
-    for (const width of [visibleWidth(expected), 40, 120, 80]) {
-      expectFullWidthLocation(footer.render(width)[2], expected, width);
+    const naturalWidth = visibleWidth(expected);
+    expectFullWidthLocation(
+      footer.render(naturalWidth)[2],
+      expected,
+      naturalWidth,
+    );
+    for (const width of [40, 120, 80]) {
+      expectFullWidthLocation(
+        footer.render(width)[2],
+        `${expected.slice(0, -1)} `,
+        width,
+      );
+    }
+    expectFullWidthLocation(
+      footer.render(naturalWidth)[2],
+      expected,
+      naturalWidth,
+    );
+    footer.dispose();
+  },
+);
+
+test.each(["main", null])(
+  "adds bright-black filler without shortening labels (branch: %s)",
+  (branch) => {
+    const { ctx, tui, theme, footerData } = fixture();
+    footerData.getGitBranch.mockReturnValue(branch);
+    const footer = createFooter(ctx, tui, theme, footerData, " pix");
+    const natural = branch ? "  pix   main " : "  pix ";
+    const background = branch ? "brightBlue" : "blue";
+    for (const extra of [0, 1, 2, 3, 20, 2, 3]) {
+      const width = visibleWidth(natural) + extra;
+      const line = footer.render(width)[2] ?? "";
+      expect(visibleWidth(line)).toBe(width);
+      if (extra >= 3) {
+        const padding = " ".repeat(extra - 1);
+        expect(stripVTControlCharacters(line)).toBe(
+          `${natural.slice(0, -1)}${padding}`,
+        );
+        expect(line).toContain(
+          `${ANSI.fg[background]}${ANSI.bg.brightBlack}${ANSI.bg.brightBlack}${ANSI.fg.black}${padding}${ANSI.reset.bg}${ANSI.fg.brightBlack}${ANSI.reset.fg}`,
+        );
+      } else {
+        expect(stripVTControlCharacters(line)).toBe(
+          `${natural.slice(0, -1)}${" ".repeat(extra)}`,
+        );
+        expect(line).not.toContain(ANSI.bg.brightBlack);
+      }
     }
     footer.dispose();
   },
@@ -209,11 +255,15 @@ test("keeps the rounded right cap when truncating a long branch", () => {
 test("refreshes the connected branch segment without reinstalling the footer", () => {
   const { ctx, tui, theme, footerData } = fixture();
   const footer = createFooter(ctx, tui, theme, footerData, " pix");
-  expectFullWidthLocation(footer.render(120)[2], "  pix   main ", 120);
+  expectFullWidthLocation(footer.render(120)[2], "  pix   main  ", 120);
   footerData.getGitBranch.mockReturnValue("feature");
-  expectFullWidthLocation(footer.render(120)[2], "  pix   feature ", 120);
+  expectFullWidthLocation(
+    footer.render(120)[2],
+    "  pix   feature  ",
+    120,
+  );
   footerData.getGitBranch.mockReturnValue(null);
-  expectFullWidthLocation(footer.render(120)[2], "  pix ", 120);
+  expectFullWidthLocation(footer.render(120)[2], "  pix  ", 120);
   footer.dispose();
 });
 
@@ -467,7 +517,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   expect(lines[0]).toContain(`${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`);
   expect(visibleWidth(lines[0] ?? "")).toBe(120);
   expect(lines[1]).toBe("");
-  expectFullWidthLocation(lines[2], "  /workspace   main ", 120);
+  expectFullWidthLocation(lines[2], "  /workspace   main  ", 120);
   expect(lines[3]).toBe("First Second line");
 
   sessionManager.appendMessage(assistant(200, 800));

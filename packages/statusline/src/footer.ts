@@ -144,6 +144,11 @@ export function createFooter(
           foreground: "black",
         });
       }
+      const filler: PowerlineSegment = { text: "", background: "brightBlack" };
+      // Decorative fill must not shorten labels that would otherwise fit.
+      if (visibleWidth(powerline([...segments, filler])) <= width) {
+        segments.push(filler);
+      }
       const lines = [
         truncateToWidth(left + padding + right, width),
         "",
