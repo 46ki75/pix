@@ -43,7 +43,7 @@ The footer is installed automatically in interactive terminal mode:
 
 ```text
 󱘖 openai-codex  test-model (272k) 󱩔 high                    98.4% 󰓅 36.1% █▓░░
-  pix/packages/statusline   main 
+  pix/packages/statusline   main                                           
 ```
 
 It retains the working directory, Git branch, optional session name, and status
@@ -56,7 +56,9 @@ messages from other extensions. The directory segment uses:
 The directory and branch share the second row, using rounded Powerline segments:
 a blue directory segment followed by a bright-blue branch segment prefixed with
 ``. The optional session name appears beside the branch, separated by `•`. If
-neither is present, only the directory segment is rendered.
+neither is present, only the directory segment is rendered. The final segment
+fills the remaining row width, placing the rounded cap at the terminal's right
+edge. Long labels are truncated before the final space and cap.
 
 Use a Nerd Font in your terminal to display these icons. Git detection runs once
 at session startup; use `/reload` after initializing or removing a repository.
@@ -155,12 +157,18 @@ const bar = powerline([
 ```
 
 A single segment also gets rounded ends; no separate badge helper is needed.
+Pass an optional width, such as `powerline(segments, width)`, to fill the row.
+The final visible segment is padded or truncated before its rounded cap, using
+that segment's background color. Later segments are omitted if an earlier label
+fills the available space. Without a width, labels are not padded to fill a row
+or truncated.
 
-Background colors are required; foreground defaults to `black`. Each segment
-has one space of padding on each side. Embedded ANSI styling is stripped and
-line breaks and tabs become spaces, keeping the segment's background intact.
-The renderer restores terminal-default foreground and background colors afterward.
+Background colors are required; foreground defaults to `black`. Segments have
+space padding on both sides, except at extremely narrow widths. Embedded ANSI
+styling is stripped, and line breaks and tabs become spaces, keeping the
+segment's background intact. The renderer restores terminal-default foreground
+and background colors afterward.
 
-Use a Nerd Font for the ``, ``, and `` glyphs. The renderer returns a string;
-use Pi's `visibleWidth()` and `truncateToWidth()` when placing it in the footer.
-Truncation can remove the final rounded cap on narrow terminals.
+Use a Nerd Font for the ``, ``, and `` glyphs. The renderer returns a string
+that fits the supplied width, preserving both rounded caps whenever at least
+two columns are available.

@@ -9,6 +9,7 @@ import {
   type ExtensionUIContext,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
 
 test.each(["tui", "rpc", "json", "print"] as const)(
@@ -62,9 +63,9 @@ test.each(["tui", "rpc", "json", "print"] as const)(
         );
         const lines = footer.render(1_000);
         expect(lines).toHaveLength(2);
-        expect(stripVTControlCharacters(lines[1] ?? "")).toBe(
-          `  ${directory} `,
-        );
+        const location = stripVTControlCharacters(lines[1] ?? "");
+        expect(location.replace(/ +$/, " ")).toBe(`  ${directory} `);
+        expect(visibleWidth(location)).toBe(1_000);
         expect(footer.render(80).join("\n")).toContain("no-model");
         footer.dispose?.();
         expect(unsubscribe).toHaveBeenCalledOnce();

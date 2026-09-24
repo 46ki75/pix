@@ -146,7 +146,7 @@ export function createFooter(
       }
       const lines = [
         truncateToWidth(left + padding + right, width),
-        truncateToWidth(powerline(segments), width),
+        powerline(segments, width),
       ];
       const statuses = [...footerData.getExtensionStatuses()]
         .sort(([a], [b]) => a.localeCompare(b))

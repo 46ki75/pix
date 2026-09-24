@@ -46,6 +46,80 @@ test("connects segments using the previous background as the arrow foreground", 
 
 test("returns no styling for an empty segment list", () => {
   expect(powerline([])).toBe("");
+  expect(powerline([], 80)).toBe("");
+});
+
+test.each([
+  "main",
+  "作業/🚀",
+  "cafe\u0301",
+  `${ANSI.fg.red}a${ANSI.reset.all}\r\nb\tc`,
+])("fills the final segment's background before the right cap: %s", (text) => {
+  const last = { text, background: "brightBlue" } as const;
+  for (const segments of [
+    [last],
+    [{ text: " pix", background: "blue" } as const, last],
+  ]) {
+    const natural = powerline(segments);
+    const naturalWidth = visibleWidth(natural);
+    const cap = `${ANSI.reset.bg}${ANSI.fg.brightBlue}${ANSI.reset.fg}`;
+    for (const width of [naturalWidth, naturalWidth + 1, 80, 40]) {
+      const result = powerline(segments, width);
+      const padding = " ".repeat(Math.max(0, width - naturalWidth));
+      expect(result).toBe(natural.slice(0, -cap.length) + padding + cap);
+      expect(visibleWidth(result)).toBe(Math.max(naturalWidth, width));
+    }
+  }
+});
+
+test("truncates an overflowing segment without losing its background or cap", () => {
+  const expected = " direc... ";
+  const result = powerline(
+    [
+      { text: "directory-that-does-not-fit", background: "blue" },
+      { text: "main", background: "brightBlue" },
+    ],
+    visibleWidth(expected),
+  );
+  expect(stripVTControlCharacters(result)).toBe(expected);
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.black} direc... ${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.reset.fg}`,
+  );
+});
+
+test.each([
+  [0, ""],
+  [1, ""],
+  [2, ""],
+  [3, " "],
+  [4, "  "],
+  [5, " . "],
+  [6, " .. "],
+  [7, " ... "],
+])("keeps rounded ends within %i columns", (width, expected) => {
+  const result = powerline([{ text: "long-label", background: "blue" }], width);
+  expect(stripVTControlCharacters(result)).toBe(expected);
+  expect(visibleWidth(result)).toBe(width);
+});
+
+test.each([
+  "作業/🚀".repeat(6),
+  "cafe\u0301".repeat(8),
+  `${ANSI.fg.red}long${ANSI.reset.all}\r\nlabel\tvalue`,
+])("fits colored content and preserves caps across widths: %s", (text) => {
+  const segments = [
+    { text, background: "blue" },
+    { text: "main", background: "brightBlue" },
+  ] as const;
+  for (let width = 2; width <= 80; width++) {
+    const result = powerline(segments, width);
+    const plain = stripVTControlCharacters(result);
+    expect(visibleWidth(result)).toBe(width);
+    expect(plain.startsWith("")).toBe(true);
+    expect(plain.endsWith("")).toBe(true);
+    expect(result).not.toContain(ANSI.reset.all);
+    expect(result).not.toMatch(/[\r\n\t]/);
+  }
 });
 
 test("keeps padding and caps for an empty label", () => {
