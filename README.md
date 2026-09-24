@@ -49,6 +49,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run web:dev` | Launch Pi with both web tools |
 | `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
+| `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 
 [`@ikuma.cloud/pix-websearch`](packages/websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
@@ -75,6 +76,11 @@ extensions rather than enforced by the adapter.
 completion wake-ups, capped log files, and a `/bg` task viewer. Run
 `mise run bg:dev` for an isolated launch or `mise run test --project pix-bg`
 for its tests. Tasks stop on reload, session replacement, and quit.
+
+[`@ikuma.cloud/pix-statusline`](packages/statusline/README.md) adds a customizable
+two-row footer with model details, cache-hit rate, context utilization, and
+Git-aware directory segments. Run `mise run statusline:dev` to try it or
+`mise run test --project pix-statusline` for its tests.
 
 ## Layout
 
