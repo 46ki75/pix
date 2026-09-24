@@ -362,18 +362,21 @@ export class OutputView {
   private renderBorder(
     width: number,
     arrow: "↑" | "↓",
-    canScroll: boolean,
+    hiddenRows: number,
   ): string {
     const rule = (length: number) =>
       this.theme.fg("border", "─".repeat(length));
-    if (!canScroll) return rule(width);
-    const marker = this.theme.fg("muted", arrow);
-    if (width < 3) return marker + rule(width - 1);
-    if (width < 10) {
-      const left = Math.floor((width - 3) / 2);
-      return `${rule(left)} ${marker} ${rule(width - 3 - left)}`;
-    }
-    return `${rule(2)} ${marker} ${rule(width - 10)} ${marker} ${rule(2)}`;
+    if (hiddenRows <= 0) return rule(width);
+    // Pi's Editor keeps its count-border helper private; reuse ScrollView for
+    // paging and mirror the border here without introducing an editable cursor.
+    let label = ` ${arrow} ${hiddenRows} more `;
+    if (visibleWidth(label) + 2 > width) label = ` ${arrow} ${hiddenRows} `;
+    // Drop whole fields rather than truncate a count into a misleading number.
+    if (visibleWidth(label) + 2 > width)
+      label = width >= 3 ? ` ${arrow} ` : arrow;
+    const remaining = width - visibleWidth(label);
+    const left = Math.floor(remaining / 2);
+    return rule(left) + this.theme.fg("muted", label) + rule(remaining - left);
   }
 
   render(width: number): string[] {
@@ -415,9 +418,11 @@ export class OutputView {
     const end = start + this.scroll.viewportHeight;
     return [
       ...header,
-      ...(framed ? [this.renderBorder(width, "↑", start > 0)] : []),
+      ...(framed ? [this.renderBorder(width, "↑", start)] : []),
       ...content.slice(start, end),
-      ...(framed ? [this.renderBorder(width, "↓", end < content.length)] : []),
+      ...(framed
+        ? [this.renderBorder(width, "↓", Math.max(0, content.length - end))]
+        : []),
       ...hints,
     ].map((line) => truncateToWidth(line, width));
   }

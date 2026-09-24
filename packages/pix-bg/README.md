@@ -94,9 +94,12 @@ output or kill a running task after confirmation, which defaults to No.
 
 The output viewer starts with a full-width separator above its header. It shows
 the last 8 KiB between scroll-indicator dividers and refreshes once per second
-while the task runs. Paired up/down arrows appear in each scroll divider
-only when the displayed tail has more content in that direction. Narrow terminals
-use one arrow; short viewports reduce metadata and decoration to preserve output.
+while the task runs. Like Pi's input editor, the dividers show centered counts
+such as `── ↑ 4 more ──` and `── ↓ 12 more ──` when content is hidden in that
+direction. Counts refer to wrapped display rows within the loaded tail, not the
+entire log file. Narrow terminals omit `more`, then the count, keeping the arrow
+rather than showing a partial number. Short viewports reduce metadata and
+decoration to preserve output.
 Views reserve six rows for the indicator, Pi's spacer and default footer, and one
 transcript row. Below nine terminal rows, Pi's minimum editor height can still
 clip the surrounding indicator or footer.
