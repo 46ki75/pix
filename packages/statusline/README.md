@@ -42,7 +42,7 @@ pi install ./packages/statusline
 The footer is installed automatically in interactive terminal mode:
 
 ```text
- 󱘖 openai-codex  test-model (272k) 󱩔 high                  98.4% 󰓅 36.1% █▓░░
+ 󱘖 openai-codex  test-model · 272k 󱩔 high                  98.4% 󰓅 36.1% █▓░░
 
   pix/packages/statusline   main                                          
 ```
@@ -72,9 +72,10 @@ If Git is unavailable or detection fails, the footer uses the folder format.
 The first row has one space of padding at each end. It places the selected
 provider/model and thinking level on the left, with the latest assistant prompt's
 cache-hit rate and context utilization aligned to the right: ` 98.4% 󰓅 36.1% █▓░░`.
-The context-window size appears beside the model name, as in ` test-model (272k)`.
-The cache-hit rate uses the same theme `dim` color as the model details. An
-unavailable cache-hit rate shows ` ?`.
+The context-window size follows the model name and `·`, as in ` test-model · 272k`.
+Provider, model, thinking-effort, and cache-hit icons use the theme's `muted`
+color (lighter than `dim` in the dark theme); their labels remain `dim`.
+An unavailable cache-hit rate shows ` ?`.
 Token counts, cache read/write totals, and cost are not displayed.
 Extension status messages appear below the directory/branch row.
 
@@ -99,7 +100,7 @@ This is a starting point, not an exact copy of Pi's built-in footer:
 
 - Subscription `(sub)` and auto-compaction `(auto)` indicators are not included.
 - Unknown context usage is shown as `?` without a bar, including after compaction.
-  Unknown context-window sizes are shown as `(?)` beside the model.
+  Unknown context-window sizes are shown as `· ?` after the model name.
 - Cache-hit rate uses the latest recorded assistant prompt. Streaming usage
   appears once recorded.
 - When the first row does not fit, the provider name and icon are hidden first,

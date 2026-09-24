@@ -91,6 +91,9 @@ export function createFooter(
   directory = formatDirectory(ctx.cwd),
 ): Component & { dispose(): void } {
   const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+  // Theme.fg resets rather than restores foreground, so color each span separately.
+  const detail = (icon: string, label: string) =>
+    `${theme.fg("muted", icon)} ${theme.fg("dim", singleLine(label))}`;
   return {
     dispose: unsubscribe,
     // Session metrics and theme colors stay live; the directory is resolved at startup.
@@ -99,7 +102,12 @@ export function createFooter(
       if (width <= 0) return [];
       const metricsWidth = Math.max(0, width - 2);
       const usage = collectUsage(ctx.sessionManager.getEntries());
-      const cacheText = ` ${usage.cacheHitRate === undefined ? "?" : `${usage.cacheHitRate.toFixed(1)}%`}`;
+      const cacheText = detail(
+        "",
+        usage.cacheHitRate === undefined
+          ? "?"
+          : `${usage.cacheHitRate.toFixed(1)}%`,
+      );
 
       const context = ctx.getContextUsage();
       const contextWindow = context?.contextWindow ?? ctx.model?.contextWindow;
@@ -110,24 +118,23 @@ export function createFooter(
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
       const modelText = model
-        ? ` ${model.id} (${windowText})${model.reasoning ? ` ${THINKING_ICONS[thinking]} ${thinking}` : ""}`
-        : `no-model (${windowText})`;
-      let left = theme.fg(
-        "dim",
-        singleLine(model ? `󱘖 ${model.provider} ${modelText}` : modelText),
-      );
+        ? `${detail("", `${model.id} · ${windowText}`)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
+        : theme.fg("dim", `no-model · ${windowText}`);
+      let left = model
+        ? `${detail("󱘖", model.provider)} ${modelText}`
+        : modelText;
       const contextMetrics = [
         `${contextColor(percent ?? 0)}󰓅 ${contextText}${ANSI.reset.fg}`,
         formatContextBar(percent),
       ]
         .filter(Boolean)
         .join(" ");
-      let right = `${theme.fg("dim", cacheText)} ${contextMetrics}`;
+      let right = `${cacheText} ${contextMetrics}`;
       if (
         model &&
         visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth
       ) {
-        left = theme.fg("dim", singleLine(modelText));
+        left = modelText;
       }
       if (visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth) {
         right = contextMetrics;
