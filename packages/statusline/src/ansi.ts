@@ -44,3 +44,15 @@ export const ANSI = {
 } as const;
 
 export type AnsiColor = keyof typeof ANSI.fg;
+export type TerminalColor = AnsiColor | `#${string}`;
+
+export function colorCode(layer: "fg" | "bg", color: TerminalColor): string {
+  if (!color.startsWith("#")) return ANSI[layer][color as AnsiColor];
+  if (!/^#[0-9a-f]{6}$/i.test(color)) {
+    throw new Error(`Invalid hex color: ${color}`);
+  }
+  const rgb = [1, 3, 5]
+    .map((start) => Number.parseInt(color.slice(start, start + 2), 16))
+    .join(";");
+  return `\x1b[${layer === "fg" ? 38 : 48};2;${rgb}m`;
+}

@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ANSI } from "./ansi.ts";
 import { POWERLINE, powerline } from "./powerline.ts";
 
@@ -26,6 +26,45 @@ test("accepts a custom foreground color", () => {
   ).toContain(`${ANSI.bg.blue}${ANSI.fg.brightWhite} main `);
 });
 
+test("accepts foreground callbacks without recoloring caps or transitions", () => {
+  const foreground = vi.fn(
+    (text: string) => `${ANSI.fg.white}${text}${ANSI.reset.fg}`,
+  );
+  const result = powerline([
+    { text: "directory", background: "blue", foreground },
+    { text: "main", background: "brightBlue", foreground },
+  ]);
+  expect(foreground).toHaveBeenCalledWith(" directory ");
+  expect(foreground).toHaveBeenCalledWith(" main ");
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.white} directory ${ANSI.reset.fg}` +
+      `${ANSI.fg.blue}${ANSI.bg.brightBlue}${ANSI.bg.brightBlue}${ANSI.fg.white} main ${ANSI.reset.fg}` +
+      `${ANSI.reset.bg}${ANSI.fg.brightBlue}${ANSI.reset.fg}`,
+  );
+});
+
+test("applies foreground callbacks after sanitizing and truncating labels", () => {
+  const foreground = vi.fn(
+    (text: string) => `${ANSI.fg.white}${text}${ANSI.reset.fg}`,
+  );
+  const expected = " direc... ";
+  const result = powerline(
+    [
+      {
+        text: `${ANSI.fg.red}directory${ANSI.reset.all}\r\nlabel\tvalue`,
+        background: "blue",
+        foreground,
+      },
+    ],
+    visibleWidth(expected),
+  );
+  expect(foreground).toHaveBeenCalledExactlyOnceWith(" direc... ");
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.white} direc... ${ANSI.reset.fg}${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.reset.fg}`,
+  );
+  expect(visibleWidth(result)).toBe(visibleWidth(expected));
+});
+
 test("connects segments using the previous background as the arrow foreground", () => {
   const result = powerline([
     { text: "model", background: "magenta" },
@@ -44,8 +83,116 @@ test("connects segments using the previous background as the arrow foreground", 
   ).toBe(true);
 });
 
+test("renders truecolor backgrounds with matching caps and transitions", () => {
+  const result = powerline([
+    { text: " pix", background: "#d9d3cc" },
+    { text: " main", background: "#efecea" },
+    { text: "", background: "#f7f5f4" },
+  ]);
+  expect(result).toBe(
+    `${ANSI.reset.bg}\x1b[38;2;217;211;204m` +
+      `\x1b[48;2;217;211;204m${ANSI.fg.black}  pix ` +
+      "\x1b[38;2;217;211;204m\x1b[48;2;239;236;234m" +
+      `\x1b[48;2;239;236;234m${ANSI.fg.black}  main ` +
+      "\x1b[38;2;239;236;234m\x1b[48;2;247;245;244m" +
+      `\x1b[48;2;247;245;244m${ANSI.fg.black}  ` +
+      `${ANSI.reset.bg}\x1b[38;2;247;245;244m${ANSI.reset.fg}`,
+  );
+});
+
+test("mixes truecolor and named foregrounds and backgrounds", () => {
+  const result = powerline([
+    { text: "one", background: "blue", foreground: "#abcdef" },
+    { text: "two", background: "#d9d3cc", foreground: "brightWhite" },
+  ]);
+  expect(result).toContain(`${ANSI.bg.blue}\x1b[38;2;171;205;239m one `);
+  expect(result).toContain(`${ANSI.fg.blue}\x1b[48;2;217;211;204m`);
+  expect(result).toContain(`\x1b[48;2;217;211;204m${ANSI.fg.brightWhite} two `);
+});
+
 test("returns no styling for an empty segment list", () => {
   expect(powerline([])).toBe("");
+  expect(powerline([], 80)).toBe("");
+});
+
+test.each([
+  "main",
+  "作業/🚀",
+  "cafe\u0301",
+  `${ANSI.fg.red}a${ANSI.reset.all}\r\nb\tc`,
+])("fills the final segment's background before the right cap: %s", (text) => {
+  const last = { text, background: "brightBlue" } as const;
+  for (const segments of [
+    [last],
+    [{ text: " pix", background: "blue" } as const, last],
+  ]) {
+    const natural = powerline(segments);
+    const naturalWidth = visibleWidth(natural);
+    const cap = `${ANSI.reset.bg}${ANSI.fg.brightBlue}${ANSI.reset.fg}`;
+    for (const width of [naturalWidth, naturalWidth + 1, 80, 40]) {
+      const result = powerline(segments, width);
+      const padding = " ".repeat(Math.max(0, width - naturalWidth));
+      expect(result).toBe(natural.slice(0, -cap.length) + padding + cap);
+      expect(visibleWidth(result)).toBe(Math.max(naturalWidth, width));
+    }
+  }
+});
+
+test("truncates an overflowing segment without losing its background or cap", () => {
+  const expected = " direc... ";
+  const result = powerline(
+    [
+      { text: "directory-that-does-not-fit", background: "blue" },
+      { text: "main", background: "brightBlue" },
+    ],
+    visibleWidth(expected),
+  );
+  expect(stripVTControlCharacters(result)).toBe(expected);
+  expect(result).toBe(
+    `${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.bg.blue}${ANSI.fg.black} direc... ${ANSI.reset.bg}${ANSI.fg.blue}${ANSI.reset.fg}`,
+  );
+});
+
+test.each([
+  [0, ""],
+  [1, ""],
+  [2, ""],
+  [3, " "],
+  [4, "  "],
+  [5, " . "],
+  [6, " .. "],
+  [7, " ... "],
+])("keeps rounded ends within %i columns", (width, expected) => {
+  for (const background of ["blue", "#d9d3cc"] as const) {
+    const result = powerline([{ text: "long-label", background }], width);
+    expect(stripVTControlCharacters(result)).toBe(expected);
+    expect(visibleWidth(result)).toBe(width);
+  }
+});
+
+test.each([
+  "作業/🚀".repeat(6),
+  "cafe\u0301".repeat(8),
+  `${ANSI.fg.red}long${ANSI.reset.all}\r\nlabel\tvalue`,
+])("fits colored content and preserves caps across widths: %s", (text) => {
+  for (const [first, last] of [
+    ["blue", "brightBlue"],
+    ["#d9d3cc", "#efecea"],
+  ] as const) {
+    const segments = [
+      { text, background: first },
+      { text: "main", background: last },
+    ];
+    for (let width = 2; width <= 80; width++) {
+      const result = powerline(segments, width);
+      const plain = stripVTControlCharacters(result);
+      expect(visibleWidth(result)).toBe(width);
+      expect(plain.startsWith("")).toBe(true);
+      expect(plain.endsWith("")).toBe(true);
+      expect(result).not.toContain(ANSI.reset.all);
+      expect(result).not.toMatch(/[\r\n\t]/);
+    }
+  }
 });
 
 test("keeps padding and caps for an empty label", () => {

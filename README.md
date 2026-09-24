@@ -78,7 +78,7 @@ completion wake-ups, capped log files, and a `/bg` task viewer. Run
 for its tests. Tasks stop on reload, session replacement, and quit.
 
 [`@ikuma.cloud/pix-statusline`](packages/statusline/README.md) adds a customizable
-two-row footer with model details, cache-hit rate, context utilization, and
+footer with model details, cache-hit rate, context utilization, and
 Git-aware directory segments. Run `mise run statusline:dev` to try it or
 `mise run test --project pix-statusline` for its tests.
 

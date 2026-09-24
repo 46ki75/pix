@@ -35,18 +35,20 @@ export function formatTokens(count: number): string {
   return `${Math.round(count / 1_000_000)}M`;
 }
 
+function contextColor(percent: number): string {
+  return percent > 75
+    ? ANSI.fg.red
+    : percent > 50
+      ? ANSI.fg.yellow
+      : ANSI.fg.brightGreen;
+}
+
 export function formatContextBar(percent: number | null | undefined): string {
   if (percent == null || !Number.isFinite(percent)) return "";
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = Math.floor(clamped / 25);
   const partial = clamped % 25 > 0 ? 1 : 0;
-  const color =
-    percent > 75
-      ? ANSI.fg.red
-      : percent > 50
-        ? ANSI.fg.yellow
-        : ANSI.fg.brightGreen;
-  return `${color}${"█".repeat(filled)}${"▓".repeat(partial)}${"░".repeat(4 - filled - partial)}${ANSI.reset.fg}`;
+  return `${contextColor(percent)}${"█".repeat(filled)}${"▓".repeat(partial)}${"░".repeat(4 - filled - partial)}${ANSI.reset.fg}`;
 }
 
 export function collectUsage(entries: readonly SessionEntry[]) {
@@ -89,64 +91,90 @@ export function createFooter(
   directory = formatDirectory(ctx.cwd),
 ): Component & { dispose(): void } {
   const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+  // Theme.fg resets rather than restores foreground, so color each span separately.
+  const detail = (icon: string, label: string) =>
+    `${theme.fg("muted", icon)} ${theme.fg("dim", singleLine(label))}`;
   return {
     dispose: unsubscribe,
     // Session metrics and theme colors stay live; the directory is resolved at startup.
     invalidate() {},
     render(width) {
       if (width <= 0) return [];
+      const metricsWidth = Math.max(0, width - 2);
       const usage = collectUsage(ctx.sessionManager.getEntries());
-      const cacheText = ` ${usage.cacheHitRate === undefined ? "?" : `${usage.cacheHitRate.toFixed(1)}%`}`;
+      const cacheText = detail(
+        "",
+        usage.cacheHitRate === undefined
+          ? "----%"
+          : `${usage.cacheHitRate.toFixed(1)}%`,
+      );
 
       const context = ctx.getContextUsage();
       const contextWindow = context?.contextWindow ?? ctx.model?.contextWindow;
       const windowText = contextWindow ? formatTokens(contextWindow) : "?";
       const percent = context?.percent;
-      const contextText = percent == null ? "?" : `${percent.toFixed(1)}%`;
+      const contextText = percent == null ? "----%" : `${percent.toFixed(1)}%`;
 
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
       const modelText = model
-        ? ` ${model.id} (${windowText})${model.reasoning ? ` ${THINKING_ICONS[thinking]} ${thinking}` : ""}`
-        : `no-model (${windowText})`;
-      let left = theme.fg(
-        "dim",
-        singleLine(model ? `󱘖 ${model.provider} ${modelText}` : modelText),
-      );
-      // Only the bar changes to warning colors; the icon and percentage stay bright green.
+        ? `${detail("", `${model.id} · ${windowText}`)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
+        : theme.fg("dim", `no-model · ${windowText}`);
+      let left = model
+        ? `${detail("󱘖", model.provider)} ${modelText}`
+        : modelText;
       const contextMetrics = [
-        `${ANSI.fg.brightGreen}󰓅 ${contextText}${ANSI.reset.fg}`,
+        `${contextColor(percent ?? 0)} ${contextText}${ANSI.reset.fg}`,
         formatContextBar(percent),
       ]
         .filter(Boolean)
         .join(" ");
-      let right = `${theme.fg("dim", cacheText)} ${contextMetrics}`;
-      if (model && visibleWidth(left) + 2 + visibleWidth(right) > width) {
-        left = theme.fg("dim", singleLine(modelText));
+      let right = `${cacheText} ${contextMetrics}`;
+      if (
+        model &&
+        visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth
+      ) {
+        left = modelText;
       }
-      if (visibleWidth(left) + 2 + visibleWidth(right) > width) {
+      if (visibleWidth(left) + 2 + visibleWidth(right) > metricsWidth) {
         right = contextMetrics;
       }
       const padding = " ".repeat(
-        Math.max(2, width - visibleWidth(left) - visibleWidth(right)),
+        Math.max(2, metricsWidth - visibleWidth(left) - visibleWidth(right)),
       );
       const gitBranch = footerData.getGitBranch();
       const branch = gitBranch ? ` ${gitBranch}` : undefined;
       const name = ctx.sessionManager.getSessionName();
       const segments: PowerlineSegment[] = [
-        { text: directory, background: "blue", foreground: "black" },
+        {
+          text: directory,
+          background: "#bda68b",
+          foreground: "#40444c",
+        },
       ];
       const details = [branch, name].filter(Boolean).join(" • ");
       if (details) {
         segments.push({
           text: details,
-          background: "brightBlue",
-          foreground: "black",
+          background: "#c6b5a2",
+          foreground: "#393e46",
         });
       }
+      const filler: PowerlineSegment = {
+        text: "",
+        background: "#cabfb2",
+        foreground: "#31353a",
+      };
+      // Decorative fill must not shorten labels that would otherwise fit.
+      if (visibleWidth(powerline([...segments, filler])) <= width) {
+        segments.push(filler);
+      }
       const lines = [
-        truncateToWidth(left + padding + right, width),
-        truncateToWidth(powerline(segments), width),
+        width === 1
+          ? " "
+          : ` ${truncateToWidth(left + padding + right, metricsWidth, "...", true)} `,
+        "",
+        powerline(segments, width),
       ];
       const statuses = [...footerData.getExtensionStatuses()]
         .sort(([a], [b]) => a.localeCompare(b))
