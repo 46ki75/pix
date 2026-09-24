@@ -75,13 +75,42 @@ Rows prioritize IDs, outcomes, and durations over long task names. Status and
 theme colors refresh while the list is open, without moving your selection when
 another task starts. The navigation hint is indented by one space and separated
 from the task rows by a blank line. Short viewports reduce spacing and prioritize
-task rows. Use Up/Down or j/k to navigate, Enter to select, and Esc/Ctrl+C to cancel.
-Select a task to view output or kill a running task after confirmation.
+task rows. Select a task to view output or kill a running task after confirmation,
+which defaults to No.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
-task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following
-the tail. Read the log file for older output. No keyboard shortcut is registered.
-The viewer is interactive-only; tools also work in RPC, JSON, and print modes.
+task runs. Jumping to the bottom resumes following the tail. Read the log file for
+older output. No global shortcut is registered. The viewer is interactive-only;
+tools also work in RPC, JSON, and print modes.
+
+### Keybindings
+
+All views use Pi's semantic keybindings. Hints show the configured keys and omit
+disabled actions; the extension does not add hardcoded aliases or change Pi's
+configuration.
+
+| Behavior | Pi actions | Default keys |
+| --- | --- | --- |
+| Navigate lists or scroll output | `tui.select.up`, `tui.select.down` | Up, Down |
+| Select a task or menu item | `tui.select.confirm` | Enter |
+| Cancel or return to the task list | `tui.select.cancel` | Esc, Ctrl+C |
+| Page through output | `tui.select.pageUp`, `tui.select.pageDown` | Page Up, Page Down |
+| Jump to the start or follow output | `tui.altScreen.top`, `tui.altScreen.bottom` | Home, End |
+
+For Vim-style selection keys, merge these entries into Pi's `keybindings.json`
+(`~/.pi/agent/keybindings.json` by default), then run `/reload`:
+
+```json
+{
+  "tui.select.up": ["up", "k"],
+  "tui.select.down": ["down", "j"],
+  "tui.select.confirm": ["enter", "l"],
+  "tui.select.cancel": ["escape", "ctrl+c", "h", "q"]
+}
+```
+
+These settings apply wherever Pi uses the same actions, not just `/bg`. See
+[Pi's keybinding reference](https://pi.dev/docs/latest/keybindings) for details.
 
 ## Output cap
 

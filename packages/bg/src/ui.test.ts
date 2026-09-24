@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { type Component, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  type KeybindingsConfig,
+  KeybindingsManager,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
 import type { Outcome, Registry, Task } from "./registry.ts";
 import { OutputView, TaskUI } from "./ui.ts";
@@ -20,7 +26,15 @@ const task: Task = {
   status: "running",
 };
 
-function indicatorContext() {
+const vimBindings: KeybindingsConfig = {
+  "tui.select.up": ["up", "k"],
+  "tui.select.down": ["down", "j"],
+  "tui.select.confirm": ["enter", "l"],
+  "tui.select.cancel": ["escape", "ctrl+c", "h", "q"],
+};
+
+function indicatorContext(bindings = vimBindings) {
+  const keys = new KeybindingsManager(TUI_KEYBINDINGS, bindings);
   let widget: Component | undefined;
   const requestRender = vi.fn();
   const codes: Record<string, number> = {
@@ -58,12 +72,39 @@ function indicatorContext() {
   return {
     ctx: { ui } as unknown as ExtensionCommandContext,
     ui,
+    keys,
     requestRender,
     get widget() {
       return widget;
     },
     text: () => stripVTControlCharacters(widget?.render(100).join("\n") ?? ""),
   };
+}
+
+function interact(
+  harness: ReturnType<typeof indicatorContext>,
+  inputs: string[][],
+) {
+  const screens: string[] = [];
+  harness.ui.custom.mockImplementation(
+    (factory) =>
+      new Promise((resolve) => {
+        const view = factory(
+          { terminal: { rows: 24 }, requestRender: harness.requestRender },
+          harness.ui.theme,
+          harness.keys,
+          resolve,
+        );
+        screens.push(stripVTControlCharacters(view.render(120).join("\n")));
+        const keys = inputs.shift();
+        if (!keys) throw new Error("Unexpected dialog");
+        for (const key of keys) {
+          view.handleInput(key);
+          view.render(120);
+        }
+      }),
+  );
+  return screens;
 }
 
 test("indicator appears on first task, counts stopping as running, and retains outcome totals", () => {
@@ -208,46 +249,152 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
   ui.dispose();
 });
 
-test("viewer fits narrow widths, scrolls, refreshes, and releases its timer", () => {
-  vi.useFakeTimers();
-  const directory = mkdtempSync(join(tmpdir(), "pix-bg-ui-"));
+test.each(["h", "q", "\x1b[104u", "\x1b[113u", "\x1b", "\x03"])(
+  "viewer scrolls, refreshes, and closes once with %j",
+  (back) => {
+    vi.useFakeTimers();
+    const directory = mkdtempSync(join(tmpdir(), "pix-bg-ui-"));
+    const outputPath = join(directory, "output.log");
+    writeFileSync(
+      outputPath,
+      Array.from({ length: 100 }, (_, i) => `line ${i} 界`).join("\n"),
+    );
+    const current = { ...task, outputPath };
+    const render = vi.fn();
+    const done = vi.fn();
+    const view = new OutputView(
+      () => current,
+      { fg: (_color, text) => text },
+      () => 10,
+      render,
+      done,
+      new KeybindingsManager(TUI_KEYBINDINGS, vimBindings),
+    );
+    try {
+      for (const width of [1, 12, 80]) {
+        const lines = view.render(width);
+        expect(lines.length).toBeLessThanOrEqual(10);
+        expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+      }
+      expect(view.render(80).join("\n")).toContain("line 99");
+      view.handleInput("\x1b[H");
+      expect(view.render(80).join("\n")).toContain("line 0");
+      for (const [down, up] of [
+        ["j", "k"],
+        ["\x1b[106u", "\x1b[107u"],
+      ] as const) {
+        view.handleInput(down);
+        expect(view.render(80)[2]?.trimEnd()).toBe("line 1 界");
+        view.handleInput(up);
+        expect(view.render(80)[2]?.trimEnd()).toBe("line 0 界");
+      }
+      expect(view.render(120).at(-1)).toBe(
+        " up k down j scroll · pageUp pageDown page · home top · end follow · escape ctrl+c h q back",
+      );
+      view.handleInput("\x1b[F");
+      writeFileSync(outputPath, "updated output");
+      vi.advanceTimersByTime(1000);
+      expect(view.render(80).join("\n")).toContain("updated output");
+      view.handleInput(back);
+      view.handleInput(back);
+      expect(done).toHaveBeenCalledTimes(1);
+      expect(view.render(80)).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+      const count = render.mock.calls.length;
+      vi.advanceTimersByTime(2000);
+      expect(render).toHaveBeenCalledTimes(count);
+    } finally {
+      view.dispose();
+      vi.useRealTimers();
+      rmSync(directory, { recursive: true });
+    }
+  },
+);
+
+test("viewer honors remapped and disabled scroll, jump, and cancel actions", () => {
+  const directory = mkdtempSync(join(tmpdir(), "pix-bg-keys-"));
   const outputPath = join(directory, "output.log");
   writeFileSync(
     outputPath,
-    Array.from({ length: 100 }, (_, i) => `line ${i} 界`).join("\n"),
+    Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"),
   );
-  const current = { ...task, outputPath };
-  const render = vi.fn();
+  const bindings: KeybindingsConfig = {
+    "tui.select.up": "w",
+    "tui.select.down": "s",
+    "tui.select.pageUp": "u",
+    "tui.select.pageDown": "d",
+    "tui.altScreen.top": "t",
+    "tui.altScreen.bottom": "b",
+    "tui.select.cancel": "x",
+  };
+  const keys = new KeybindingsManager(TUI_KEYBINDINGS, bindings);
   const done = vi.fn();
   const view = new OutputView(
-    () => current,
+    () => ({ ...task, outputPath, status: "finished" }),
     { fg: (_color, text) => text },
-    () => 10,
-    render,
+    () => 8,
+    vi.fn(),
     done,
+    keys,
   );
   try {
-    for (const width of [1, 12, 80]) {
-      const lines = view.render(width);
-      expect(lines.length).toBeLessThanOrEqual(10);
-      expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(view.render(120).at(-1)).toBe(
+      " w s scroll · u d page · t top · b follow · x back",
+    );
+    for (const key of [
+      "j",
+      "k",
+      "h",
+      "q",
+      "\x1b[A",
+      "\x1b[B",
+      "\x1b[H",
+      "\x1b[F",
+      "\x1b[5~",
+      "\x1b[6~",
+      "\x1b",
+      "\x03",
+    ])
+      view.handleInput(key);
+    expect(done).not.toHaveBeenCalled();
+    expect(view.render(120)[2]?.trimEnd()).toBe("line 15");
+    for (const [key, line] of [
+      ["t", 0],
+      ["s", 1],
+      ["w", 0],
+      ["d", 5],
+      ["u", 0],
+      ["b", 15],
+    ] as const) {
+      view.handleInput(key);
+      expect(view.render(120)[2]?.trimEnd()).toBe(`line ${line}`);
     }
-    expect(view.render(80).join("\n")).toContain("line 99");
-    view.handleInput("\x1b[H");
-    expect(view.render(80).join("\n")).toContain("line 0");
-    view.handleInput("\x1b[F");
-    writeFileSync(outputPath, "updated output");
-    vi.advanceTimersByTime(1000);
-    expect(view.render(80).join("\n")).toContain("updated output");
-    view.handleInput("\x1b");
+    keys.setUserBindings(
+      Object.fromEntries(Object.keys(bindings).map((action) => [action, []])),
+    );
+    view.invalidate();
+    expect(view.render(120).at(-1)).toBe("");
+    for (const key of [
+      "w",
+      "s",
+      "u",
+      "d",
+      "t",
+      "b",
+      "x",
+      "\x1b[H",
+      "\x1b",
+      "\x03",
+    ])
+      view.handleInput(key);
+    expect(done).not.toHaveBeenCalled();
+    expect(view.render(120)[2]?.trimEnd()).toBe("line 15");
+    keys.setUserBindings({ "tui.select.cancel": "z" });
+    expect(view.render(120).at(-1)).toContain(" z back");
+    view.handleInput("z");
     expect(done).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
-    const count = render.mock.calls.length;
-    vi.advanceTimersByTime(2000);
-    expect(render).toHaveBeenCalledTimes(count);
   } finally {
     view.dispose();
-    vi.useRealTimers();
     rmSync(directory, { recursive: true });
   }
 });
@@ -262,7 +409,7 @@ test("disposing while the task list is open closes it and registry updates refre
         view = factory(
           { terminal: { rows: 24 }, requestRender: harness.requestRender },
           harness.ui.theme,
-          {},
+          harness.keys,
           resolve,
         );
       }),
@@ -294,52 +441,186 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(harness.ui.select).not.toHaveBeenCalled();
 });
 
-test("task menu confirms user kills and clears its indicator", async () => {
+test.each([
+  ["j", "l", "q"],
+  ["\x1b[106u", "\x1b[108u", "\x1b[113u"],
+  ["\x1b[B", "\r", "\x1b"],
+])(
+  "task menu navigates with %j, confirms kills with %j, and cancels with %j",
+  async (down, select, cancel) => {
+    const stop = vi.fn(async () => task);
+    const registry = {
+      list: () => [task],
+      get: () => task,
+      stop,
+    } as unknown as Registry;
+    const harness = indicatorContext();
+    const screens = interact(harness, [
+      [select],
+      [down, select],
+      [down, select],
+      [cancel],
+    ]);
+    const ctx = harness.ctx;
+    const ui = new TaskUI(registry, ctx);
+    await ui.show(ctx);
+    expect(stop).toHaveBeenCalledWith("abc", "user");
+    expect(screens[2]).toContain("Kill background task?");
+    expect(screens[2]).toContain("→ No");
+    expect(harness.text().split("\n")[1]).toBe(
+      "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+    );
+    ui.dispose();
+    ui.dispose();
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pix-bg", undefined);
+  },
+);
+
+test("task menus and confirmation use the injected bindings instead of literal keys", async () => {
+  const harness = indicatorContext({
+    "tui.select.up": "w",
+    "tui.select.down": "s",
+    "tui.select.confirm": "d",
+    "tui.select.cancel": "a",
+  });
+  const unbound = ["j", "k", "l", "h", "q", "\r", "\x1b", "\x03"];
+  const screens = interact(harness, [
+    [...unbound, "d"],
+    [...unbound, "s", "d"],
+    [...unbound, "s", "d"],
+    ["a"],
+  ]);
   const stop = vi.fn(async () => task);
-  const registry = {
-    list: () => [task],
-    get: () => task,
-    stop,
-  } as unknown as Registry;
-  const harness = indicatorContext();
-  harness.ui.custom
-    .mockResolvedValueOnce("abc")
-    .mockResolvedValueOnce(undefined);
-  harness.ui.select.mockResolvedValueOnce("Kill");
-  const ctx = harness.ctx;
-  const ui = new TaskUI(registry, ctx);
-  await ui.show(ctx);
-  expect(stop).toHaveBeenCalledWith("abc", "user");
-  expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
-  expect(harness.text().split("\n")[1]).toBe(
-    "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+  const ui = new TaskUI(
+    { list: () => [task], get: () => task, stop } as unknown as Registry,
+    harness.ctx,
   );
-  ui.dispose();
-  ui.dispose();
-  expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pix-bg", undefined);
+  try {
+    await ui.show(harness.ctx);
+    expect(stop).toHaveBeenCalledExactlyOnceWith("abc", "user");
+    expect(harness.ui.custom).toHaveBeenCalledTimes(4);
+    expect(screens[0]).toContain(" w s navigate · d select · a cancel");
+    expect(screens[1]).toContain(" w s navigate · d select · a back");
+    expect(screens[2]).toContain(" w s navigate · d select · a back");
+  } finally {
+    ui.dispose();
+  }
 });
 
-test("canceling confirmation leaves the task alone", async () => {
-  const stop = vi.fn();
-  const registry = {
-    list: () => [task],
-    get: () => task,
-    stop,
-  } as unknown as Registry;
-  const ctx = {
-    ui: {
-      custom: vi
-        .fn()
-        .mockResolvedValueOnce("abc")
-        .mockResolvedValueOnce(undefined),
-      select: vi.fn().mockResolvedValueOnce("Kill"),
-      confirm: vi.fn(async () => false),
-      setStatus: vi.fn(),
-      setWidget: vi.fn(),
-    },
-  } as unknown as ExtensionCommandContext;
-  const ui = new TaskUI(registry, ctx);
-  await ui.show(ctx);
-  expect(stop).not.toHaveBeenCalled();
-  ui.dispose();
+test("task menus preserve selection when resized and close on disposal", async () => {
+  const harness = indicatorContext();
+  const terminal = { rows: 24 };
+  let view: Component | undefined;
+  harness.ui.custom.mockImplementation(
+    (factory) =>
+      new Promise((resolve) => {
+        view = factory(
+          { terminal, requestRender: harness.requestRender },
+          harness.ui.theme,
+          harness.keys,
+          resolve,
+        );
+      }),
+  );
+  const ui = new TaskUI(
+    { list: () => [task], get: () => task } as unknown as Registry,
+    harness.ctx,
+  );
+  const showing = ui.show(harness.ctx);
+  try {
+    view?.handleInput?.("l");
+    await Promise.resolve();
+    expect(harness.ui.custom).toHaveBeenCalledTimes(2);
+    view?.handleInput?.("j");
+    for (const rows of [8, 12, 24]) {
+      terminal.rows = rows;
+      for (const width of [1, 12, 40, 120]) {
+        const lines = view?.render(width) ?? [];
+        expect(lines.length).toBeLessThanOrEqual(rows - 4);
+        expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+        if (width >= 12)
+          expect(stripVTControlCharacters(lines.join("\n"))).toContain(
+            "→ Kill",
+          );
+      }
+    }
+    harness.ui.theme.fg.mockImplementation(
+      (_color, text) => `\x1b[36m${text}\x1b[39m`,
+    );
+    view?.invalidate();
+    expect(view?.render(120).join("\n")).toContain("\x1b[36m");
+    harness.keys.setUserBindings({
+      "tui.select.up": [],
+      "tui.select.down": [],
+      "tui.select.confirm": [],
+      "tui.select.cancel": "x",
+    });
+    view?.invalidate();
+    const text = stripVTControlCharacters(view?.render(120).join("\n") ?? "");
+    expect(text).toContain(" x back");
+    expect(text).not.toContain("navigate");
+    expect(text).not.toContain("select");
+    for (const key of ["j", "k", "l", "h", "q", "\r", "\x1b[B", "\x1b", "\x03"])
+      view?.handleInput?.(key);
+    expect(
+      stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
+    ).toContain("→ Kill");
+  } finally {
+    ui.dispose();
+    await showing;
+  }
+  expect(view?.render(120)).toEqual([]);
+  view?.handleInput?.("l");
+  expect(harness.ui.custom).toHaveBeenCalledTimes(2);
 });
+
+test.each(["h", "q", "l"])(
+  "canceling confirmation with %j leaves the task alone",
+  async (cancel) => {
+    const stop = vi.fn();
+    const registry = {
+      list: () => [task],
+      get: () => task,
+      stop,
+    } as unknown as Registry;
+    const harness = indicatorContext();
+    interact(harness, [["l"], ["j", "l"], [cancel], ["q"]]);
+    const ui = new TaskUI(registry, harness.ctx);
+    await ui.show(harness.ctx);
+    expect(stop).not.toHaveBeenCalled();
+    expect(harness.ui.custom).toHaveBeenCalledTimes(4);
+    ui.dispose();
+  },
+);
+
+test.each(["h", "q"])(
+  "%j returns from task menus and output to the task list",
+  async (back) => {
+    const harness = indicatorContext();
+    const screens = interact(harness, [
+      ["l"],
+      [back],
+      ["l"],
+      ["j", "k", "l"],
+      [back],
+      ["q"],
+    ]);
+    const ui = new TaskUI(
+      { list: () => [task], get: () => task } as unknown as Registry,
+      harness.ctx,
+    );
+    try {
+      await ui.show(harness.ctx);
+      expect(harness.ui.custom).toHaveBeenCalledTimes(6);
+      expect(screens[1]).toContain("View output");
+      expect(screens[1]).toContain(
+        " up k down j navigate · enter l select · escape ctrl+c h q back",
+      );
+      expect(screens[2]).toContain("Background tasks");
+      expect(screens[4]).toContain("Last 8 KiB:");
+      expect(screens[5]).toContain("Background tasks");
+    } finally {
+      ui.dispose();
+    }
+  },
+);

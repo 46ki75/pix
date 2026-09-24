@@ -1,6 +1,11 @@
 import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type KeybindingsConfig,
+  KeybindingsManager,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
 import { outcomeText } from "./format.ts";
 import type { Outcome, Task } from "./registry.ts";
@@ -18,7 +23,15 @@ const task: Task = {
   status: "running",
 };
 
-function harness(initial: Task[] = [task]) {
+const vimBindings: KeybindingsConfig = {
+  "tui.select.up": ["up", "k"],
+  "tui.select.down": ["down", "j"],
+  "tui.select.confirm": ["enter", "l"],
+  "tui.select.cancel": ["escape", "ctrl+c", "h", "q"],
+};
+
+function harness(initial: Task[] = [task], bindings = vimBindings) {
+  const keys = new KeybindingsManager(TUI_KEYBINDINGS, bindings);
   let tasks = initial;
   let rows = 20;
   const codes: Record<string, number> = {
@@ -44,9 +57,11 @@ function harness(initial: Task[] = [task]) {
     () => rows,
     requestRender,
     done,
+    keys,
   );
   return {
     view,
+    keys,
     theme,
     done,
     requestRender,
@@ -169,7 +184,7 @@ test.each([1, 40])(
         h.height(rows);
         const lines = h.view.render(width).map(stripVTControlCharacters);
         const title = lines.indexOf("Background tasks");
-        const hint = lines.findIndex((line) => line.startsWith(" ↑↓"));
+        const hint = lines.findIndex((line) => line.startsWith(" up k down j"));
         expect(lines[title + 1]).toBe("");
         expect(lines[title + 2]).toContain(" task-");
         expect(hint).toBeGreaterThan(title + 2);
@@ -190,15 +205,16 @@ test("navigation hint uses muted keys and dim separators and action labels", () 
   const hint =
     h.view
       .render(120)
-      .find((line) => stripVTControlCharacters(line).startsWith(" ↑↓")) ?? "";
+      .find((line) =>
+        stripVTControlCharacters(line).startsWith(" up k down j"),
+      ) ?? "";
   expect(stripVTControlCharacters(hint)).toBe(
-    " ↑↓ / j k navigate · enter select · esc/ctrl+c cancel",
+    " up k down j navigate · enter l select · escape ctrl+c h q cancel",
   );
-  for (const key of ["↑↓", "j k", "enter", "esc", "ctrl+c"])
+  for (const key of ["up k down j", "enter l", "escape ctrl+c h q"])
     expect(hint).toContain(`\x1b[90m${key}\x1b[39m`);
-  for (const label of ["/", "navigate", "select", "cancel"])
+  for (const label of ["navigate", "select", "cancel"])
     expect(hint).toContain(`\x1b[2m${label}\x1b[39m`);
-  expect(hint.split("\x1b[2m/\x1b[39m")).toHaveLength(3);
 });
 
 test("task list omits the duplicate legend and uses the current theme for task icons", () => {
@@ -258,7 +274,7 @@ test("task list remains bounded and navigable after resizing", () => {
   expect(h.done).toHaveBeenCalledExactlyOnceWith("task-5");
 });
 
-test.each(["\x1b", "\x03"])(
+test.each(["h", "q", "\x1b[104u", "\x1b[113u", "\x1b", "\x03"])(
   "cancel %j resolves once and disposal ignores further input",
   (key) => {
     const h = harness();
@@ -271,6 +287,83 @@ test.each(["\x1b", "\x03"])(
     expect(h.view.render(120)).toEqual([]);
   },
 );
+
+test.each([
+  ["j", "k", "l"],
+  ["\x1b[106u", "\x1b[107u", "\x1b[108u"],
+])("navigate and select with %j / %j / %j", (down, up, select) => {
+  const h = harness([task, { ...task, id: "newer" }]);
+  h.view.handleInput(down);
+  expect(h.text()).toContain("→  abc |");
+  h.view.handleInput(up);
+  expect(h.text()).toContain("→  newer |");
+  h.view.handleInput(select);
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
+  h.view.handleInput(select);
+  expect(h.done).toHaveBeenCalledTimes(1);
+});
+
+test("task list follows injected semantic bindings and updates its hints", () => {
+  const h = harness([task, { ...task, id: "newer" }], {
+    "tui.select.up": "w",
+    "tui.select.down": "s",
+    "tui.select.confirm": "d",
+    "tui.select.cancel": "a",
+  });
+  expect(h.text()).toContain(" w s navigate · d select · a cancel");
+  for (const key of ["j", "k", "l", "h", "q", "\x1b[B", "\r", "\x1b", "\x03"])
+    h.view.handleInput(key);
+  expect(h.text()).toContain("→  newer |");
+  expect(h.done).not.toHaveBeenCalled();
+  h.view.handleInput("s");
+  expect(h.text()).toContain("→  abc |");
+  h.view.handleInput("w");
+  expect(h.text()).toContain("→  newer |");
+
+  h.keys.setUserBindings({
+    "tui.select.up": [],
+    "tui.select.down": [],
+    "tui.select.confirm": "f",
+    "tui.select.cancel": [],
+  });
+  h.view.invalidate();
+  expect(h.text()).toContain(" f select");
+  expect(h.text()).not.toContain("navigate");
+  expect(h.text()).not.toContain("cancel");
+  for (const key of [
+    "s",
+    "w",
+    "d",
+    "a",
+    "j",
+    "k",
+    "l",
+    "h",
+    "q",
+    "\r",
+    "\x1b[B",
+    "\x1b",
+  ])
+    h.view.handleInput(key);
+  expect(h.done).not.toHaveBeenCalled();
+  expect(h.text()).toContain("→  newer |");
+  h.view.handleInput("f");
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
+});
+
+test("task list uses Pi defaults without implicit letter aliases", () => {
+  const h = harness([task, { ...task, id: "newer" }], {});
+  expect(h.text()).toContain(
+    " up down navigate · enter select · escape ctrl+c cancel",
+  );
+  for (const key of ["j", "k", "l", "h", "q"]) h.view.handleInput(key);
+  expect(h.done).not.toHaveBeenCalled();
+  expect(h.text()).toContain("→  newer |");
+  h.view.handleInput("\x1b[B");
+  expect(h.text()).toContain("→  abc |");
+  h.view.handleInput("\r");
+  expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
+});
 
 test("task labels stay single-line and cannot inject terminal styling", () => {
   const h = harness([{ ...task, name: "\x1b[31munsafe\nname\x1b[0m" }]);

@@ -2,10 +2,11 @@ import {
   DynamicBorder,
   type ExtensionCommandContext,
   type ExtensionContext,
+  type KeybindingsManager,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
-  matchesKey,
+  type Keybinding,
   ScrollView,
   SelectList,
   Text,
@@ -17,6 +18,7 @@ import type { Registry, Task } from "./registry.ts";
 
 type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
 type StatusColor = "running" | "success" | "error" | "warning" | "muted";
+type UIKeys = Pick<KeybindingsManager, "matches" | "getKeys">;
 
 function runningColor(theme: StatusTheme, text: string): string {
   // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
@@ -80,6 +82,39 @@ function renderCounts(
     .join(" ");
 }
 
+function renderHint(
+  theme: Pick<Theme, "fg">,
+  keys: UIKeys,
+  actions: [Keybinding[], string][],
+): string {
+  const hints = actions.flatMap(([bindings, label]) => {
+    const bound = [
+      ...new Set(bindings.flatMap((binding) => keys.getKeys(binding))),
+    ];
+    return bound.length
+      ? [`${theme.fg("muted", bound.join(" "))} ${theme.fg("dim", label)}`]
+      : [];
+  });
+  return hints.length ? ` ${hints.join(theme.fg("dim", " · "))}` : "";
+}
+
+function handleListInput(
+  list: SelectList,
+  ids: string[],
+  keys: UIKeys,
+  data: string,
+): void {
+  // SelectList reads module-global bindings, which may differ from Pi's injected manager.
+  const selected = list.getSelectedItem();
+  const index = ids.indexOf(selected?.value ?? "");
+  if (keys.matches(data, "tui.select.up")) list.setSelectedIndex(index - 1);
+  else if (keys.matches(data, "tui.select.down"))
+    list.setSelectedIndex(index + 1);
+  else if (keys.matches(data, "tui.select.confirm")) {
+    if (selected) list.onSelect?.(selected);
+  } else if (keys.matches(data, "tui.select.cancel")) list.onCancel?.();
+}
+
 export class TaskListView {
   private border: DynamicBorder;
   private list: SelectList;
@@ -92,6 +127,7 @@ export class TaskListView {
     private height: () => number,
     private renderRequest: () => void,
     private done: (id: string | undefined) => void,
+    private keys: UIKeys,
   ) {
     // Extension-loaded DynamicBorder cannot rely on Pi's global theme instance.
     this.border = new DynamicBorder((text) => this.theme.fg("border", text));
@@ -144,10 +180,7 @@ export class TaskListView {
 
   handleInput(data: string): void {
     if (this.disposed) return;
-    if (data === "j" || data === "k") {
-      const index = this.ids.indexOf(this.list.getSelectedItem()?.value ?? "");
-      this.list.setSelectedIndex(index + (data === "j" ? 1 : -1));
-    } else this.list.handleInput(data);
+    handleListInput(this.list, this.ids, this.keys, data);
     this.renderRequest();
   }
 
@@ -163,26 +196,16 @@ export class TaskListView {
     const listHeight = Math.max(1, contentRows - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
-    const hint = [
-      this.theme.fg("muted", "↑↓"),
-      this.theme.fg("dim", "/"),
-      this.theme.fg("muted", "j k"),
-      this.theme.fg("dim", "navigate"),
-      this.theme.fg("dim", "·"),
-      this.theme.fg("muted", "enter"),
-      this.theme.fg("dim", "select"),
-      this.theme.fg("dim", "·"),
-      this.theme.fg("muted", "esc") +
-        this.theme.fg("dim", "/") +
-        this.theme.fg("muted", "ctrl+c"),
-      this.theme.fg("dim", "cancel"),
-    ].join(" ");
     const content = [
       this.theme.fg("accent", "Background tasks"),
       ...margin,
       ...this.list.render(width).slice(0, listHeight),
       ...margin,
-      ` ${hint}`,
+      renderHint(this.theme, this.keys, [
+        [["tui.select.up", "tui.select.down"], "navigate"],
+        [["tui.select.confirm"], "select"],
+        [["tui.select.cancel"], "cancel"],
+      ]),
     ].slice(0, rows);
     return [...border, ...content, ...border].map((line) =>
       truncateToWidth(line, width),
@@ -214,6 +237,7 @@ export class OutputView {
     private height: () => number,
     private renderRequest: () => void,
     private close: () => void,
+    private keys: UIKeys,
   ) {
     this.refresh();
     if (this.task().status !== "finished")
@@ -233,23 +257,28 @@ export class OutputView {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+    if (this.disposed) return;
+    if (this.keys.matches(data, "tui.select.cancel")) {
       this.dispose();
       this.close();
       return;
     }
-    if (matchesKey(data, "up")) this.scroll.scrollBy(-1);
-    else if (matchesKey(data, "down")) this.scroll.scrollBy(1);
-    else if (matchesKey(data, "pageUp"))
+    if (this.keys.matches(data, "tui.select.up")) this.scroll.scrollBy(-1);
+    else if (this.keys.matches(data, "tui.select.down"))
+      this.scroll.scrollBy(1);
+    else if (this.keys.matches(data, "tui.select.pageUp"))
       this.scroll.scrollBy(-this.scroll.viewportHeight);
-    else if (matchesKey(data, "pageDown"))
+    else if (this.keys.matches(data, "tui.select.pageDown"))
       this.scroll.scrollBy(this.scroll.viewportHeight);
-    else if (matchesKey(data, "home")) this.scroll.scrollToStart();
-    else if (matchesKey(data, "end")) this.scroll.scrollToEnd();
+    else if (this.keys.matches(data, "tui.altScreen.top"))
+      this.scroll.scrollToStart();
+    else if (this.keys.matches(data, "tui.altScreen.bottom"))
+      this.scroll.scrollToEnd();
     this.renderRequest();
   }
 
   render(width: number): string[] {
+    if (this.disposed || width < 1) return [];
     const rows = Math.max(1, this.height());
     const content = this.scroll.render(Math.max(1, width));
     // Clip explicitly so this works in both regular and fullscreen Pi layouts.
@@ -268,13 +297,13 @@ export class OutputView {
         this.scroll.scrollTop,
         this.scroll.scrollTop + this.scroll.viewportHeight,
       ),
-      this.theme.fg(
-        "dim",
-        truncateToWidth(
-          "↑↓ / PgUp PgDn scroll · End follow · Esc close",
-          width,
-        ),
-      ),
+      renderHint(this.theme, this.keys, [
+        [["tui.select.up", "tui.select.down"], "scroll"],
+        [["tui.select.pageUp", "tui.select.pageDown"], "page"],
+        [["tui.altScreen.top"], "top"],
+        [["tui.altScreen.bottom"], "follow"],
+        [["tui.select.cancel"], "back"],
+      ]),
     ]
       .slice(0, rows)
       .map((line) => truncateToWidth(line, width));
@@ -345,6 +374,84 @@ export class TaskUI {
     );
   }
 
+  private async choose(
+    ctx: ExtensionCommandContext,
+    title: string,
+    options: string[],
+  ): Promise<string | undefined> {
+    try {
+      return await ctx.ui.custom<string | undefined>(
+        (tui, theme, keys, done) => {
+          let closed = false;
+          const finish = (value: string | undefined) => {
+            if (closed) return;
+            closed = true;
+            done(value);
+          };
+          const createList = (maxVisible: number, selected?: string) => {
+            const list = new SelectList(
+              options.map((value) => ({ value, label: value })),
+              maxVisible,
+              {
+                selectedPrefix: (text) => theme.fg("accent", text),
+                selectedText: (text) => theme.fg("accent", text),
+                description: (text) => theme.fg("muted", text),
+                scrollInfo: (text) => theme.fg("dim", text),
+                noMatch: (text) => theme.fg("muted", text),
+              },
+            );
+            list.setSelectedIndex(Math.max(0, options.indexOf(selected ?? "")));
+            list.onSelect = (item) => finish(item.value);
+            list.onCancel = () => finish(undefined);
+            return list;
+          };
+          let list = createList(1);
+          const border = new DynamicBorder((text) => theme.fg("border", text));
+          this.closeView = () => finish(undefined);
+          return {
+            handleInput(data: string) {
+              if (closed) return;
+              handleListInput(list, options, keys, data);
+              tui.requestRender();
+            },
+            render(width: number) {
+              if (closed || width < 1) return [];
+              const borders = border.render(width);
+              const rows =
+                Math.max(4, tui.terminal.rows - 4) - 2 * borders.length;
+              const margin = rows >= 6 ? [""] : [];
+              const listHeight = Math.max(1, rows - 2 * margin.length - 2);
+              list = createList(
+                Math.max(1, listHeight - 1),
+                list.getSelectedItem()?.value,
+              );
+              const content = [
+                theme.fg("accent", title),
+                ...margin,
+                ...list.render(width).slice(0, listHeight),
+                ...margin,
+                renderHint(theme, keys, [
+                  [["tui.select.up", "tui.select.down"], "navigate"],
+                  [["tui.select.confirm"], "select"],
+                  [["tui.select.cancel"], "back"],
+                ]),
+              ].slice(0, rows);
+              return [...borders, ...content, ...borders].map((line) =>
+                truncateToWidth(line, width),
+              );
+            },
+            invalidate() {},
+            dispose() {
+              closed = true;
+            },
+          };
+        },
+      );
+    } finally {
+      this.closeView = undefined;
+    }
+  }
+
   async show(ctx: ExtensionCommandContext): Promise<void> {
     while (!this.disposed) {
       if (!this.registry.list().length) {
@@ -352,13 +459,14 @@ export class TaskUI {
         return;
       }
       const selected = await ctx.ui.custom<string | undefined>(
-        (tui, theme, _keys, done) => {
+        (tui, theme, keys, done) => {
           const view = new TaskListView(
             () => this.registry.list(),
             theme,
             () => Math.max(4, tui.terminal.rows - 4),
             () => tui.requestRender(),
             done,
+            keys,
           );
           this.closeView = () => {
             view.dispose();
@@ -372,20 +480,21 @@ export class TaskUI {
       this.closeView = undefined;
       if (this.disposed || !selected) return;
       const task = this.registry.get(selected);
-      const action = await ctx.ui.select(statusLine(task), [
+      const action = await this.choose(ctx, statusLine(task), [
         "View output",
         ...(task.status === "running" ? ["Kill"] : []),
         "Back",
       ]);
       if (this.disposed) return;
       if (action === "View output") {
-        await ctx.ui.custom<void>((tui, theme, _keys, done) => {
+        await ctx.ui.custom<void>((tui, theme, keys, done) => {
           const view = new OutputView(
             () => this.registry.get(task.id),
             theme,
             () => Math.max(4, tui.terminal.rows - 4),
             () => tui.requestRender(),
             () => done(),
+            keys,
           );
           this.closeView = () => {
             view.dispose();
@@ -396,7 +505,11 @@ export class TaskUI {
         this.closeView = undefined;
       } else if (
         action === "Kill" &&
-        (await ctx.ui.confirm("Kill background task?", statusLine(task)))
+        // Default to No so repeated selection keys cannot accidentally kill a task.
+        (await this.choose(ctx, `Kill background task? ${statusLine(task)}`, [
+          "No",
+          "Yes",
+        ])) === "Yes"
       ) {
         if (this.disposed) return;
         try {
@@ -404,7 +517,7 @@ export class TaskUI {
         } catch (error) {
           ctx.ui.notify(String(error), "error");
         }
-      } else if (!action) return;
+      }
     }
   }
 
