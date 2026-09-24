@@ -118,8 +118,8 @@ export function createFooter(
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
       const modelText = model
-        ? `${detail("", `${model.id} · ${windowText}`)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
-        : theme.fg("dim", `no-model · ${windowText}`);
+        ? `${detail("", `${model.id} ${windowText}`)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
+        : theme.fg("dim", `no-model ${windowText}`);
       let left = model
         ? `${detail("󱘖", model.provider)} ${modelText}`
         : modelText;

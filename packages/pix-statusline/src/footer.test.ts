@@ -400,7 +400,7 @@ test.each([0, 1, 40])(
   (extra) => {
     const { ctx, tui, theme, footerData } = fixture();
     const footer = createFooter(ctx, tui, theme, footerData);
-    const model = "󱘖 openai-codex  test-model · 272k 󱩔 high";
+    const model = "󱘖 openai-codex  test-model 272k 󱩔 high";
     const metrics = " ----%  36.1% █▓░░";
     const width = visibleWidth(` ${model}  ${metrics} `) + extra;
     const lines = footer.render(width);
@@ -429,7 +429,7 @@ test.each([
         `${color === "muted" ? ANSI.fg.white : ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
     };
     const footer = createFooter(ctx, tui, theme, footerData);
-    const model = ` ${id} · 272k${reasoning ? " 󱩔 high" : ""}`;
+    const model = ` ${id} 272k${reasoning ? " 󱩔 high" : ""}`;
     const fullModel = `󱘖 ${provider} ${model}`;
     const contextMetrics = " 36.1% █▓░░";
     const metrics = ` 90.0% ${contextMetrics}`;
@@ -446,7 +446,7 @@ test.each([
         ` ${model}${" ".repeat(width - compactWidth + 2)}${metrics} `,
       );
       expect(line).toContain(
-        `${ANSI.fg.white}${ANSI.reset.fg} ${ANSI.fg.brightBlack}${id} · 272k${ANSI.reset.fg}`,
+        `${ANSI.fg.white}${ANSI.reset.fg} ${ANSI.fg.brightBlack}${id} 272k${ANSI.reset.fg}`,
       );
       expect(visibleWidth(line)).toBe(width);
     }
@@ -484,7 +484,7 @@ test.each([true, false])(
     if (!hasModel) ctx.model = undefined;
     ctx.getContextUsage = () => undefined;
     const footer = createFooter(ctx, tui, theme, footerData);
-    const model = hasModel ? " test-model · 272k 󱩔 high" : "no-model · ?";
+    const model = hasModel ? " test-model 272k 󱩔 high" : "no-model ?";
     const width = visibleWidth(` ${model}   ----% `);
     expect(stripVTControlCharacters(footer.render(width)[0] ?? "")).toBe(
       ` ${model}   ----% `,
@@ -521,7 +521,7 @@ test.each([
     const lines = footer.render(120);
     for (const [icon, label] of [
       ["󱘖", "openai-codex"],
-      ["", "test-model · 272k"],
+      ["", "test-model 272k"],
       ["󱩔", "high"],
       ["", expected],
     ]) {
@@ -583,7 +583,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   const lines = footer.render(120);
   expect(lines).toHaveLength(4);
   expect(stripVTControlCharacters(lines[0] ?? "")).toMatch(
-    /^ 󱘖 openai-codex  test-model · 272k 󱩔 high {2,} 90.0%  36.1% █▓░░ $/,
+    /^ 󱘖 openai-codex  test-model 272k 󱩔 high {2,} 90.0%  36.1% █▓░░ $/,
   );
   expect(lines[0]).toContain(`${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`);
   expect(visibleWidth(lines[0] ?? "")).toBe(120);
@@ -601,7 +601,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   expect(footer.render(120)[0]).toContain(
     `${ANSI.fg.red} 80.0%${ANSI.reset.fg} ${ANSI.fg.red}███▓${ANSI.reset.fg}`,
   );
-  expect(footer.render(120)[0]).toContain(" test-model · 128k 󰹐 off");
+  expect(footer.render(120)[0]).toContain(" test-model 128k 󰹐 off");
   ctx.getContextUsage = () => ({
     tokens: null,
     percent: null,
@@ -610,12 +610,12 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toContain(
     " 80.0%  ----%",
   );
-  expect(footer.render(120)[0]).toContain(" test-model · 272k 󰹐 off");
+  expect(footer.render(120)[0]).toContain(" test-model 272k 󰹐 off");
   expect(footer.render(120)[0]).not.toMatch(/[█▓░$]/);
   ctx.model = undefined;
   ctx.getContextUsage = () => undefined;
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^ no-model · \? {2,} 80.0%  ----% $/,
+    /^ no-model \? {2,} 80.0%  ----% $/,
   );
   expect(footer.render(120)[0]).not.toMatch(/[█▓░]/);
   expect(footer.render(120)[0]).toContain(
@@ -644,7 +644,7 @@ test.each([
           };
     const footer = createFooter(ctx, tui, theme, footerData);
     const stats = stripVTControlCharacters(footer.render(120)[0] ?? "");
-    expect(stats).toContain(`󱘖 openai-codex  test-model · ${expected} 󱩔 high`);
+    expect(stats).toContain(`󱘖 openai-codex  test-model ${expected} 󱩔 high`);
     expect(stats).toMatch(/ {2,} ----%  ----% $/);
     expect(stats).not.toContain("$");
     footer.dispose();
@@ -669,7 +669,7 @@ test.each([
     const fg = vi.spyOn(theme, "fg");
     const footer = createFooter(ctx, tui, theme, footerData);
     expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toContain(
-      `󱘖 openai-codex  test-model · 272k ${label}`,
+      `󱘖 openai-codex  test-model 272k ${label}`,
     );
     const [icon, effort] = label.split(" ");
     expect(fg).toHaveBeenCalledWith("muted", icon);
@@ -684,11 +684,11 @@ test("omits thinking effort for non-reasoning and missing models", () => {
   ctx.model.reasoning = false;
   const footer = createFooter(ctx, tui, theme, footerData);
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^ 󱘖 openai-codex  test-model · 272k {2,} ----%  36.1% █▓░░ $/,
+    /^ 󱘖 openai-codex  test-model 272k {2,} ----%  36.1% █▓░░ $/,
   );
   ctx.model = undefined;
   expect(stripVTControlCharacters(footer.render(120)[0] ?? "")).toMatch(
-    /^ no-model · 272k {2,} ----%  36.1% █▓░░ $/,
+    /^ no-model 272k {2,} ----%  36.1% █▓░░ $/,
   );
   footer.dispose();
 });
@@ -730,7 +730,7 @@ test("fits ANSI and wide text at narrow widths and reads theme changes", () => {
     `\u001b[97m\u001b[0m \u001b[36m----%\u001b[0m ${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg}`,
   );
   expect(footer.render(80)[0]).toContain(
-    "\u001b[97m󱘖\u001b[0m \u001b[36mopenai-codex\u001b[0m \u001b[97m\u001b[0m \u001b[36mtest-model · 272k\u001b[0m \u001b[97m󱩔\u001b[0m \u001b[36mhigh\u001b[0m",
+    "\u001b[97m󱘖\u001b[0m \u001b[36mopenai-codex\u001b[0m \u001b[97m\u001b[0m \u001b[36mtest-model 272k\u001b[0m \u001b[97m󱩔\u001b[0m \u001b[36mhigh\u001b[0m",
   );
   footer.dispose();
 });
