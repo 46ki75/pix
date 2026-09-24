@@ -40,12 +40,12 @@ async function initRepository(path: string) {
 
 test("uses the repository basename and relative path, even before the first commit", async () => {
   const root = join(directory, "repo with spaces ");
-  const nested = join(root, "packages", "statusline");
+  const nested = join(root, "packages", "pix-statusline");
   await initRepository(root);
   await mkdir(nested, { recursive: true });
   expect(await resolveLocation(root, exec)).toBe(" repo with spaces ");
   expect(await resolveLocation(nested, exec)).toBe(
-    " repo with spaces /packages/statusline",
+    " repo with spaces /packages/pix-statusline",
   );
 
   const inner = join(root, "inner");

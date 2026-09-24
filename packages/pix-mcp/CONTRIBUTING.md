@@ -12,7 +12,7 @@ From the repository root, follow the [workspace setup](../../README.md#setup), t
 mise run mcp:dev
 ```
 
-The development task runs from `packages/mcp` and disables other extensions so
+The development task runs from `packages/pix-mcp` and disables other extensions so
 another MCP adapter cannot collide with the `mcp` tool or flags. Pass arguments
 through the task, for example:
 

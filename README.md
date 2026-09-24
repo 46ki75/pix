@@ -51,12 +51,12 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 
-[`@ikuma.cloud/pix-websearch`](packages/websearch/README.md) adds a `websearch` tool with
+[`@ikuma.cloud/pix-websearch`](packages/pix-websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
 `mise run websearch:dev` to try it, or
 `mise run test --project pix-websearch` for its tests.
 
-[`@ikuma.cloud/pix-webfetch`](packages/webfetch/README.md) adds an independent
+[`@ikuma.cloud/pix-webfetch`](packages/pix-webfetch/README.md) adds an independent
 `webfetch` tool for reading URLs as Markdown or text, with full-output files for
 truncated previews. Run
 `mise run webfetch:dev` to try it or `mise run web:dev` to use both web tools.
@@ -65,28 +65,32 @@ Its tests run with `mise run test --project pix-webfetch`.
 Web search and web fetch have separate package versions and runtime dependencies,
 so provider updates and content-extraction updates can be released independently.
 
-[`@ikuma.cloud/pix-mcp`](packages/mcp/README.md) connects to configured stdio and
+[`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) connects to configured stdio and
 Streamable HTTP MCP servers, exposes compact discovery, and activates native tool
 schemas on demand. Run `mise run mcp:dev` for an isolated development launch or
 `mise run test --project pix-mcp` for its tests. Review its configuration trust
 requirements before connecting servers. Tool-call permissions are left to Pi
 extensions rather than enforced by the adapter.
 
-[`@ikuma.cloud/pix-bg`](packages/bg/README.md) runs background shell tasks with
+[`@ikuma.cloud/pix-bg`](packages/pix-bg/README.md) runs background shell tasks with
 completion wake-ups, capped log files, and a `/bg` task viewer. Run
 `mise run bg:dev` for an isolated launch or `mise run test --project pix-bg`
 for its tests. Tasks stop on reload, session replacement, and quit.
 
-[`@ikuma.cloud/pix-statusline`](packages/statusline/README.md) adds a customizable
+[`@ikuma.cloud/pix-statusline`](packages/pix-statusline/README.md) adds a customizable
 footer with model details, cache-hit rate, context utilization, and
 Git-aware directory segments. Run `mise run statusline:dev` to try it or
 `mise run test --project pix-statusline` for its tests.
 
 ## Layout
 
-Each extension lives in `packages/<name>/`, with its own Pi manifest, source,
-tests, and TypeScript configuration. Shared tooling lives at the repository root.
-Pi loads the TypeScript entry point declared by `package.json` directly.
+Each extension lives in `packages/<unscoped-package-name>/`, such as
+`packages/pix-websearch/`, with its own Pi manifest, source, tests, and TypeScript
+configuration. Shared tooling lives at the repository root. Pi loads the
+TypeScript entry point declared by `package.json` directly.
+
+Update local path-based installations if your checkout previously used shorter
+directory names. Published npm package names and mise task names are unchanged.
 
 See [the contribution guide](CONTRIBUTING.md#adding-an-extension) for the package
 conventions and [Pi's extension documentation](https://pi.dev/docs/latest/extensions)

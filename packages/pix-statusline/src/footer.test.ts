@@ -132,8 +132,8 @@ test.each([null, undefined, Number.NaN, Infinity, -Infinity])(
 test.each([
   [homedir(), "~"],
   [
-    join(homedir(), "org/46ki75/pix/packages/statusline"),
-    join("~", "org/46ki75/pix/packages/statusline"),
+    join(homedir(), "org/46ki75/pix/packages/pix-statusline"),
+    join("~", "org/46ki75/pix/packages/pix-statusline"),
   ],
   [join(homedir(), "..notes"), join("~", "..notes")],
   [
@@ -152,7 +152,7 @@ test.each([
   footer.dispose();
 });
 
-test.each([" pix", " pix/packages/statusline"])(
+test.each([" pix", " pix/packages/pix-statusline"])(
   "renders the resolved repository location %s",
   (directory) => {
     const { ctx, tui, theme, footerData } = fixture();
@@ -288,10 +288,10 @@ test("keeps the rounded right cap when truncating a long branch", () => {
     tui,
     theme,
     footerData,
-    " pix/packages/statusline",
+    " pix/packages/pix-statusline",
   );
   const expected =
-    "  pix/packages/statusline   fix/statusline-full-width-loca... ";
+    "  pix/packages/pix-statusline   fix/statusline-full-width-loca... ";
   const width = visibleWidth(expected);
   const line = footer.render(width)[2] ?? "";
   expect(stripVTControlCharacters(line)).toBe(expected);

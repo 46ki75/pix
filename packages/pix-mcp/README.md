@@ -9,7 +9,7 @@ required.
 To load this package in an existing Pi installation:
 
 ```sh
-pi -e /absolute/path/to/pix/packages/mcp
+pi -e /absolute/path/to/pix/packages/pix-mcp
 ```
 
 Disable any other MCP adapter that would collide with the `mcp` tool or flags,

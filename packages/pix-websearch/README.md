@@ -9,7 +9,7 @@ setup; optional API keys use the corresponding provider account's limits.
 To load this package in an existing Pi installation, use its absolute path:
 
 ```sh
-pi -e /absolute/path/to/pix/packages/websearch
+pi -e /absolute/path/to/pix/packages/pix-websearch
 ```
 
 Pi loads the package's TypeScript source directly; no build step is needed.
@@ -26,7 +26,7 @@ Search for the latest TypeScript release and summarize the changes with sources.
 `firecrawl`, `tavily`, or `tinyfish` to select a fixed provider:
 
 ```sh
-PIX_WEBSEARCH_PROVIDER=tavily pi -e /absolute/path/to/pix/packages/websearch
+PIX_WEBSEARCH_PROVIDER=tavily pi -e /absolute/path/to/pix/packages/pix-websearch
 ```
 
 Optional credentials are read when Pi loads the extension:

@@ -10,7 +10,7 @@ include a preview and a path to the full converted output.
 To load the package in an existing Pi installation:
 
 ```sh
-pi -e /absolute/path/to/pix/packages/webfetch
+pi -e /absolute/path/to/pix/packages/pix-webfetch
 ```
 
 Pi loads the TypeScript source directly. No build step or API key is required.
@@ -23,7 +23,7 @@ Fetch https://www.typescriptlang.org/docs/ and summarize the available guides.
 
 ### Use with web search
 
-[`@ikuma.cloud/pix-websearch`](../websearch/README.md) discovers source URLs;
+[`@ikuma.cloud/pix-websearch`](../pix-websearch/README.md) discovers source URLs;
 `@ikuma.cloud/pix-webfetch` reads individual sources. Each package registers its
 own tool, owns its runtime dependencies, and can be installed and versioned
 independently.
@@ -32,7 +32,7 @@ To load both packages in an existing Pi installation, supply both package paths
 with separate `-e` arguments:
 
 ```sh
-pi -e /absolute/path/to/pix/packages/websearch -e /absolute/path/to/pix/packages/webfetch
+pi -e /absolute/path/to/pix/packages/pix-websearch -e /absolute/path/to/pix/packages/pix-webfetch
 ```
 
 ## Tool contract
