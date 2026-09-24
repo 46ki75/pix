@@ -164,24 +164,39 @@ export class TaskListView {
     const margin = rows >= 6 ? [""] : [];
     const contentRows = rows - 2 * margin.length;
     const legendText = renderLegend(this.theme);
+    const legendMargin = contentRows >= 6 ? [""] : [];
     // On tiny terminals prioritize at least one task row over the full legend.
-    const legendLines = wrapTextWithAnsi(legendText, width).slice(
-      0,
-      Math.max(0, contentRows - 4),
+    const legendLines = wrapTextWithAnsi(legendText, Math.max(1, width - 1))
+      .slice(0, Math.max(0, contentRows - legendMargin.length - 4))
+      .map((line) => ` ${line}`);
+    const listHeight = Math.max(
+      1,
+      contentRows - legendLines.length - legendMargin.length - 2,
     );
-    const listHeight = Math.max(1, contentRows - legendLines.length - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
+    const hint = [
+      this.theme.fg("muted", "↑↓"),
+      this.theme.fg("dim", "/"),
+      this.theme.fg("muted", "j k"),
+      this.theme.fg("dim", "navigate"),
+      this.theme.fg("dim", "·"),
+      this.theme.fg("muted", "enter"),
+      this.theme.fg("dim", "select"),
+      this.theme.fg("dim", "·"),
+      this.theme.fg("muted", "esc") +
+        this.theme.fg("dim", "/") +
+        this.theme.fg("muted", "ctrl+c"),
+      this.theme.fg("dim", "cancel"),
+    ].join(" ");
     const content = [
       this.theme.fg("accent", "Background tasks"),
       ...margin,
       ...this.list.render(width).slice(0, listHeight),
       ...margin,
       ...legendLines,
-      this.theme.fg(
-        "dim",
-        "↑↓ / j k navigate · enter select · esc/ctrl+c cancel",
-      ),
+      ...legendMargin,
+      ` ${hint}`,
     ].slice(0, rows);
     return [...border, ...content, ...border].map((line) =>
       truncateToWidth(line, width),

@@ -74,10 +74,11 @@ icons:
 
 Rows prioritize IDs, outcomes, and durations over long task names. Status and
 theme colors refresh while the list is open, without moving your selection when
-another task starts. The legend wraps on narrow terminals; very
-short viewports prioritize task rows. Use Up/Down or j/k to navigate, Enter to
-select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a running
-task after confirmation.
+another task starts. The legend and navigation hint are indented by one space,
+with a blank line between them. The legend wraps on narrow terminals; short
+viewports reduce spacing and prioritize task rows. Use Up/Down or j/k to navigate,
+Enter to select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a
+running task after confirmation.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
 task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following
