@@ -46,17 +46,42 @@ function statusColor(task: Task): StatusColor {
   }
 }
 
-function statusDot(theme: StatusTheme, color: StatusColor): string {
-  return color === "running" ? runningColor(theme, "⏺") : theme.fg(color, "⏺");
+const statusIcons: Record<StatusColor, string> = {
+  running: "",
+  success: "",
+  error: "",
+  warning: "",
+  muted: "",
+};
+
+function statusIcon(theme: StatusTheme, color: StatusColor): string {
+  const icon = statusIcons[color];
+  return color === "running"
+    ? runningColor(theme, icon)
+    : theme.fg(color, icon);
 }
 
 const legend: readonly (readonly [StatusColor, string])[] = [
-  ["running", "Running/stopping"],
+  ["running", "Running"],
   ["success", "Succeeded"],
   ["error", "Failed"],
-  ["warning", "Timeout/cap"],
+  ["warning", "Timeout"],
   ["muted", "Killed"],
 ];
+
+function renderLegend(
+  theme: StatusTheme,
+  counts?: Partial<Record<StatusColor, number>>,
+): string {
+  return legend
+    .map(([color, label]) => {
+      const text = counts
+        ? `${theme.fg("dim", `${label}:`)} ${theme.fg("text", String(counts[color] ?? 0))}`
+        : theme.fg("text", label);
+      return `${statusIcon(theme, color)} ${text}`;
+    })
+    .join(" ");
+}
 
 export class TaskListView {
   private border: DynamicBorder;
@@ -95,11 +120,11 @@ export class TaskListView {
         truncatePrimary: ({ item, isSelected, maxWidth }) => {
           const task = byId.get(item.value);
           if (!task) return "";
-          const dot = `${statusDot(this.theme, statusColor(task))} `;
+          const icon = `${statusIcon(this.theme, statusColor(task))} `;
           const now = Date.now();
           // Reserve the ID, outcome, and duration before budgeting a long name.
           const fixedWidth = visibleWidth(
-            dot + statusLine({ ...task, name: "" }, now),
+            icon + statusLine({ ...task, name: "" }, now),
           );
           const name = truncateToWidth(
             oneLine(task.name),
@@ -107,9 +132,9 @@ export class TaskListView {
           );
           const text = statusLine({ ...task, name }, now);
           // Pi's fg() does not restore an enclosing color after a nested reset.
-          // Style the row text separately so the dot keeps its status color.
+          // Style the row text separately so the icon keeps its status color.
           const line =
-            dot + this.theme.fg(isSelected ? "accent" : "text", text);
+            icon + this.theme.fg(isSelected ? "accent" : "text", text);
           return truncateToWidth(line, Math.max(0, maxWidth), "");
         },
       },
@@ -138,14 +163,7 @@ export class TaskListView {
     // Collapse spacing on short viewports rather than hide the selected task.
     const margin = rows >= 6 ? [""] : [];
     const contentRows = rows - 2 * margin.length;
-    const legendText =
-      this.theme.fg("dim", "Legend: ") +
-      legend
-        .map(
-          ([color, label]) =>
-            `${statusDot(this.theme, color)} ${this.theme.fg("muted", label)}`,
-        )
-        .join(this.theme.fg("dim", " · "));
+    const legendText = renderLegend(this.theme);
     // On tiny terminals prioritize at least one task row over the full legend.
     const legendLines = wrapTextWithAnsi(legendText, width).slice(
       0,
@@ -275,8 +293,7 @@ export class TaskUI {
   private disposed = false;
   private closeView: (() => void) | undefined;
   private renderIndicator: (() => void) | undefined;
-  private running = 0;
-  private finished = 0;
+  private counts: Partial<Record<StatusColor, number>> = {};
 
   constructor(
     private registry: Registry,
@@ -289,8 +306,11 @@ export class TaskUI {
     if (this.disposed) return;
     const tasks = this.registry.list();
     if (!tasks.length) return;
-    this.running = tasks.filter((task) => task.status !== "finished").length;
-    this.finished = tasks.length - this.running;
+    this.counts = {};
+    for (const task of tasks) {
+      const color = statusColor(task);
+      this.counts[color] = (this.counts[color] ?? 0) + 1;
+    }
     if (this.renderIndicator) {
       this.renderIndicator();
       return;
@@ -306,16 +326,21 @@ export class TaskUI {
           render: (width: number) => {
             if (this.disposed || width < 1) return [];
             const theme = this.ctx.ui.theme;
-            const line =
-              theme.fg("dim", "| ") +
-              runningColor(theme, `⏺ Running: ${this.running}`) +
-              theme.fg("muted", ` ⏺ Finished: ${this.finished}`) +
-              theme.fg("dim", " | /bg → Show BG Tasks |");
-            return [truncateToWidth(line, width)];
+            const heading =
+              theme.fg("borderMuted", "── ") +
+              `${theme.fg("muted", "")} ${theme.fg("dim", "Background Tasks")} `;
+            const rule = theme.fg(
+              "borderMuted",
+              "─".repeat(Math.max(0, width - visibleWidth(heading))),
+            );
+            return [
+              truncateToWidth(heading + rule, width),
+              truncateToWidth(` ${renderLegend(theme, this.counts)}`, width),
+            ];
           },
         };
       },
-      { placement: "belowEditor" },
+      { placement: "aboveEditor" },
     );
   }
 

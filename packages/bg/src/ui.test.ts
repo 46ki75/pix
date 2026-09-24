@@ -23,10 +23,19 @@ const task: Task = {
 function indicatorContext() {
   let widget: Component | undefined;
   const requestRender = vi.fn();
+  const codes: Record<string, number> = {
+    text: 37,
+    muted: 90,
+    success: 32,
+    error: 31,
+    warning: 33,
+    dim: 2,
+    borderMuted: 35,
+  };
   const theme = {
     fg: vi.fn(
       (color: string, text: string) =>
-        `\x1b[${color === "muted" ? 37 : 90}m${text}\x1b[39m`,
+        `\x1b[${codes[color] ?? 90}m${text}\x1b[39m`,
     ),
     getColorMode: vi.fn<() => "truecolor" | "256color">(() => "truecolor"),
   };
@@ -57,7 +66,7 @@ function indicatorContext() {
   };
 }
 
-test("indicator appears on first task, counts stopping as running, and retains finished totals", () => {
+test("indicator appears on first task, counts stopping as running, and retains outcome totals", () => {
   const tasks: Task[] = [];
   const harness = indicatorContext();
   const ui = new TaskUI(
@@ -74,11 +83,12 @@ test("indicator appears on first task, counts stopping as running, and retains f
   expect(harness.ui.setWidget).toHaveBeenCalledWith(
     "pix-bg",
     expect.any(Function),
-    { placement: "belowEditor" },
+    { placement: "aboveEditor" },
   );
-  expect(harness.text()).toBe(
-    "| ⏺ Running: 2 ⏺ Finished: 1 | /bg → Show BG Tasks |",
-  );
+  expect(harness.text().split("\n")).toEqual([
+    "──  Background Tasks ".padEnd(100, "─"),
+    "  Running: 2  Succeeded: 1  Failed: 0  Timeout: 0  Killed: 0",
+  ]);
   tasks[0] = {
     ...task,
     status: "finished",
@@ -90,7 +100,9 @@ test("indicator appears on first task, counts stopping as running, and retains f
     outcome: { kind: "killed", by: "user" },
   };
   ui.update();
-  expect(harness.text()).toContain("Running: 0 ⏺ Finished: 3");
+  expect(harness.text().split("\n")[1]).toBe(
+    "  Running: 0  Succeeded: 2  Failed: 0  Timeout: 0  Killed: 1",
+  );
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(1);
   expect(harness.requestRender).toHaveBeenCalled();
   ui.dispose();
@@ -99,7 +111,7 @@ test("indicator appears on first task, counts stopping as running, and retains f
   ui.dispose();
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(calls);
   expect(harness.widget).toBeUndefined();
-  // A fresh runtime never rebuilds the finished counter from session history.
+  // A fresh runtime does not show the indicator based on session history.
   const replacement = new TaskUI(
     { list: () => [] } as unknown as Registry,
     harness.ctx,
@@ -108,20 +120,20 @@ test("indicator appears on first task, counts stopping as running, and retains f
   replacement.dispose();
 });
 
-const outcomes: Outcome[] = [
-  { kind: "exited", code: 0 },
-  { kind: "exited", code: 3 },
-  { kind: "signaled", signal: "SIGKILL", code: 137 },
-  { kind: "timed_out" },
-  { kind: "output_capped" },
-  { kind: "failed", message: "I/O error" },
-  { kind: "killed", by: "agent" },
-  { kind: "killed", by: "user" },
-  { kind: "killed", by: "shutdown" },
+const outcomes: [Outcome, string][] = [
+  [{ kind: "exited", code: 0 }, "Succeeded"],
+  [{ kind: "exited", code: 3 }, "Failed"],
+  [{ kind: "signaled", signal: "SIGKILL", code: 137 }, "Failed"],
+  [{ kind: "timed_out" }, "Timeout"],
+  [{ kind: "output_capped" }, "Timeout"],
+  [{ kind: "failed", message: "I/O error" }, "Failed"],
+  [{ kind: "killed", by: "agent" }, "Killed"],
+  [{ kind: "killed", by: "user" }, "Killed"],
+  [{ kind: "killed", by: "shutdown" }, "Killed"],
 ];
 test.each(outcomes)(
-  "indicator includes every finished outcome: %j",
-  (outcome) => {
+  "indicator counts the correct category for finished outcome: %j",
+  (outcome, label) => {
     const harness = indicatorContext();
     const ui = new TaskUI(
       {
@@ -129,7 +141,14 @@ test.each(outcomes)(
       } as unknown as Registry,
       harness.ctx,
     );
-    expect(harness.text()).toContain("Running: 0 ⏺ Finished: 1");
+    expect(harness.text()).toContain(`${label}: 1`);
+    expect(harness.text().match(/: \d+/g)?.sort()).toEqual([
+      ": 0",
+      ": 0",
+      ": 0",
+      ": 0",
+      ": 1",
+    ]);
     ui.dispose();
   },
 );
@@ -141,15 +160,29 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
     harness.ctx,
   );
   const first = harness.widget?.render(100).join("");
-  expect(first).toContain("\x1b[38;2;104;119;159m⏺ Running: 1\x1b[39m");
+  expect(harness.ui.theme.fg).toHaveBeenCalledWith("muted", "");
+  expect(harness.ui.theme.fg).toHaveBeenCalledWith("dim", "Background Tasks");
+  expect(harness.ui.theme.fg).toHaveBeenCalledWith("borderMuted", "── ");
   expect(harness.ui.theme.fg).toHaveBeenCalledWith(
-    "muted",
-    expect.stringContaining("Finished: 0"),
+    "borderMuted",
+    "─".repeat(100 - visibleWidth("──  Background Tasks ")),
   );
-  expect(harness.ui.theme.fg).toHaveBeenCalledWith(
-    "dim",
-    expect.stringContaining("/bg → Show BG Tasks"),
+  expect(first).toContain(
+    "\x1b[35m── \x1b[39m\x1b[90m\x1b[39m \x1b[2mBackground Tasks\x1b[39m ",
   );
+  for (const [color, icon, label, count] of [
+    ["\x1b[38;2;104;119;159m", "", "Running:", "1"],
+    ["\x1b[32m", "", "Succeeded:", "0"],
+    ["\x1b[31m", "", "Failed:", "0"],
+    ["\x1b[33m", "", "Timeout:", "0"],
+    ["\x1b[90m", "", "Killed:", "0"],
+  ]) {
+    expect(harness.ui.theme.fg).toHaveBeenCalledWith("dim", label);
+    expect(harness.ui.theme.fg).toHaveBeenCalledWith("text", count);
+    expect(first).toContain(
+      `${color}${icon}\x1b[39m \x1b[2m${label}\x1b[39m \x1b[37m${count}\x1b[39m`,
+    );
+  }
   harness.ui.theme.fg.mockImplementation(
     (_color, text) => `\x1b[36m${text}\x1b[39m`,
   );
@@ -158,12 +191,19 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
   expect(harness.widget?.render(100).join("")).not.toBe(first);
   harness.ui.theme.getColorMode.mockReturnValue("256color");
   expect(harness.widget?.render(100).join("")).toContain(
-    "\x1b[38;5;67m⏺ Running: 1",
+    "\x1b[38;5;67m\x1b[39m",
   );
-  for (const width of [1, 12, 40, 80]) {
-    const lines = harness.widget?.render(width);
-    expect(lines).toHaveLength(1);
-    expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(width);
+  expect(harness.widget?.render(0)).toEqual([]);
+  for (const width of [1, 12, 22, 40, 80, 120]) {
+    const lines = harness.widget?.render(width) ?? [];
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+    expect(visibleWidth(lines[0] ?? "")).toBe(width);
+    if (width >= 22) {
+      expect(stripVTControlCharacters(lines[0] ?? "")).toBe(
+        "──  Background Tasks ".padEnd(width, "─"),
+      );
+    }
   }
   ui.dispose();
 });
@@ -234,7 +274,7 @@ test("disposing while the task list is open closes it and registry updates refre
   const showing = ui.show(harness.ctx);
   expect(
     stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-  ).toContain("Legend:");
+  ).toContain(" Running  Succeeded  Failed  Timeout  Killed");
   current = {
     ...task,
     status: "finished",
@@ -251,7 +291,7 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(harness.ui.select).not.toHaveBeenCalled();
 });
 
-test("task menu confirms user kills and clears its footer", async () => {
+test("task menu confirms user kills and clears its indicator", async () => {
   const stop = vi.fn(async () => task);
   const registry = {
     list: () => [task],
@@ -268,7 +308,9 @@ test("task menu confirms user kills and clears its footer", async () => {
   await ui.show(ctx);
   expect(stop).toHaveBeenCalledWith("abc", "user");
   expect(ctx.ui.confirm).toHaveBeenCalledTimes(1);
-  expect(harness.text()).toContain("Running: 1 ⏺ Finished: 0");
+  expect(harness.text().split("\n")[1]).toBe(
+    "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+  );
   ui.dispose();
   ui.dispose();
   expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pix-bg", undefined);

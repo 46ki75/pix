@@ -44,38 +44,40 @@ Stopping from `/bg` queues a next-turn message without waking the agent.
 
 ## Interactive UI
 
-After the first task starts, a one-line indicator appears below the editor,
-above Pi's existing footer:
+After the first task starts, a two-line indicator appears above the input editor:
 
 ```text
-| ⏺ Running: 2 ⏺ Finished: 8 | /bg → Show BG Tasks |
+──  Background Tasks ──────────────────────────────────────
+  Running: 0  Succeeded: 2  Failed: 0  Timeout: 0  Killed: 0
 ```
 
-Running includes tasks still stopping and uses blue `#68779f` (approximated in
-256-color terminals). Finished includes every terminal outcome, not just success,
-and uses the theme's `muted` color; separators and the hint use `dim`. Theme colors
-refresh when the theme changes, and the line is truncated on narrow terminals.
-Finished counts remain visible while idle and reset on reload or session
-replacement; they are not restored from history. Commands that fail to launch
-are not counted.
+The title divider fills the available width; the counts line starts with one
+space. The `` icon uses the theme's `muted` color. Divider lines use `borderMuted`,
+heading text and status labels use `dim`, and numeric counts use `text`. Each
+status icon uses the color below; blue is approximated in 256-color terminals.
+Theme colors refresh when the theme changes, and both lines are truncated on
+narrow terminals. Counts remain visible while idle and reset on reload or session
+replacement; they are not restored from history. Commands that fail to launch are
+not counted.
 
-`/bg` lists detailed outcomes with a colored `⏺` before each task ID and a matching
-legend below the list:
+`/bg` lists detailed outcomes with a colored status icon before each task ID and a
+matching legend without counts below the list. Use a Nerd Font to display these
+icons:
 
-| Legend | Dot color | Meaning |
+| Legend | Icon color | Meaning |
 | --- | --- | --- |
-| Running/stopping | Blue `#68779f` | Still running or cleaning up |
-| Succeeded | Theme `success` | Exit code 0 |
-| Failed | Theme `error` | Nonzero exit, signal, or execution error |
-| Timeout/cap | Theme `warning` | Timeout or output limit reached |
-| Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
+|  Running | Blue `#68779f` | Still running or cleaning up |
+|  Succeeded | Theme `success` | Exit code 0 |
+|  Failed | Theme `error` | Nonzero exit, signal, or execution error |
+|  Timeout | Theme `warning` | Timeout or output limit reached |
+|  Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
 
 Rows prioritize IDs, outcomes, and durations over long task names. Status and
 theme colors refresh while the list is open, without moving your selection when
 another task starts. The legend wraps on narrow terminals; very
 short viewports prioritize task rows. Use Up/Down or j/k to navigate, Enter to
 select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a running
-task after confirmation. The footer keeps its simpler Running/Finished totals.
+task after confirmation.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
 task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following

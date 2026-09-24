@@ -66,27 +66,27 @@ function harness(initial: Task[] = [task]) {
   };
 }
 
-const outcomes: [Outcome, number][] = [
-  [{ kind: "exited", code: 0 }, 32],
-  [{ kind: "exited", code: 3 }, 31],
-  [{ kind: "signaled", signal: "SIGKILL", code: 137 }, 31],
-  [{ kind: "failed", message: "I/O error" }, 31],
-  [{ kind: "timed_out" }, 33],
-  [{ kind: "output_capped" }, 33],
-  [{ kind: "killed", by: "user" }, 90],
-  [{ kind: "killed", by: "agent" }, 90],
-  [{ kind: "killed", by: "shutdown" }, 90],
+const outcomes: [Outcome, number, string][] = [
+  [{ kind: "exited", code: 0 }, 32, ""],
+  [{ kind: "exited", code: 3 }, 31, ""],
+  [{ kind: "signaled", signal: "SIGKILL", code: 137 }, 31, ""],
+  [{ kind: "failed", message: "I/O error" }, 31, ""],
+  [{ kind: "timed_out" }, 33, ""],
+  [{ kind: "output_capped" }, 33, ""],
+  [{ kind: "killed", by: "user" }, 90, ""],
+  [{ kind: "killed", by: "agent" }, 90, ""],
+  [{ kind: "killed", by: "shutdown" }, 90, ""],
 ];
 
 test.each(outcomes)(
-  "task dot distinguishes finished outcome %j",
-  (outcome, code) => {
+  "task icon distinguishes finished outcome %j",
+  (outcome, code, icon) => {
     const h = harness([
       { ...task, status: "finished", endedAt: 2000, outcome },
     ]);
-    expect(h.row()).toContain(`\x1b[${code}m⏺\x1b[39m`);
-    // Resetting only the dot would otherwise lose the selected row's accent color.
-    expect(h.row()).toContain("⏺\x1b[39m \x1b[36mabc |");
+    expect(h.row()).toContain(`\x1b[${code}m${icon}\x1b[39m`);
+    // Resetting only the icon would otherwise lose the selected row's accent color.
+    expect(h.row()).toContain(`${icon}\x1b[39m \x1b[36mabc |`);
     expect(h.text()).toContain("| 2.0s");
   },
 );
@@ -121,15 +121,15 @@ test.each(outcomes)(
   },
 );
 
-test("running and stopping dots match the footer blue, including the palette fallback", () => {
+test("running and stopping icons match the footer blue, including the palette fallback", () => {
   const h = harness();
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.tasks([
     { ...task, status: "stopping", outcome: { kind: "killed", by: "user" } },
   ]);
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.theme.getColorMode.mockReturnValue("256color");
-  expect(h.row()).toContain("\x1b[38;5;67m⏺\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;5;67m\x1b[39m");
 });
 
 test("top and bottom borders follow the viewport width and current theme without crowding out tasks", () => {
@@ -153,9 +153,9 @@ test("top and bottom borders follow the viewport width and current theme without
   expect(lines.at(-1)).toBe(lines[0]);
   // Keep the selected task visible even when little room remains for borders.
   h.height(4);
-  expect(h.text()).toContain("→ ⏺ abc |");
+  expect(h.text()).toContain("→  abc |");
   h.height(3);
-  expect(h.text()).toContain("→ ⏺ abc |");
+  expect(h.text()).toContain("→  abc |");
 });
 
 test.each([1, 40])(
@@ -169,9 +169,9 @@ test.each([1, 40])(
         h.height(rows);
         const lines = h.view.render(width).map(stripVTControlCharacters);
         const title = lines.indexOf("Background tasks");
-        const legend = lines.findIndex((line) => line.startsWith("Legend:"));
+        const legend = lines.findIndex((line) => line.startsWith(" Running"));
         expect(lines[title + 1]).toBe("");
-        expect(lines[title + 2]).toContain("⏺ task-");
+        expect(lines[title + 2]).toContain(" task-");
         expect(legend).toBeGreaterThan(title + 2);
         expect(lines[legend - 1]).toBe("");
         expect(lines[legend - 2]).not.toBe("");
@@ -182,49 +182,45 @@ test.each([1, 40])(
   },
 );
 
-test("legend covers every color and uses the current theme on each render", () => {
+test("legend covers every icon and color and uses the current theme on each render", () => {
   const h = harness([
     { ...task, status: "finished", outcome: { kind: "exited", code: 0 } },
   ]);
   const first = h.view.render(120).join("\n");
-  for (const label of [
-    "Legend:",
-    "Running/stopping",
-    "Succeeded",
-    "Failed",
-    "Timeout/cap",
-    "Killed",
-  ])
-    expect(h.text()).toContain(label);
-  for (const color of [
-    "\x1b[38;2;104;119;159m",
-    "\x1b[32m",
-    "\x1b[31m",
-    "\x1b[33m",
-    "\x1b[90m",
-  ])
-    expect(first).toContain(`${color}⏺\x1b[39m`);
+  expect(h.text().split("\n")).toContain(
+    " Running  Succeeded  Failed  Timeout  Killed",
+  );
+  for (const [color, icon, label] of [
+    ["\x1b[38;2;104;119;159m", "", "Running"],
+    ["\x1b[32m", "", "Succeeded"],
+    ["\x1b[31m", "", "Failed"],
+    ["\x1b[33m", "", "Timeout"],
+    ["\x1b[90m", "", "Killed"],
+  ]) {
+    expect(h.theme.fg).toHaveBeenCalledWith("text", label);
+    expect(first).toContain(`${color}${icon}\x1b[39m \x1b[37m${label}\x1b[39m`);
+  }
   h.theme.fg.mockImplementation((_color, text) => `\x1b[35m${text}\x1b[39m`);
   h.view.invalidate();
   const next = h.view.render(120).join("\n");
   expect(next).not.toBe(first);
-  expect(h.row()).toContain("\x1b[35m⏺\x1b[39m \x1b[35mabc");
+  expect(h.row()).toContain("\x1b[35m\x1b[39m \x1b[35mabc");
   expect(next).not.toContain("\x1b[32m");
 });
 
 test("live task changes retain selection by ID and preserve unselected text colors", () => {
   const h = harness([task, { ...task, id: "newer" }]);
-  expect(h.text()).toContain("→ ⏺ newer |");
-  expect(h.row()).toContain("⏺\x1b[39m \x1b[37mabc |");
+  expect(h.text()).toContain("→  newer |");
+  expect(h.row()).toContain("\x1b[39m \x1b[37mabc |");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→ ⏺ abc |");
+  expect(h.text()).toContain("→  abc |");
   h.tasks([
     { ...task, status: "finished", outcome: { kind: "exited", code: 3 } },
     { ...task, id: "newer" },
     { ...task, id: "newest" },
   ]);
-  expect(h.text()).toContain("→ ⏺ abc |");
-  expect(h.row()).toContain("\x1b[31m⏺");
+  expect(h.text()).toContain("→  abc |");
+  expect(h.row()).toContain("\x1b[31m");
   expect(h.row()).toContain("exit code 3");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
@@ -245,19 +241,19 @@ test("legend wraps and the task list remains bounded and navigable after resizin
   }
   h.height(24);
   for (const label of [
-    "Running/stopping",
-    "Succeeded",
-    "Failed",
-    "Timeout/cap",
-    "Killed",
+    " Running",
+    " Succeeded",
+    " Failed",
+    " Timeout",
+    " Killed",
   ])
-    expect(h.text(40)).toContain(label);
+    expect(h.text(40).replace(/\s+/g, " ")).toContain(label);
   h.height(10);
   h.view.render(80);
   for (let i = 0; i < 35; i++) h.view.handleInput("j");
-  expect(h.text(80)).toContain("→ ⏺ task-4 |");
+  expect(h.text(80)).toContain("→  task-4 |");
   h.view.handleInput("k");
-  expect(h.text(80)).toContain("→ ⏺ task-5 |");
+  expect(h.text(80)).toContain("→  task-5 |");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("task-5");
 });
