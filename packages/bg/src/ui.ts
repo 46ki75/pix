@@ -11,7 +11,6 @@ import {
   Text,
   truncateToWidth,
   visibleWidth,
-  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { oneLine, readTail, statusLine } from "./format.ts";
 import type { Registry, Task } from "./registry.ts";
@@ -61,7 +60,7 @@ function statusIcon(theme: StatusTheme, color: StatusColor): string {
     : theme.fg(color, icon);
 }
 
-const legend: readonly (readonly [StatusColor, string])[] = [
+const statusLabels: readonly (readonly [StatusColor, string])[] = [
   ["running", "Running"],
   ["success", "Succeeded"],
   ["error", "Failed"],
@@ -69,15 +68,13 @@ const legend: readonly (readonly [StatusColor, string])[] = [
   ["muted", "Killed"],
 ];
 
-function renderLegend(
+function renderCounts(
   theme: StatusTheme,
-  counts?: Partial<Record<StatusColor, number>>,
+  counts: Partial<Record<StatusColor, number>>,
 ): string {
-  return legend
+  return statusLabels
     .map(([color, label]) => {
-      const text = counts
-        ? `${theme.fg("dim", `${label}:`)} ${theme.fg("text", String(counts[color] ?? 0))}`
-        : theme.fg("text", label);
+      const text = `${theme.fg("dim", `${label}:`)} ${theme.fg("text", String(counts[color] ?? 0))}`;
       return `${statusIcon(theme, color)} ${text}`;
     })
     .join(" ");
@@ -163,16 +160,7 @@ export class TaskListView {
     // Collapse spacing on short viewports rather than hide the selected task.
     const margin = rows >= 6 ? [""] : [];
     const contentRows = rows - 2 * margin.length;
-    const legendText = renderLegend(this.theme);
-    const legendMargin = contentRows >= 6 ? [""] : [];
-    // On tiny terminals prioritize at least one task row over the full legend.
-    const legendLines = wrapTextWithAnsi(legendText, Math.max(1, width - 1))
-      .slice(0, Math.max(0, contentRows - legendMargin.length - 4))
-      .map((line) => ` ${line}`);
-    const listHeight = Math.max(
-      1,
-      contentRows - legendLines.length - legendMargin.length - 2,
-    );
+    const listHeight = Math.max(1, contentRows - 2);
     // Reserve a line for SelectList's scroll position when the tasks overflow.
     this.list = this.createList(Math.max(1, listHeight - 1));
     const hint = [
@@ -194,8 +182,6 @@ export class TaskListView {
       ...margin,
       ...this.list.render(width).slice(0, listHeight),
       ...margin,
-      ...legendLines,
-      ...legendMargin,
       ` ${hint}`,
     ].slice(0, rows);
     return [...border, ...content, ...border].map((line) =>
@@ -350,7 +336,7 @@ export class TaskUI {
             );
             return [
               truncateToWidth(heading + rule, width),
-              truncateToWidth(` ${renderLegend(theme, this.counts)}`, width),
+              truncateToWidth(` ${renderCounts(theme, this.counts)}`, width),
             ];
           },
         };

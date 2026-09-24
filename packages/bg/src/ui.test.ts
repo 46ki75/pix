@@ -272,9 +272,12 @@ test("disposing while the task list is open closes it and registry updates refre
     harness.ctx,
   );
   const showing = ui.show(harness.ctx);
-  expect(
-    stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-  ).toContain(" Running  Succeeded  Failed  Timeout  Killed");
+  const listText = stripVTControlCharacters(view?.render(120).join("\n") ?? "");
+  expect(listText).toContain("Background tasks");
+  expect(listText).not.toContain(" Running");
+  expect(harness.text()).toContain(
+    "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+  );
   current = {
     ...task,
     status: "finished",

@@ -60,11 +60,10 @@ narrow terminals. Counts remain visible while idle and reset on reload or sessio
 replacement; they are not restored from history. Commands that fail to launch are
 not counted.
 
-`/bg` lists detailed outcomes with a colored status icon before each task ID and a
-matching legend without counts below the list. Use a Nerd Font to display these
-icons:
+`/bg` lists detailed outcomes with the same colored status icons as the indicator,
+without repeating its legend. Use a Nerd Font to display these icons:
 
-| Legend | Icon color | Meaning |
+| Status | Icon color | Meaning |
 | --- | --- | --- |
 |  Running | Blue `#68779f` | Still running or cleaning up |
 |  Succeeded | Theme `success` | Exit code 0 |
@@ -74,11 +73,10 @@ icons:
 
 Rows prioritize IDs, outcomes, and durations over long task names. Status and
 theme colors refresh while the list is open, without moving your selection when
-another task starts. The legend and navigation hint are indented by one space,
-with a blank line between them. The legend wraps on narrow terminals; short
-viewports reduce spacing and prioritize task rows. Use Up/Down or j/k to navigate,
-Enter to select, and Esc/Ctrl+C to cancel. Select a task to view output or kill a
-running task after confirmation.
+another task starts. The navigation hint is indented by one space and separated
+from the task rows by a blank line. Short viewports reduce spacing and prioritize
+task rows. Use Up/Down or j/k to navigate, Enter to select, and Esc/Ctrl+C to cancel.
+Select a task to view output or kill a running task after confirmation.
 
 The output viewer shows the last 8 KiB and refreshes once per second while the
 task runs. Use Up/Down, Page Up/Page Down, Home/End, and Esc. End resumes following

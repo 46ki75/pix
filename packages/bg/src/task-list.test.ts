@@ -159,7 +159,7 @@ test("top and bottom borders follow the viewport width and current theme without
 });
 
 test.each([1, 40])(
-  "task list separates and indents its legend and navigation hint (%i tasks)",
+  "task list has one blank row above and below its tasks and an indented hint (%i tasks)",
   (count) => {
     const h = harness(
       Array.from({ length: count }, (_, i) => ({ ...task, id: `task-${i}` })),
@@ -169,20 +169,16 @@ test.each([1, 40])(
         h.height(rows);
         const lines = h.view.render(width).map(stripVTControlCharacters);
         const title = lines.indexOf("Background tasks");
-        const legend = lines.findIndex((line) => line.startsWith("  Running"));
         const hint = lines.findIndex((line) => line.startsWith(" ↑↓"));
         expect(lines[title + 1]).toBe("");
         expect(lines[title + 2]).toContain(" task-");
-        expect(legend).toBeGreaterThan(title + 2);
-        expect(lines[legend - 1]).toBe("");
-        expect(lines[legend - 2]).not.toBe("");
-        expect(hint).toBeGreaterThan(legend + 1);
+        expect(hint).toBeGreaterThan(title + 2);
         expect(lines[hint - 1]).toBe("");
         expect(lines[hint - 2]).not.toBe("");
-        expect(
-          lines.slice(legend, hint - 1).every((line) => line.startsWith(" ")),
-        ).toBe(true);
-        expect(lines.filter((line) => line === "")).toHaveLength(3);
+        expect(lines.filter((line) => line === "")).toHaveLength(2);
+        expect(lines.filter((line) => line.includes(" task-"))).toHaveLength(
+          Math.min(count, rows - 7),
+        );
         expect(lines.length).toBeLessThanOrEqual(rows);
       }
     }
@@ -205,24 +201,14 @@ test("navigation hint uses muted keys and dim separators and action labels", () 
   expect(hint.split("\x1b[2m/\x1b[39m")).toHaveLength(3);
 });
 
-test("legend covers every icon and color and uses the current theme on each render", () => {
+test("task list omits the duplicate legend and uses the current theme for task icons", () => {
   const h = harness([
     { ...task, status: "finished", outcome: { kind: "exited", code: 0 } },
   ]);
   const first = h.view.render(120).join("\n");
-  expect(h.text().split("\n")).toContain(
-    "  Running  Succeeded  Failed  Timeout  Killed",
-  );
-  for (const [color, icon, label] of [
-    ["\x1b[38;2;104;119;159m", "", "Running"],
-    ["\x1b[32m", "", "Succeeded"],
-    ["\x1b[31m", "", "Failed"],
-    ["\x1b[33m", "", "Timeout"],
-    ["\x1b[90m", "", "Killed"],
-  ]) {
-    expect(h.theme.fg).toHaveBeenCalledWith("text", label);
-    expect(first).toContain(`${color}${icon}\x1b[39m \x1b[37m${label}\x1b[39m`);
-  }
+  for (const label of ["Running", "Succeeded", "Failed", "Timeout", "Killed"])
+    expect(h.text()).not.toContain(label);
+  expect(h.row()).toContain("\x1b[32m\x1b[39m");
   h.theme.fg.mockImplementation((_color, text) => `\x1b[35m${text}\x1b[39m`);
   h.view.invalidate();
   const next = h.view.render(120).join("\n");
@@ -250,7 +236,7 @@ test("live task changes retain selection by ID and preserve unselected text colo
   expect(h.requestRender).toHaveBeenCalled();
 });
 
-test("legend wraps and the task list remains bounded and navigable after resizing", () => {
+test("task list remains bounded and navigable after resizing", () => {
   const h = harness(
     Array.from({ length: 40 }, (_, i) => ({ ...task, id: `task-${i}` })),
   );
@@ -262,15 +248,6 @@ test("legend wraps and the task list remains bounded and navigable after resizin
       expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
     }
   }
-  h.height(24);
-  for (const label of [
-    " Running",
-    " Succeeded",
-    " Failed",
-    " Timeout",
-    " Killed",
-  ])
-    expect(h.text(40).replace(/\s+/g, " ")).toContain(label);
   h.height(10);
   h.view.render(80);
   for (let i = 0; i < 35; i++) h.view.handleInput("j");
