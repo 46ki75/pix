@@ -77,10 +77,10 @@ model name, as in ` test-model (272k)`. The cache-hit rate uses the same them
 Token counts, cache read/write totals, and cost are not displayed.
 Extension status messages appear below the directory/branch row.
 
-The context icon and percentage use terminal bright green (`ANSI.fg.brightGreen`).
-The four-cell context bar uses `█` for each completed 25%, `▓` for a partially
-filled cell, and `░` for empty cells. It starts bright green and retains its
-yellow/red warning colors at higher usage:
+The context icon, percentage, and gauge share the same color: terminal bright
+green through 50%, yellow above 50%, and red above 75%. Unknown usage stays
+bright green without a gauge. The four-cell gauge uses `█` for each completed
+25%, `▓` for a partially filled cell, and `░` for empty cells:
 
 | Context usage | Bar | Color |
 | --- | --- | --- |

@@ -478,10 +478,15 @@ test.each([
 test.each([
   [0, "░░░░", "brightGreen"],
   [0.8, "▓░░░", "brightGreen"],
+  [50, "██░░", "brightGreen"],
+  [50.1, "██▓░", "yellow"],
   [60, "██▓░", "yellow"],
+  [63.1, "██▓░", "yellow"],
+  [75, "███░", "yellow"],
+  [75.1, "███▓", "red"],
   [80, "███▓", "red"],
 ] as const)(
-  "renders bright green context icon and percentage at %s percent with %s in %s",
+  "matches the context icon and percentage to the gauge at %s percent with %s in %s",
   (percent, bar, color) => {
     const { ctx, tui, theme, footerData } = fixture();
     ctx.getContextUsage = () => ({
@@ -492,7 +497,7 @@ test.each([
     const footer = createFooter(ctx, tui, theme, footerData);
     const stats = footer.render(120)[0] ?? "";
     expect(stats).toContain(
-      `${ANSI.fg.brightGreen}󰓅 ${percent.toFixed(1)}%${ANSI.reset.fg} ${ANSI.fg[color]}${bar}${ANSI.reset.fg}`,
+      `${ANSI.fg[color]}󰓅 ${percent.toFixed(1)}%${ANSI.reset.fg} ${ANSI.fg[color]}${bar}${ANSI.reset.fg}`,
     );
     expect(visibleWidth(stats)).toBe(120);
     footer.dispose();
@@ -528,7 +533,7 @@ test("renders live usage, context, model, branch, and extension statuses", () =>
     contextWindow: 128_000,
   });
   expect(footer.render(120)[0]).toContain(
-    `${ANSI.fg.brightGreen}󰓅 80.0%${ANSI.reset.fg} ${ANSI.fg.red}███▓${ANSI.reset.fg}`,
+    `${ANSI.fg.red}󰓅 80.0%${ANSI.reset.fg} ${ANSI.fg.red}███▓${ANSI.reset.fg}`,
   );
   expect(footer.render(120)[0]).toContain(" test-model (128k) 󰹐 off");
   ctx.getContextUsage = () => ({

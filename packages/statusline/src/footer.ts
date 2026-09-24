@@ -35,18 +35,20 @@ export function formatTokens(count: number): string {
   return `${Math.round(count / 1_000_000)}M`;
 }
 
+function contextColor(percent: number): string {
+  return percent > 75
+    ? ANSI.fg.red
+    : percent > 50
+      ? ANSI.fg.yellow
+      : ANSI.fg.brightGreen;
+}
+
 export function formatContextBar(percent: number | null | undefined): string {
   if (percent == null || !Number.isFinite(percent)) return "";
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = Math.floor(clamped / 25);
   const partial = clamped % 25 > 0 ? 1 : 0;
-  const color =
-    percent > 75
-      ? ANSI.fg.red
-      : percent > 50
-        ? ANSI.fg.yellow
-        : ANSI.fg.brightGreen;
-  return `${color}${"█".repeat(filled)}${"▓".repeat(partial)}${"░".repeat(4 - filled - partial)}${ANSI.reset.fg}`;
+  return `${contextColor(percent)}${"█".repeat(filled)}${"▓".repeat(partial)}${"░".repeat(4 - filled - partial)}${ANSI.reset.fg}`;
 }
 
 export function collectUsage(entries: readonly SessionEntry[]) {
@@ -113,9 +115,8 @@ export function createFooter(
         "dim",
         singleLine(model ? `󱘖 ${model.provider} ${modelText}` : modelText),
       );
-      // Only the bar changes to warning colors; the icon and percentage stay bright green.
       const contextMetrics = [
-        `${ANSI.fg.brightGreen}󰓅 ${contextText}${ANSI.reset.fg}`,
+        `${contextColor(percent ?? 0)}󰓅 ${contextText}${ANSI.reset.fg}`,
         formatContextBar(percent),
       ]
         .filter(Boolean)
