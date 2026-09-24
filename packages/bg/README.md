@@ -71,12 +71,22 @@ without repeating its legend. Use a Nerd Font to display these icons:
 |  Timeout | Theme `warning` | Timeout or output limit reached |
 |  Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
 
-Rows prioritize IDs, outcomes, and durations over long task names. Status and
-theme colors refresh while the list is open, without moving your selection when
-another task starts. The navigation hint is indented by one space and separated
-from the task rows by a blank line. Short viewports reduce spacing and prioritize
-task rows. Select a task to view output or kill a running task after confirmation,
-which defaults to No.
+Task-list rows and output-view headers share a compact summary:
+
+```text
+ 434c3aa0b5e2  100-line output test  0 󰔛 0.0s
+```
+
+`` marks the task name, `` precedes the exit code, and `󰔛` precedes elapsed
+time. Signals retain their names, such as ` 137 (SIGKILL)`; tasks without an
+exit code show their status or reason instead. Both views prioritize IDs,
+outcomes, and durations over long task names.
+
+Status and theme colors refresh while the list is open, without moving your
+selection when another task starts. The navigation hint is indented by one space
+and separated from the task rows by a blank line. Short viewports reduce spacing
+and prioritize task rows. Select a task to view output or kill a running task
+after confirmation, which defaults to No.
 
 The output viewer starts with a full-width separator above its header. It shows
 the last 8 KiB between scroll-indicator dividers and refreshes once per second

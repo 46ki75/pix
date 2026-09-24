@@ -7,9 +7,8 @@ import {
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
-import { outcomeText } from "./format.ts";
 import type { Outcome, Task } from "./registry.ts";
-import { TaskListView } from "./ui.ts";
+import { OutputView, TaskListView } from "./ui.ts";
 
 const task: Task = {
   id: "abc",
@@ -76,59 +75,128 @@ function harness(initial: Task[] = [task], bindings = vimBindings) {
     row: (id = "abc") =>
       view
         .render(120)
-        .find((line) => stripVTControlCharacters(line).includes(`${id} |`)) ??
+        .find((line) => stripVTControlCharacters(line).includes(`${id} `)) ??
       "",
   };
 }
 
-const outcomes: [Outcome, number, string][] = [
-  [{ kind: "exited", code: 0 }, 32, ""],
-  [{ kind: "exited", code: 3 }, 31, ""],
-  [{ kind: "signaled", signal: "SIGKILL", code: 137 }, 31, ""],
-  [{ kind: "failed", message: "I/O error" }, 31, ""],
-  [{ kind: "timed_out" }, 33, ""],
-  [{ kind: "output_capped" }, 33, ""],
-  [{ kind: "killed", by: "user" }, 90, ""],
-  [{ kind: "killed", by: "agent" }, 90, ""],
-  [{ kind: "killed", by: "shutdown" }, 90, ""],
+test("task rows and output headers match the compact format", () => {
+  const current: Task = {
+    ...task,
+    id: "434c3aa0b5e2",
+    name: "100-line output test",
+    status: "finished",
+    endedAt: 0,
+    outcome: { kind: "exited", code: 0 },
+  };
+  const h = harness([current]);
+  const viewer = new OutputView(
+    () => current,
+    h.theme,
+    () => 20,
+    vi.fn(),
+    vi.fn(),
+    h.keys,
+  );
+  try {
+    const expected = " 434c3aa0b5e2  100-line output test  0 󰔛 0.0s";
+    expect.soft(h.text()).toContain(`→ ${expected}`);
+    expect
+      .soft(stripVTControlCharacters(viewer.render(120)[1] ?? ""))
+      .toBe(expected);
+  } finally {
+    viewer.dispose();
+  }
+});
+
+const outcomes: [Outcome, number, string, string][] = [
+  [{ kind: "exited", code: 0 }, 32, "", " 0"],
+  [{ kind: "exited", code: 3 }, 31, "", " 3"],
+  [
+    { kind: "signaled", signal: "SIGKILL", code: 137 },
+    31,
+    "",
+    " 137 (SIGKILL)",
+  ],
+  [{ kind: "failed", message: "I/O error" }, 31, "", "failed: I/O error"],
+  [{ kind: "timed_out" }, 33, "", "timed out"],
+  [{ kind: "output_capped" }, 33, "", "output cap reached"],
+  [{ kind: "killed", by: "user" }, 90, "", "killed by user"],
+  [{ kind: "killed", by: "agent" }, 90, "", "killed by agent"],
+  [{ kind: "killed", by: "shutdown" }, 90, "", "killed by shutdown"],
 ];
 
 test.each(outcomes)(
-  "task icon distinguishes finished outcome %j",
-  (outcome, code, icon) => {
-    const h = harness([
-      { ...task, status: "finished", endedAt: 2000, outcome },
-    ]);
-    expect(h.row()).toContain(`\x1b[${code}m${icon}\x1b[39m`);
-    // Resetting only the icon would otherwise lose the selected row's accent color.
-    expect(h.row()).toContain(`${icon}\x1b[39m \x1b[36mabc |`);
-    expect(h.text()).toContain("| 2.0s");
+  "task rows and output headers distinguish finished outcome %j",
+  (outcome, code, icon, result) => {
+    const current: Task = {
+      ...task,
+      status: "finished",
+      endedAt: 2000,
+      outcome,
+    };
+    const h = harness([current]);
+    const viewer = new OutputView(
+      () => current,
+      h.theme,
+      () => 20,
+      vi.fn(),
+      vi.fn(),
+      h.keys,
+    );
+    try {
+      for (const line of [h.row(), viewer.render(120)[1] ?? ""]) {
+        expect(line).toContain(`\x1b[${code}m${icon}\x1b[39m`);
+        // Resetting only the icon would otherwise lose the text's accent color.
+        expect(line).toContain(`${icon}\x1b[39m \x1b[36mabc `);
+        expect(stripVTControlCharacters(line)).toContain(
+          `${icon} abc  wide 界 task ${result} 󰔛 2.0s`,
+        );
+      }
+    } finally {
+      viewer.dispose();
+    }
   },
 );
 
 test.each(outcomes)(
-  "long names retain the detailed outcome at 80 columns: %j",
-  (outcome) => {
+  "long names retain the detailed outcome in both views at 80 columns: %j",
+  (outcome, _code, _icon, result) => {
     for (const name of ["x".repeat(80), "界".repeat(80), "🙂".repeat(40)]) {
       const ids = ["112233445566", "66778899aabb"];
-      const h = harness(
-        ids.map((id) => ({
-          ...task,
-          id,
-          name,
-          status: "finished",
-          endedAt: 2000,
-          outcome,
-        })),
-      );
+      const tasks: Task[] = ids.map((id) => ({
+        ...task,
+        id,
+        name,
+        status: "finished",
+        endedAt: 2000,
+        outcome,
+      }));
+      const h = harness(tasks);
       const lines = h.view.render(80);
-      for (const id of ids) {
-        const row = lines
-          .map(stripVTControlCharacters)
-          .find((line) => line.includes(`${id} |`));
-        expect(row).toContain(outcomeText(outcome));
-        expect(row).toContain("| 2.0s");
-        expect(row).not.toContain(name);
+      for (const current of tasks) {
+        const viewer = new OutputView(
+          () => current,
+          h.theme,
+          () => 20,
+          vi.fn(),
+          vi.fn(),
+          h.keys,
+        );
+        try {
+          const row = lines
+            .map(stripVTControlCharacters)
+            .find((line) => line.includes(`${current.id} `));
+          const header = stripVTControlCharacters(viewer.render(80)[1] ?? "");
+          for (const line of [row, header]) {
+            expect(line).toContain(result);
+            expect(line).toContain("󰔛 2.0s");
+            expect(line).not.toContain(name);
+          }
+          expect(visibleWidth(header)).toBeLessThanOrEqual(80);
+        } finally {
+          viewer.dispose();
+        }
       }
       expect(lines.every((line) => visibleWidth(line) <= 80)).toBe(true);
       expect(lines.length).toBeLessThanOrEqual(20);
@@ -169,7 +237,7 @@ test("top and bottom borders follow the viewport width and current theme without
   // Keep the selected task visible even when little room remains for borders.
   for (const rows of [3, 4, 6, 8, 9, 10]) {
     h.height(rows);
-    expect(h.text()).toContain("→  abc |");
+    expect(h.text()).toContain("→  abc ");
   }
 });
 
@@ -235,18 +303,18 @@ test("task list omits the duplicate legend and uses the current theme for task i
 
 test("live task changes retain selection by ID and preserve unselected text colors", () => {
   const h = harness([task, { ...task, id: "newer" }]);
-  expect(h.text()).toContain("→  newer |");
-  expect(h.row()).toContain("\x1b[39m \x1b[37mabc |");
+  expect(h.text()).toContain("→  newer ");
+  expect(h.row()).toContain("\x1b[39m \x1b[37mabc ");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→  abc |");
+  expect(h.text()).toContain("→  abc ");
   h.tasks([
     { ...task, status: "finished", outcome: { kind: "exited", code: 3 } },
     { ...task, id: "newer" },
     { ...task, id: "newest" },
   ]);
-  expect(h.text()).toContain("→  abc |");
+  expect(h.text()).toContain("→  abc ");
   expect(h.row()).toContain("\x1b[31m");
-  expect(h.row()).toContain("exit code 3");
+  expect(h.row()).toContain(" 3");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
   expect(h.requestRender).toHaveBeenCalled();
@@ -267,9 +335,9 @@ test("task list remains bounded and navigable after resizing", () => {
   h.height(10);
   h.view.render(80);
   for (let i = 0; i < 35; i++) h.view.handleInput("j");
-  expect(h.text(80)).toContain("→  task-4 |");
+  expect(h.text(80)).toContain("→  task-4 ");
   h.view.handleInput("k");
-  expect(h.text(80)).toContain("→  task-5 |");
+  expect(h.text(80)).toContain("→  task-5 ");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("task-5");
 });
@@ -294,9 +362,9 @@ test.each([
 ])("navigate and select with %j / %j / %j", (down, up, select) => {
   const h = harness([task, { ...task, id: "newer" }]);
   h.view.handleInput(down);
-  expect(h.text()).toContain("→  abc |");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput(up);
-  expect(h.text()).toContain("→  newer |");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput(select);
   expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
   h.view.handleInput(select);
@@ -313,12 +381,12 @@ test("task list follows injected semantic bindings and updates its hints", () =>
   expect(h.text()).toContain(" w s navigate · d select · a cancel");
   for (const key of ["j", "k", "l", "h", "q", "\x1b[B", "\r", "\x1b", "\x03"])
     h.view.handleInput(key);
-  expect(h.text()).toContain("→  newer |");
+  expect(h.text()).toContain("→  newer ");
   expect(h.done).not.toHaveBeenCalled();
   h.view.handleInput("s");
-  expect(h.text()).toContain("→  abc |");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput("w");
-  expect(h.text()).toContain("→  newer |");
+  expect(h.text()).toContain("→  newer ");
 
   h.keys.setUserBindings({
     "tui.select.up": [],
@@ -346,7 +414,7 @@ test("task list follows injected semantic bindings and updates its hints", () =>
   ])
     h.view.handleInput(key);
   expect(h.done).not.toHaveBeenCalled();
-  expect(h.text()).toContain("→  newer |");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput("f");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
 });
@@ -358,9 +426,9 @@ test("task list uses Pi defaults without implicit letter aliases", () => {
   );
   for (const key of ["j", "k", "l", "h", "q"]) h.view.handleInput(key);
   expect(h.done).not.toHaveBeenCalled();
-  expect(h.text()).toContain("→  newer |");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→  abc |");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
 });

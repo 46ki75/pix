@@ -264,7 +264,7 @@ test.each(["h", "q", "\x1b[104u", "\x1b[113u", "\x1b", "\x03"])(
     const done = vi.fn();
     const view = new OutputView(
       () => current,
-      { fg: (_color, text) => text },
+      { fg: (_color, text) => text, getColorMode: () => "truecolor" },
       () => 10,
       render,
       done,
@@ -331,7 +331,7 @@ test("viewer honors remapped and disabled scroll, jump, and cancel actions", () 
   const done = vi.fn();
   const view = new OutputView(
     () => ({ ...task, outputPath, status: "finished" }),
-    { fg: (_color, text) => text },
+    { fg: (_color, text) => text, getColorMode: () => "truecolor" },
     () => 8,
     vi.fn(),
     done,
@@ -434,7 +434,7 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(harness.requestRender).toHaveBeenCalled();
   expect(
     stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-  ).toContain("exit code 3");
+  ).toContain(" 3");
   ui.dispose();
   await showing;
   expect(view?.render(120)).toEqual([]);

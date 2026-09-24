@@ -13,7 +13,13 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { oneLine, readTail, statusLine } from "./format.ts";
+import {
+  duration,
+  oneLine,
+  outcomeText,
+  readTail,
+  statusLine,
+} from "./format.ts";
 import type { Registry, Task } from "./registry.ts";
 
 type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
@@ -60,6 +66,38 @@ function statusIcon(theme: StatusTheme, color: StatusColor): string {
   return color === "running"
     ? runningColor(theme, icon)
     : theme.fg(color, icon);
+}
+
+function renderTaskLine(
+  theme: StatusTheme,
+  task: Task,
+  width: number,
+  color: "accent" | "text",
+): string {
+  const icon = `${statusIcon(theme, statusColor(task))} `;
+  const outcome = task.outcome;
+  const result =
+    outcome?.kind === "exited"
+      ? ` ${outcome.code}`
+      : outcome?.kind === "signaled"
+        ? ` ${outcome.code} (${outcome.signal})`
+        : outcome
+          ? outcomeText(outcome)
+          : task.status;
+  const prefix = `${task.id}  `;
+  const suffix = ` ${result} 󰔛 ${duration(task)}`;
+  // Reserve the ID, outcome, and duration before budgeting a long name in either view.
+  const name = truncateToWidth(
+    oneLine(task.name),
+    Math.max(0, width - visibleWidth(icon + prefix + suffix)),
+  );
+  // Pi's fg() does not restore an enclosing color after a nested reset.
+  // Style the text separately so the icon keeps its status color.
+  return truncateToWidth(
+    icon + theme.fg(color, prefix + name + suffix),
+    Math.max(0, width),
+    "",
+  );
 }
 
 const statusLabels: readonly (readonly [StatusColor, string])[] = [
@@ -153,22 +191,12 @@ export class TaskListView {
         truncatePrimary: ({ item, isSelected, maxWidth }) => {
           const task = byId.get(item.value);
           if (!task) return "";
-          const icon = `${statusIcon(this.theme, statusColor(task))} `;
-          const now = Date.now();
-          // Reserve the ID, outcome, and duration before budgeting a long name.
-          const fixedWidth = visibleWidth(
-            icon + statusLine({ ...task, name: "" }, now),
+          return renderTaskLine(
+            this.theme,
+            task,
+            maxWidth,
+            isSelected ? "accent" : "text",
           );
-          const name = truncateToWidth(
-            oneLine(task.name),
-            Math.max(0, maxWidth - fixedWidth),
-          );
-          const text = statusLine({ ...task, name }, now);
-          // Pi's fg() does not restore an enclosing color after a nested reset.
-          // Style the row text separately so the icon keeps its status color.
-          const line =
-            icon + this.theme.fg(isSelected ? "accent" : "text", text);
-          return truncateToWidth(line, Math.max(0, maxWidth), "");
         },
       },
     );
@@ -233,7 +261,7 @@ export class OutputView {
 
   constructor(
     private task: () => Task,
-    private theme: Pick<Theme, "fg">,
+    private theme: StatusTheme,
     private height: () => number,
     private renderRequest: () => void,
     private close: () => void,
@@ -302,7 +330,7 @@ export class OutputView {
       rows >= 5
         ? [
             this.theme.fg("border", "─".repeat(width)),
-            this.theme.fg("accent", statusLine(this.task())),
+            renderTaskLine(this.theme, this.task(), width, "accent"),
           ]
         : [];
     if (rows >= 7)

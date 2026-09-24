@@ -31,13 +31,16 @@ function harness(text = output(20), running = false) {
     outputBytes: 0,
     startedAt: 0,
     status: running ? "running" : "finished",
-    outcome: { kind: "exited", code: 0 },
-    endedAt: 1000,
   };
+  if (!running) {
+    task.outcome = { kind: "exited", code: 0 };
+    task.endedAt = 1000;
+  }
   const theme = {
     fg: vi.fn<Theme["fg"]>(
       (color, value) => `\x1b[${color === "border" ? 35 : 90}m${value}\x1b[39m`,
     ),
+    getColorMode: vi.fn<Theme["getColorMode"]>(() => "truecolor"),
   };
   const view = new OutputView(
     () => task,
@@ -50,6 +53,7 @@ function harness(text = output(20), running = false) {
   return {
     view,
     theme,
+    task,
     lines: (width = 30) => view.render(width).map(stripVTControlCharacters),
     height: (next: number) => {
       rows = next;
@@ -74,7 +78,7 @@ test("log view starts with a full-width separator above its header", () => {
       expect(lines[0]).toBe("─".repeat(width));
       expect(lines.length).toBeLessThanOrEqual(10);
       if (width >= 30) {
-        expect(lines[1]).toContain("abc |");
+        expect(lines[1]).toContain(" abc ");
         expect(lines[2]).toContain("Last 8 KiB:");
         expect(lines[3]).toContain("↑");
       }
@@ -222,6 +226,51 @@ test("arrows refresh as live output grows or shrinks without losing follow behav
   } finally {
     h.dispose();
     vi.useRealTimers();
+  }
+});
+
+test("output header refreshes its status, elapsed time, and current theme", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(2000);
+  const h = harness(output(2), true);
+  try {
+    expect(h.lines(120)[1]).toBe(" abc  output test running 󰔛 2.0s");
+    expect(h.view.render(120)[1]).toContain("\x1b[38;2;104;119;159m\x1b[39m");
+    h.theme.getColorMode.mockReturnValue("256color");
+    vi.advanceTimersByTime(1000);
+    expect(h.lines(120)[1]).toContain("󰔛 3.0s");
+    expect(h.view.render(120)[1]).toContain("\x1b[38;5;67m\x1b[39m");
+    h.task.status = "stopping";
+    expect(h.lines(120)[1]).toContain("stopping 󰔛 3.0s");
+    h.task.outcome = { kind: "killed", by: "user" };
+    expect(h.lines(120)[1]).toBe(" abc  output test killed by user 󰔛 3.0s");
+    h.task.status = "finished";
+    h.task.endedAt = 3000;
+    vi.advanceTimersByTime(1000);
+    expect(h.lines(120)[1]).toBe(" abc  output test killed by user 󰔛 3.0s");
+    h.theme.fg.mockImplementation(
+      (_color, value) => `\x1b[36m${value}\x1b[39m`,
+    );
+    h.view.invalidate();
+    expect(h.view.render(120)[1]).toContain("\x1b[36m\x1b[39m");
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    h.dispose();
+    vi.useRealTimers();
+  }
+});
+
+test("output headers sanitize task names and error messages", () => {
+  const h = harness();
+  try {
+    h.task.name = "\x1b[41munsafe\nname\x1b[0m";
+    h.task.outcome = { kind: "failed", message: "\x1b[41mbad\nerror\x1b[0m" };
+    expect(h.lines(120)[1]).toBe(
+      " abc  unsafe name failed: bad error 󰔛 1.0s",
+    );
+    expect(h.view.render(120)[1]).not.toContain("\x1b[41m");
+  } finally {
+    h.dispose();
   }
 });
 
