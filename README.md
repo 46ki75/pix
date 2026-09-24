@@ -44,12 +44,16 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run fmt` | Format those files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
+| `mise run dev` | Launch Pi with all five local extensions |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
 | `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
+
+The `dev` task runs from the repository root and disables automatically loaded
+extensions. It accepts Pi arguments, for example `mise run dev --help`.
 
 [`@ikuma.cloud/pix-websearch`](packages/pix-websearch/README.md) adds a `websearch` tool with
 keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
