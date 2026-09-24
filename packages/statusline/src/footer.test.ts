@@ -154,10 +154,13 @@ test.each([" pix", " pix/packages/statusline"])(
   (directory) => {
     const { ctx, tui, theme, footerData } = fixture();
     const footer = createFooter(ctx, tui, theme, footerData, directory);
-    expectFullWidthLocation(
-      footer.render(120)[2],
-      ` ${directory}   main  `,
-      120,
+    const line = footer.render(120)[2] ?? "";
+    expectFullWidthLocation(line, ` ${directory}   main  `, 120);
+    expect(line.startsWith(`${ANSI.reset.bg}\x1b[38;2;217;211;204m`)).toBe(
+      true,
+    );
+    expect(line).toContain(
+      `\x1b[48;2;217;211;204m${ANSI.fg.black} ${directory} \x1b[38;2;217;211;204m\x1b[48;2;239;236;234m\x1b[48;2;239;236;234m${ANSI.fg.black}  main `,
     );
     footer.dispose();
   },
@@ -200,13 +203,15 @@ test.each([
 );
 
 test.each(["main", null])(
-  "adds bright-black filler without shortening labels (branch: %s)",
+  "adds #f7f5f4 filler without shortening labels (branch: %s)",
   (branch) => {
     const { ctx, tui, theme, footerData } = fixture();
     footerData.getGitBranch.mockReturnValue(branch);
     const footer = createFooter(ctx, tui, theme, footerData, " pix");
     const natural = branch ? "  pix   main " : "  pix ";
-    const background = branch ? "brightBlue" : "blue";
+    const capColor = branch
+      ? "\x1b[38;2;239;236;234m"
+      : "\x1b[38;2;217;211;204m";
     for (const extra of [0, 1, 2, 3, 20, 2, 3]) {
       const width = visibleWidth(natural) + extra;
       const line = footer.render(width)[2] ?? "";
@@ -217,13 +222,13 @@ test.each(["main", null])(
           `${natural.slice(0, -1)}${padding}`,
         );
         expect(line).toContain(
-          `${ANSI.fg[background]}${ANSI.bg.brightBlack}${ANSI.bg.brightBlack}${ANSI.fg.black}${padding}${ANSI.reset.bg}${ANSI.fg.brightBlack}${ANSI.reset.fg}`,
+          `${capColor}\x1b[48;2;247;245;244m\x1b[48;2;247;245;244m${ANSI.fg.black}${padding}${ANSI.reset.bg}\x1b[38;2;247;245;244m${ANSI.reset.fg}`,
         );
       } else {
         expect(stripVTControlCharacters(line)).toBe(
           `${natural.slice(0, -1)}${" ".repeat(extra)}`,
         );
-        expect(line).not.toContain(ANSI.bg.brightBlack);
+        expect(line).not.toContain("\x1b[48;2;247;245;244m");
       }
     }
     footer.dispose();
@@ -247,7 +252,7 @@ test("keeps the rounded right cap when truncating a long branch", () => {
   expect(stripVTControlCharacters(line)).toBe(expected);
   expect(visibleWidth(line)).toBe(width);
   expect(line).toContain(
-    `${ANSI.bg.brightBlue}${ANSI.fg.black}  fix/statusline-full-width-loca... ${ANSI.reset.bg}${ANSI.fg.brightBlue}${ANSI.reset.fg}`,
+    `\x1b[48;2;239;236;234m${ANSI.fg.black}  fix/statusline-full-width-loca... ${ANSI.reset.bg}\x1b[38;2;239;236;234m${ANSI.reset.fg}`,
   );
   footer.dispose();
 });

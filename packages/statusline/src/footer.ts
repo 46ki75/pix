@@ -146,17 +146,17 @@ export function createFooter(
       const branch = gitBranch ? ` ${gitBranch}` : undefined;
       const name = ctx.sessionManager.getSessionName();
       const segments: PowerlineSegment[] = [
-        { text: directory, background: "blue", foreground: "black" },
+        { text: directory, background: "#d9d3cc", foreground: "black" },
       ];
       const details = [branch, name].filter(Boolean).join(" • ");
       if (details) {
         segments.push({
           text: details,
-          background: "brightBlue",
+          background: "#efecea",
           foreground: "black",
         });
       }
-      const filler: PowerlineSegment = { text: "", background: "brightBlack" };
+      const filler: PowerlineSegment = { text: "", background: "#f7f5f4" };
       // Decorative fill must not shorten labels that would otherwise fit.
       if (visibleWidth(powerline([...segments, filler])) <= width) {
         segments.push(filler);

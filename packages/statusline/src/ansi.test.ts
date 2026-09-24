@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
-import { ANSI, type AnsiColor } from "./ansi.ts";
+import { ANSI, type AnsiColor, colorCode } from "./ansi.ts";
 
 const colors = [
   ["black", 30, 40],
@@ -24,6 +24,32 @@ const colors = [
 test.each(colors)("maps %s foreground and background codes", (name, fg, bg) => {
   expect(ANSI.fg[name]).toBe(`\x1b[${fg}m`);
   expect(ANSI.bg[name]).toBe(`\x1b[${bg}m`);
+  expect(colorCode("fg", name)).toBe(ANSI.fg[name]);
+  expect(colorCode("bg", name)).toBe(ANSI.bg[name]);
+});
+
+test.each([
+  ["#d9d3cc", "217;211;204"],
+  ["#efecea", "239;236;234"],
+  ["#f7f5f4", "247;245;244"],
+  ["#Aa00Ff", "170;0;255"],
+  ["#000000", "0;0;0"],
+  ["#ffffff", "255;255;255"],
+] as const)("renders %s as truecolor foreground and background", (hex, rgb) => {
+  expect(colorCode("fg", hex)).toBe(`\x1b[38;2;${rgb}m`);
+  expect(colorCode("bg", hex)).toBe(`\x1b[48;2;${rgb}m`);
+});
+
+test.each([
+  "#fff",
+  "#gggggg",
+  "#1234567",
+  "#12345g",
+  "#123456\n",
+  "#123456\x1b[0m",
+] as const)("rejects invalid six-digit hex color %s", (hex) => {
+  expect(() => colorCode("fg", hex)).toThrow("Invalid hex color");
+  expect(() => colorCode("bg", hex)).toThrow("Invalid hex color");
 });
 
 test("provides all 16 colors and separate color and full resets", () => {

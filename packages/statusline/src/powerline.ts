@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { ANSI, type AnsiColor } from "./ansi.ts";
+import { ANSI, colorCode, type TerminalColor } from "./ansi.ts";
 
 export const POWERLINE = {
   left: "",
@@ -10,8 +10,8 @@ export const POWERLINE = {
 
 export interface PowerlineSegment {
   text: string;
-  background: AnsiColor;
-  foreground?: AnsiColor;
+  background: TerminalColor;
+  foreground?: TerminalColor;
 }
 
 export function powerline(
@@ -21,7 +21,8 @@ export function powerline(
   const first = segments[0];
   if (!first || (width !== undefined && width <= 0)) return "";
 
-  let result = ANSI.reset.bg + ANSI.fg[first.background] + POWERLINE.left;
+  let result =
+    ANSI.reset.bg + colorCode("fg", first.background) + POWERLINE.left;
   if (width === 1) return result + ANSI.reset.fg;
   for (const [index, segment] of segments.entries()) {
     // Embedded resets would punch holes in the background; colors belong to the segment.
@@ -49,17 +50,18 @@ export function powerline(
           : ` ${stripVTControlCharacters(truncateToWidth(next ? `${text} ...` : text, remaining - 2, "...", true))} `;
     }
     result +=
-      ANSI.bg[segment.background] +
-      ANSI.fg[segment.foreground ?? "black"] +
+      colorCode("bg", segment.background) +
+      colorCode("fg", segment.foreground ?? "black") +
       content;
 
     if (showNext) {
       result +=
-        ANSI.fg[segment.background] +
-        ANSI.bg[next.background] +
+        colorCode("fg", segment.background) +
+        colorCode("bg", next.background) +
         POWERLINE.separator;
     } else {
-      result += ANSI.reset.bg + ANSI.fg[segment.background] + POWERLINE.right;
+      result +=
+        ANSI.reset.bg + colorCode("fg", segment.background) + POWERLINE.right;
       break;
     }
   }
