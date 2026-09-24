@@ -26,6 +26,14 @@ type StatusTheme = Pick<Theme, "fg" | "getColorMode">;
 type StatusColor = "running" | "success" | "error" | "warning" | "muted";
 type UIKeys = Pick<KeybindingsManager, "matches" | "getKeys">;
 
+// Pi's fullscreen dock needs two indicator rows, its leading spacer, two
+// default footer rows, and at least one transcript row outside the custom view.
+const surroundingRows = 6;
+
+function viewHeight(terminalRows: number, minimum = 1): number {
+  return Math.max(minimum, terminalRows - surroundingRows);
+}
+
 function runningColor(theme: StatusTheme, text: string): string {
   // #68779f; palette 67 is its nearest xterm-256 color (95, 135, 175).
   const blue =
@@ -162,13 +170,18 @@ function handleListInput(
   ids: string[],
   keys: UIKeys,
   data: string,
+  wrap = false,
 ): void {
   // SelectList reads module-global bindings, which may differ from Pi's injected manager.
   const selected = list.getSelectedItem();
   const index = ids.indexOf(selected?.value ?? "");
-  if (keys.matches(data, "tui.select.up")) list.setSelectedIndex(index - 1);
-  else if (keys.matches(data, "tui.select.down"))
-    list.setSelectedIndex(index + 1);
+  const move = (delta: number) => {
+    if (!ids.length) return;
+    const next = index + delta;
+    list.setSelectedIndex(wrap ? (next + ids.length) % ids.length : next);
+  };
+  if (keys.matches(data, "tui.select.up")) move(-1);
+  else if (keys.matches(data, "tui.select.down")) move(1);
   else if (keys.matches(data, "tui.select.confirm")) {
     if (selected) list.onSelect?.(selected);
   } else if (keys.matches(data, "tui.select.cancel")) list.onCancel?.();
@@ -249,7 +262,7 @@ export class TaskListView {
 
   handleInput(data: string): void {
     if (this.disposed) return;
-    handleListInput(this.list, this.ids, this.keys, data);
+    handleListInput(this.list, this.ids, this.keys, data, true);
     this.renderRequest();
   }
 
@@ -517,9 +530,9 @@ export class TaskUI {
             },
             render: (width: number) => {
               if (closed || width < 1) return [];
-              const borders = border.render(width);
-              const rows =
-                Math.max(4, tui.terminal.rows - 4) - 2 * borders.length;
+              const height = viewHeight(tui.terminal.rows, 2);
+              const borders = height >= 4 ? border.render(width) : [];
+              const rows = height - 2 * borders.length;
               const margin = rows >= 6 ? [""] : [];
               const listHeight = Math.max(1, rows - 2 * margin.length - 2);
               list = createList(
@@ -571,7 +584,7 @@ export class TaskUI {
           const view = new TaskListView(
             () => this.registry.list(),
             theme,
-            () => Math.max(4, tui.terminal.rows - 4),
+            () => viewHeight(tui.terminal.rows, 2),
             () => tui.requestRender(),
             done,
             keys,
@@ -599,7 +612,7 @@ export class TaskUI {
           const view = new OutputView(
             () => this.registry.get(task.id),
             theme,
-            () => Math.max(4, tui.terminal.rows - 4),
+            () => viewHeight(tui.terminal.rows),
             () => tui.requestRender(),
             () => done(),
             keys,

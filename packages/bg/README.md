@@ -88,14 +88,18 @@ narrow terminals truncate names or drop alignment padding to preserve details.
 Status and theme colors refresh while the list is open, without moving your
 selection when another task starts. The navigation hint is indented by one space
 and separated from the task rows by a blank line. Short viewports reduce spacing
-and prioritize task rows. Select a task to view output or kill a running task
-after confirmation, which defaults to No.
+and prioritize task rows. Navigation wraps between the first and last tasks;
+action and confirmation menus stop at their boundaries. Select a task to view
+output or kill a running task after confirmation, which defaults to No.
 
 The output viewer starts with a full-width separator above its header. It shows
 the last 8 KiB between scroll-indicator dividers and refreshes once per second
 while the task runs. Paired up/down arrows appear in each scroll divider
 only when the displayed tail has more content in that direction. Narrow terminals
 use one arrow; short viewports reduce metadata and decoration to preserve output.
+Views reserve six rows for the indicator, Pi's spacer and default footer, and one
+transcript row. Below nine terminal rows, Pi's minimum editor height can still
+clip the surrounding indicator or footer.
 Jumping to the bottom resumes following the tail. Read the log file for older
 output. No global shortcut is registered. The viewer is interactive-only; tools
 also work in RPC, JSON, and print modes.

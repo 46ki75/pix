@@ -581,3 +581,64 @@ test("task labels stay single-line and cannot inject terminal styling", () => {
   expect(h.row()).not.toContain("\x1b[31m");
   expect(stripVTControlCharacters(h.row())).toContain("unsafe name");
 });
+
+test.each([
+  [{}, "\x1b[A", "\x1b[B"],
+  [vimBindings, "k", "j"],
+  [vimBindings, "\x1b[107u", "\x1b[106u"],
+  [{ "tui.select.up": "w", "tui.select.down": "s" }, "w", "s"],
+] satisfies [KeybindingsConfig, string, string][])(
+  "task-list boundaries wrap for semantic bindings %j",
+  (bindings, up, down) => {
+    const h = harness(
+      [task, { ...task, id: "middle" }, { ...task, id: "newest" }],
+      bindings,
+    );
+    expect(h.text()).toContain("→  newest ");
+    for (const [key, id] of [
+      [up, "abc"],
+      [down, "newest"],
+      [down, "middle"],
+      [down, "abc"],
+      [down, "newest"],
+      [up, "abc"],
+    ]) {
+      h.view.handleInput(key ?? "");
+      expect(h.text()).toContain(`→  ${id} `);
+    }
+    h.keys.setUserBindings({ "tui.select.up": [], "tui.select.down": [] });
+    for (const key of [up, down, "\x1b[A", "\x1b[B", "j", "k"]) {
+      h.view.handleInput(key);
+      expect(h.text()).toContain("→  abc ");
+    }
+    expect(h.text()).not.toContain("navigate");
+    h.view.dispose();
+  },
+);
+
+test.each([0, 1])(
+  "task-list navigation handles %i tasks without invalid selection",
+  (count) => {
+    const h = harness(count ? [task] : []);
+    for (const key of [
+      "\x1b[A",
+      "\x1b[B",
+      "k",
+      "j",
+      "\x1b[107u",
+      "\x1b[106u",
+    ]) {
+      h.view.handleInput(key);
+      if (count) expect(h.text()).toContain("→  abc ");
+      else expect(h.text()).not.toContain("→");
+    }
+    h.view.handleInput("\r");
+    if (count) expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
+    else {
+      expect(h.done).not.toHaveBeenCalled();
+      h.view.handleInput("\x1b");
+      expect(h.done).toHaveBeenCalledExactlyOnceWith(undefined);
+    }
+    h.view.dispose();
+  },
+);

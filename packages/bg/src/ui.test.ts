@@ -2,14 +2,21 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionCommandContext,
+  initTheme,
+} from "@earendil-works/pi-coding-agent";
 import {
   type Component,
+  Container,
   type KeybindingsConfig,
   KeybindingsManager,
+  Spacer,
+  Text,
   TUI_KEYBINDINGS,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { renderLayoutFrame } from "@earendil-works/pi-tui/dist/layout.js";
 import { expect, test, vi } from "vitest";
 import type { Outcome, Registry, Task } from "./registry.ts";
 import { OutputView, TaskUI } from "./ui.ts";
@@ -401,13 +408,14 @@ test("viewer honors remapped and disabled scroll, jump, and cancel actions", () 
 
 test("disposing while the task list is open closes it and registry updates refresh its rows", async () => {
   const harness = indicatorContext();
+  const terminal = { rows: 24 };
   let current = task;
   let view: Component | undefined;
   harness.ui.custom.mockImplementation(
     (factory) =>
       new Promise((resolve) => {
         view = factory(
-          { terminal: { rows: 24 }, requestRender: harness.requestRender },
+          { terminal, requestRender: harness.requestRender },
           harness.ui.theme,
           harness.keys,
           resolve,
@@ -419,6 +427,12 @@ test("disposing while the task list is open closes it and registry updates refre
     harness.ctx,
   );
   const showing = ui.show(harness.ctx);
+  for (const rows of [6, 7, 8, 9, 24]) {
+    terminal.rows = rows;
+    expect(
+      stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
+    ).toContain("→  abc ");
+  }
   const listText = stripVTControlCharacters(view?.render(120).join("\n") ?? "");
   expect(listText).toContain("Background tasks");
   expect(listText).not.toContain(" Running");
@@ -573,15 +587,17 @@ test("task menus refresh compact headers, preserve selection when resized, and c
     now.mockReturnValue(2000);
     expect(stripVTControlCharacters(header())).toContain("running 󰔛 2.0s");
     view?.handleInput?.("j");
-    for (const rows of [8, 12, 24]) {
+    for (const rows of [8, 9, 10, 12, 24]) {
       terminal.rows = rows;
       for (const width of [1, 12, 40, 80, 120]) {
         const lines = view?.render(width) ?? [];
-        expect(lines.length).toBeLessThanOrEqual(rows - 4);
+        expect(lines.length).toBeLessThanOrEqual(Math.max(2, rows - 6));
         expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
         expect(lines.join("\n")).not.toContain("\x1b[41m");
         if (width >= 40) {
-          const title = stripVTControlCharacters(lines[1] ?? "");
+          const title = stripVTControlCharacters(
+            lines[rows >= 10 ? 1 : 0] ?? "",
+          );
           expect(title).toContain(" abc ");
           expect(title).toContain("running 󰔛 2.0s");
         }
@@ -679,6 +695,204 @@ test.each(["h", "q"])(
       expect(screens[2]).toContain("Background tasks");
       expect(screens[4]).toContain("Last 8 KiB:");
       expect(screens[5]).toContain("Background tasks");
+    } finally {
+      ui.dispose();
+    }
+  },
+);
+
+test.each([9, 10, 12, 24, 40])(
+  "fullscreen dock preserves indicator and controls at %i rows and after resizing",
+  async (rows) => {
+    // Pi does not export this layout factory through its public package entry.
+    const { createChatViewport } = await import(
+      new URL(
+        "./modes/interactive/chat-viewport.js",
+        import.meta.resolve("@earendil-works/pi-coding-agent"),
+      ).href
+    );
+    const directory = mkdtempSync(join(tmpdir(), "pix-bg-layout-"));
+    const outputPath = join(directory, "output.log");
+    writeFileSync(
+      outputPath,
+      Array.from({ length: 100 }, (_, i) => `line ${i}`).join("\n"),
+    );
+    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    const current = { ...task, outputPath };
+    const tasks = Array.from({ length: 40 }, (_, i) => ({
+      ...current,
+      id: `task-${i}`,
+    }));
+    const harness = indicatorContext({});
+    const terminal = { rows };
+    let view: Component | undefined;
+    harness.ui.custom.mockImplementation(
+      (factory) =>
+        new Promise((resolve) => {
+          view = factory(
+            { terminal, requestRender: harness.requestRender },
+            harness.ui.theme,
+            harness.keys,
+            resolve,
+          );
+        }),
+    );
+    const stop = vi.fn();
+    const ui = new TaskUI(
+      { list: () => tasks, get: () => current, stop } as unknown as Registry,
+      harness.ctx,
+    );
+    const above = new Container();
+    // InteractiveMode.renderWidgetContainer adds a leading spacer above widgets.
+    above.addChild(new Spacer(1));
+    if (!harness.widget) throw new Error("Missing indicator");
+    above.addChild(harness.widget);
+    const editor = new Container();
+    const { FooterComponent } = await import(
+      new URL(
+        "./modes/interactive/components/footer.js",
+        import.meta.resolve("@earendil-works/pi-coding-agent"),
+      ).href
+    );
+    // Use Pi's built-in theme without reading personal config or enabling watchers.
+    initTheme("dark", false);
+    const footer = new FooterComponent(
+      {
+        state: {},
+        sessionManager: {
+          getEntries: () => [],
+          getCwd: () => "/tmp",
+          getSessionName: () => undefined,
+        },
+        getContextUsage: () => undefined,
+      },
+      {
+        getGitBranch: () => undefined,
+        getAvailableProviderCount: () => 0,
+        getExtensionStatuses: () => new Map(),
+      },
+    );
+    expect(footer.render(120)).toHaveLength(2);
+    const viewport = createChatViewport({
+      document: new Text("transcript", 0, 0),
+      pendingMessages: new Container(),
+      status: new Container(),
+      widgetsAbove: above,
+      editor,
+      widgetsBelow: new Container(),
+      footer,
+    });
+    const showing = ui.show(harness.ctx);
+    const frame = () => {
+      if (!view) throw new Error("Missing view");
+      editor.clear();
+      editor.addChild(view);
+      const lines = renderLayoutFrame(
+        viewport.root,
+        120,
+        terminal.rows,
+        harness.requestRender,
+      ).lines.map(stripVTControlCharacters);
+      expect(lines).toHaveLength(terminal.rows);
+      const text = lines.join("\n");
+      expect(text).toContain("transcript");
+      expect(text).toContain("Background Tasks");
+      expect(text).toContain("Running: 40");
+      expect(text).toContain("/tmp");
+      expect(text).toContain("no-model");
+      // No editor content may be clipped by the surrounding dock.
+      for (const line of view.render(120).map(stripVTControlCharacters)) {
+        if (line.trim()) expect(lines).toContain(line);
+      }
+      return text;
+    };
+    try {
+      expect(frame()).toContain("→  task-39");
+      view?.handleInput?.("\r");
+      await vi.waitFor(() =>
+        expect(harness.ui.custom).toHaveBeenCalledTimes(2),
+      );
+      expect(frame()).toContain("→ View output");
+      view?.handleInput?.("\x1b[B");
+      view?.handleInput?.("\r");
+      await vi.waitFor(() =>
+        expect(harness.ui.custom).toHaveBeenCalledTimes(3),
+      );
+      expect(frame()).toContain("→ No");
+      view?.handleInput?.("\x1b[A");
+      expect(frame()).toContain("→ No");
+      view?.handleInput?.("\r");
+      await vi.waitFor(() =>
+        expect(harness.ui.custom).toHaveBeenCalledTimes(4),
+      );
+      expect(stop).not.toHaveBeenCalled();
+      view?.handleInput?.("\r");
+      await vi.waitFor(() =>
+        expect(harness.ui.custom).toHaveBeenCalledTimes(5),
+      );
+      view?.handleInput?.("\r");
+      await vi.waitFor(() =>
+        expect(harness.ui.custom).toHaveBeenCalledTimes(6),
+      );
+      for (const height of [rows, 24, 10, 9, 12, 40]) {
+        terminal.rows = height;
+        const text = frame();
+        expect(text).toContain("line 99");
+        if (height >= 12) expect(text).toContain("escape ctrl+c back");
+        if (height <= 10) expect(text).not.toContain("Last 8 KiB:");
+      }
+    } finally {
+      ui.dispose();
+      await showing;
+      now.mockRestore();
+      rmSync(directory, { recursive: true });
+    }
+  },
+);
+
+test.each([
+  [{}, "\x1b[A", "\x1b[B", "\r", "\x1b"],
+  [vimBindings, "k", "j", "l", "q"],
+  [
+    {
+      "tui.select.up": "w",
+      "tui.select.down": "s",
+      "tui.select.confirm": "d",
+      "tui.select.cancel": "a",
+    },
+    "w",
+    "s",
+    "d",
+    "a",
+  ],
+] satisfies [KeybindingsConfig, string, string, string, string][])(
+  "action and confirmation menus clamp semantic navigation %j",
+  async (bindings, up, down, select, cancel) => {
+    const harness = indicatorContext(bindings);
+    const stop = vi.fn();
+    const screens = interact(harness, [
+      [select],
+      [up, select], // First action stays View output, not Back.
+      [cancel],
+      [select],
+      [down, down, down, up, select], // Last action stays Back, then up selects Kill.
+      [up, select], // First confirmation stays No, never wraps to Yes.
+      [select],
+      [down, select],
+      [down, down, up, select], // Last confirmation stays Yes, then up selects No.
+      [cancel],
+    ]);
+    const ui = new TaskUI(
+      { list: () => [task], get: () => task, stop } as unknown as Registry,
+      harness.ctx,
+    );
+    try {
+      await ui.show(harness.ctx);
+      expect(harness.ui.custom).toHaveBeenCalledTimes(10);
+      expect(screens[2]).toContain("Last 8 KiB:");
+      expect(screens[5]).toContain("Kill background task?");
+      expect(screens[8]).toContain("Kill background task?");
+      expect(stop).not.toHaveBeenCalled();
     } finally {
       ui.dispose();
     }
