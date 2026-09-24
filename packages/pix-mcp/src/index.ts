@@ -389,6 +389,7 @@ export default function mcp(pi: ExtensionAPI) {
           "MCP configuration not trusted. Review it, then restart with --mcp-trust-config or --mcp-config <path>.";
         return;
       }
+      if (ctx.hasUI) ctx.ui.notify(`MCP config: ${path}`, "info");
       owner.configIssues = config.issues;
       owner.status =
         config.issues.length > 0
