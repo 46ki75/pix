@@ -74,7 +74,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("Pi loads the private package without starting network or registering tools", async () => {
+test("Pi loads the package without starting network or registering tools", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pix-usage-"));
   const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);

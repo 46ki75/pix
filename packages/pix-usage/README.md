@@ -19,7 +19,7 @@ Or load it alongside your usual extensions without saving configuration:
 pi -e ./packages/pix-usage
 ```
 
-The package is private while under development. To keep using the local package:
+To keep using the local package:
 
 ```sh
 pi install ./packages/pix-usage
