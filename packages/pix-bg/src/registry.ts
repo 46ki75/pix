@@ -303,13 +303,17 @@ export class Registry {
       this.terminate(entry, { kind: "output_capped" });
   }
 
-  private signal(entry: Entry, signal: NodeJS.Signals): boolean {
+  private signal(entry: Entry, signal: NodeJS.Signals | 0): boolean {
     if (!entry.task.pid) return false;
     try {
       process.kill(-entry.task.pid, signal);
       return true;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ESRCH") return false;
+      // A denied existence probe does not prove the group is gone. Actual
+      // signal-delivery errors must still surface rather than claim cleanup.
+      if (signal === 0 && code === "EPERM") return true;
       throw error;
     }
   }
@@ -325,18 +329,27 @@ export class Registry {
   }
 
   private cleanGroup(entry: Entry): void {
-    if (!this.signal(entry, "SIGTERM")) {
-      entry.groupClean = true;
-      clearTimeout(entry.cleanupTimer);
-      this.drain(entry);
-    } else if (!entry.cleanupTimer) {
-      entry.cleanupTimer = setTimeout(() => {
-        this.signal(entry, "SIGKILL");
+    if (!entry.groupClean) {
+      if (entry.cleanupTimer) {
+        // Repeated signals can hit zombie-only groups (EPERM on macOS, #37).
+        // Share pending cleanup; only probe after exit to avoid delaying a
+        // group already gone, without abandoning escalation for descendants.
+        if (!entry.exit || this.signal(entry, 0)) return;
+        clearTimeout(entry.cleanupTimer);
         entry.groupClean = true;
-        this.drain(entry);
-        this.finish(entry);
-      }, this.options.graceMs ?? 2000);
+      } else if (!this.signal(entry, "SIGTERM")) {
+        entry.groupClean = true;
+      } else {
+        entry.cleanupTimer = setTimeout(() => {
+          this.signal(entry, "SIGKILL");
+          entry.groupClean = true;
+          this.drain(entry);
+          this.finish(entry);
+        }, this.options.graceMs ?? 2000);
+      }
     }
+    // SIGKILL can precede the shell's exit event; drain once exit is known.
+    if (entry.groupClean) this.drain(entry);
     this.finish(entry);
   }
 
