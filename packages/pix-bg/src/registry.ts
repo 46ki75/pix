@@ -341,6 +341,9 @@ export class Registry {
         entry.groupClean = true;
       } else {
         entry.cleanupTimer = setTimeout(() => {
+          // An expired timer is not pending cleanup; a failed signal must
+          // leave later stop/disposal/exit requests able to retry.
+          delete entry.cleanupTimer;
           this.signal(entry, "SIGKILL");
           entry.groupClean = true;
           this.drain(entry);

@@ -229,17 +229,38 @@ test("an initial SIGTERM permission error remains visible and retryable", async 
   expect((await retried).outcome).toEqual({ kind: "killed", by: "user" });
 });
 
-test("a SIGKILL permission error is not reported as successful cleanup", async () => {
-  const h = await create();
-  void h.registry.stop(h.task.id, "user");
-  const error = signalError("EPERM");
-  h.kill.mockImplementation(() => {
-    throw error;
-  });
-  expect(() => vi.advanceTimersByTime(100)).toThrow(error);
-  expect(h.registry.get(h.task.id).status).toBe("stopping");
-  expect(closeSync).not.toHaveBeenCalled();
-});
+test.each(["stop", "disposal", "exit"] as const)(
+  "failed escalation remains visible and retryable via %s",
+  async (retry) => {
+    const h = await create();
+    const stopped = h.registry.stop(h.task.id, "user");
+    const error = signalError("EPERM");
+    h.kill.mockImplementation(() => {
+      throw error;
+    });
+    expect(() => vi.advanceTimersByTime(100)).toThrow(error);
+    expect(h.registry.get(h.task.id).status).toBe("stopping");
+    expect(closeSync).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    h.kill.mockReturnValue(true);
+    let retried: Promise<unknown> | undefined;
+    if (retry === "stop") retried = h.registry.stop(h.task.id, "agent");
+    else if (retry === "disposal") retried = h.registry.disposeAll();
+    else h.exit(null, "SIGTERM");
+    expect(h.kill).toHaveBeenLastCalledWith(-h.task.pid, "SIGTERM");
+    expect(vi.getTimerCount()).toBe(1);
+
+    if (retry !== "exit") h.exit(null, "SIGTERM");
+    h.close();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(h.kill).toHaveBeenLastCalledWith(-h.task.pid, "SIGKILL");
+    expect((await stopped).outcome).toEqual({ kind: "killed", by: "user" });
+    await retried;
+    expect(closeSync).toHaveBeenCalledExactlyOnceWith(42);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
 test("unexpected group-probe errors are not suppressed", async () => {
   const h = await create();
