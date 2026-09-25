@@ -228,6 +228,12 @@ importers:
         specifier: 0.87.1
         version: 0.87.1
 
+  packages/pix-theme-elmethis:
+    devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.87.1
+        version: 0.87.1(@modelcontextprotocol/sdk@1.30.0(zod@4.6.5))(ws@8.21.3)(zod@4.6.5)
+
   packages/pix-theme-inspector:
     devDependencies:
       '@earendil-works/pi-coding-agent':

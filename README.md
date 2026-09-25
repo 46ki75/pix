@@ -1,6 +1,6 @@
 # pix
 
-A TypeScript monorepo for small [Pi Coding Agent](https://pi.dev/) extensions.
+A TypeScript monorepo for small [Pi Coding Agent](https://pi.dev/) extensions and themes.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -44,7 +44,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run fmt` | Format those files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run dev` | Launch Pi with all seven local extensions |
+| `mise run dev` | Launch Pi with all seven local extensions and Elmethis themes |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
@@ -53,6 +53,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 | `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
 | `mise run theme-inspector:dev` | Launch Pi with only @ikuma.cloud/pix-theme-inspector |
+| `mise run theme-elmethis:dev` | Launch Pi with Elmethis themes in automatic light/dark mode |
 
 The `dev` task runs from the repository root and disables automatically loaded
 extensions. It accepts Pi arguments, for example `mise run dev --help`.
@@ -100,12 +101,19 @@ indexed, or terminal-default values.
 Run `mise run theme-inspector:dev` to try it or
 `mise run test --project pix-theme-inspector` for its isolated tests.
 
+[`@ikuma.cloud/pix-theme-elmethis`](packages/pix-theme-elmethis/README.md) provides
+`elmethis-dark` and `elmethis-light`, preserving the personal Ikuma Pi palettes
+under new names. It is a theme-only package with no runtime dependencies.
+Run `mise run theme-elmethis:dev` to try automatic light/dark switching or
+`mise run test --project pix-theme-elmethis` for its validation tests.
+
 ## Layout
 
-Each extension lives in `packages/<unscoped-package-name>/`, such as
-`packages/pix-websearch/`, with its own Pi manifest, source, tests, and TypeScript
+Each package lives in `packages/<unscoped-package-name>/`. Extensions, such as
+`packages/pix-websearch/`, have their own Pi manifest, source, tests, and TypeScript
 configuration. Shared tooling lives at the repository root. Pi loads the
-TypeScript entry point declared by `package.json` directly.
+TypeScript entry point declared by `package.json` directly. Theme-only packages
+instead declare JSON resources through `pi.themes` and need no runtime code.
 
 Update local path-based installations if your checkout previously used shorter
 directory names. Published npm package names and mise task names are unchanged.
