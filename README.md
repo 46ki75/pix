@@ -44,13 +44,14 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run fmt` | Format those files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run dev` | Launch Pi with all five local extensions |
+| `mise run dev` | Launch Pi with all six local extensions |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
 | `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
+| `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
 
 The `dev` task runs from the repository root and disables automatically loaded
 extensions. It accepts Pi arguments, for example `mise run dev --help`.
@@ -85,6 +86,11 @@ for its tests. Tasks stop on reload, session replacement, and quit.
 footer with model details, cache-hit rate, context utilization, and
 Git-aware directory segments. Run `mise run statusline:dev` to try it or
 `mise run test --project pix-statusline` for its tests.
+
+[`@ikuma.cloud/pix-usage`](packages/pix-usage/README.md) adds an on-demand `/usage`
+command for Claude and Codex subscription quotas using Pi-managed OAuth. It does
+not replace the footer or poll in the background. Run `mise run usage:dev` to try
+it or `mise run test --project pix-usage` for its isolated tests.
 
 ## Layout
 
