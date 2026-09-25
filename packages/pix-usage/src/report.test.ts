@@ -98,6 +98,72 @@ test("formats normalized usage and unknown resets without guessing remaining quo
   );
 });
 
+test.each([false, true])(
+  "aligns short countdowns with weekly resets across providers (themed: %s)",
+  (themed) => {
+    const now = Date.parse("2026-09-25T12:00:00.000Z");
+    const report = formatUsageReport(
+      [
+        {
+          provider: "claude",
+          status: "ok",
+          usage: {
+            provider: "claude",
+            fetchedAt: new Date(now).toISOString(),
+            windows: [
+              {
+                id: "five_hour",
+                label: "5-hour",
+                usedPercent: 0,
+                resetsAt: "2026-09-25T16:59:59.000Z",
+                windowSeconds: 18000,
+              },
+              {
+                id: "seven_day",
+                label: "Weekly",
+                usedPercent: 0,
+                resetsAt: "2026-09-30T22:59:59.000Z",
+                windowSeconds: 604800,
+              },
+            ],
+          },
+        },
+        {
+          provider: "codex",
+          status: "ok",
+          usage: {
+            provider: "codex",
+            fetchedAt: new Date(now).toISOString(),
+            windows: [
+              {
+                id: "primary_window",
+                label: "Weekly",
+                usedPercent: 86,
+                resetsAt: "2026-09-29T21:50:45.000Z",
+                windowSeconds: 604800,
+              },
+            ],
+          },
+        },
+      ],
+      themed ? (_color, text) => `\u001b[36m${text}\u001b[39m` : undefined,
+      now,
+    );
+    const rows = stripVTControlCharacters(report)
+      .split("\n")
+      .filter((line) => line.includes(""));
+    expect(rows).toEqual([
+      "   5-hour 󰓅   0%      4h 59m 2026-09-25 16:59:59 (UTC)",
+      "  󱛡 Weekly 󰓅   0%  5d 10h 59m 2026-09-30 22:59:59 (UTC)",
+      "  󱛡 Weekly 󰓅  86%  4d  9h 50m 2026-09-29 21:50:45 (UTC)",
+    ]);
+    const dateColumns = rows.map((row) =>
+      visibleWidth(row.slice(0, row.indexOf("2026-"))),
+    );
+    expect(new Set(dateColumns).size).toBe(1);
+  },
+);
+
 test.each([
   [0, "  0"],
   [9, "  9"],
@@ -188,21 +254,23 @@ test.each([
 );
 
 test.each([
-  [1, "<1m"],
-  [59_999, "<1m"],
-  [60_000, " 1m"],
-  [3_599_999, "59m"],
-  [3_600_000, " 1h"],
-  [135 * 60_000, " 2h 15m"],
-  [86_400_000, "1d"],
+  [1, "       <1m"],
+  [59_999, "       <1m"],
+  [60_000, "        1m"],
+  [3_599_999, "       59m"],
+  [3_600_000, "        1h"],
+  [135 * 60_000, "    2h 15m"],
+  [86_400_000, "        1d"],
   [(4 * 1440 + 14 * 60 + 8) * 60_000, "4d 14h  8m"],
   [(4 * 1440 + 4 * 60 + 8) * 60_000, "4d  4h  8m"],
   [(4 * 1440 + 17 * 60 + 42) * 60_000, "4d 17h 42m"],
-  [7 * 86_400_000, "7d"],
-  [0, "now"],
-  [-1, "<1m ago"],
-  [-60_000, " 1m ago"],
-  [-3_600_000, " 1h ago"],
+  [7 * 86_400_000, "        7d"],
+  [(12 * 1440 + 14 * 60 + 8) * 60_000, "12d 14h  8m"],
+  [0, "       now"],
+  [-1, "   <1m ago"],
+  [-60_000, "    1m ago"],
+  [-3_600_000, "    1h ago"],
+  [-(4 * 1440 + 14 * 60 + 8) * 60_000, "4d 14h  8m ago"],
 ] as const)(
   "formats a reset %s ms from display time as %s",
   (delta, relative) => {

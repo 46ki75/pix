@@ -66,6 +66,8 @@ use unrounded usage; values at or below 50% keep their existing color.
 Relative times are calculated when the notification is created, not updated live.
 Durations use days, hours, and whole minutes. Hours and minutes are right-aligned
 to two characters (for example, `4d 14h  8m`); zero-valued units remain omitted.
+The relative-time column is right-aligned to a minimum width of ten characters,
+so shorter countdowns such as `4h 59m` do not shift the UTC timestamp left.
 Sub-minute intervals show `<1m`. Past timestamps show `ago`, and an exact match
 shows `now`; neither confirms that the provider has refreshed the quota. Unknown
 resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (UTC)`;

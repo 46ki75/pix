@@ -59,8 +59,9 @@ export function formatUsageReport(
         const usage = percentColor
           ? formatText(percentColor, `${percent}%`)
           : `${percent}%`;
+        // Reserve the width of "0d 00h 00m" even when countdown units are omitted.
         const reset = window.resetsAt
-          ? `${relativeResetTime(window.resetsAt, now)} ${absoluteResetTime(window.resetsAt)}`
+          ? `${relativeResetTime(window.resetsAt, now).padStart(10)} ${absoluteResetTime(window.resetsAt)}`
           : "-d --h --m";
         // Codex may report a weekly primary window; use duration, not position.
         const icon =
