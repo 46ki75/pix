@@ -156,7 +156,7 @@ test.each([
     const { command, ctx, notify, fg, getFgAnsi, getProviderAuth } =
       harness(mode);
     const dim = "\u001b[38;5;8m";
-    const muted = "\u001b[38;5;7m";
+    const accent = "\u001b[38;5;14m";
     const text = "\u001b[38;5;15m";
     const border = "\u001b[38;5;6m";
     const ambient = warning ? "\u001b[38;5;11m" : dim;
@@ -165,7 +165,7 @@ test.each([
     const footer = "─".repeat(width);
     fg.mockImplementation(
       (color, span) =>
-        `${color === "muted" ? muted : color === "border" ? border : text}${span}\u001b[39m`,
+        `${color === "accent" ? accent : color === "border" ? border : text}${span}\u001b[39m`,
     );
     getFgAnsi.mockReturnValue(ambient);
     getProviderAuth.mockImplementation(async (provider) =>
@@ -198,14 +198,14 @@ test.each([
       expect(message?.endsWith(`\n\n${footer}`)).toBe(true);
     } else {
       expect(fg.mock.calls).toEqual([
-        ["muted", ""],
+        ["accent", ""],
         ["text", ""],
         ["text", "󰓅"],
         ["text", ""],
         ["text", "󱛡"],
         ["text", "󰓅"],
         ["text", ""],
-        ...(warning ? [["muted", ""]] : []),
+        ...(warning ? [["accent", ""]] : []),
         ["border", header],
         ["border", footer],
       ]);
@@ -216,13 +216,13 @@ test.each([
       expect(
         message?.endsWith(`\n\n${border}${footer}\u001b[39m${ambient}`),
       ).toBe(true);
-      expect(message).toContain(`${muted}\u001b[39m${ambient} Claude`);
+      expect(message).toContain(`${accent}\u001b[39m${ambient} Claude`);
       expect(message).toContain(`${text}\u001b[39m${ambient} 5-hour`);
       expect(message).toContain(`${text}󱛡\u001b[39m${ambient} Weekly`);
       expect(message).toContain(`${text}󰓅\u001b[39m${ambient}  10%`);
       expect(message).toContain(`${text}\u001b[39m${ambient} -d --h --m`);
       if (warning)
-        expect(message).toContain(`${muted}\u001b[39m${ambient} Codex`);
+        expect(message).toContain(`${accent}\u001b[39m${ambient} Codex`);
     }
   },
 );
