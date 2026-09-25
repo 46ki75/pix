@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.6 targets macOS and Linux and is developed against Pi 0.87.1.
+Version 0.0.7 targets macOS and Linux and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -48,7 +48,7 @@ After the first task starts, a two-line indicator appears above the input editor
 
 ```text
 ──  Background Tasks ──────────────────────────────────────
-  Running: 0  Succeeded: 2  Failed: 0  Timeout: 0  Killed: 0
+  Running 0  Succeeded 2  Failed 0  Timeout 0  Killed 0
 ```
 
 The title divider fills the available width; the counts line starts with one
@@ -171,9 +171,9 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.6.
+- Windows and reload survival are not supported in v0.0.7.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.6` and publish the package from
+After merging the reviewed changes, tag `bg-v0.0.7` and publish the package from
 `packages/pix-bg` manually. The repository has no automated publish workflow.

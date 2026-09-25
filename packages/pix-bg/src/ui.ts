@@ -143,7 +143,7 @@ function renderCounts(
 ): string {
   return statusLabels
     .map(([color, label]) => {
-      const text = `${theme.fg("dim", `${label}:`)} ${theme.fg("text", String(counts[color] ?? 0))}`;
+      const text = `${theme.fg("dim", label)} ${theme.fg("text", String(counts[color] ?? 0))}`;
       return `${statusIcon(theme, color)} ${text}`;
     })
     .join(" ");
