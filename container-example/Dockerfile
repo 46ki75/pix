@@ -17,6 +17,7 @@ RUN for package in \
     npm:@ikuma.cloud/pix-bg \
     npm:@ikuma.cloud/pix-mcp \
     npm:@ikuma.cloud/pix-statusline \
+    npm:@ikuma.cloud/pix-theme-elmethis \
     npm:@ikuma.cloud/pix-theme-inspector \
     npm:@ikuma.cloud/pix-usage \
     npm:@ikuma.cloud/pix-webfetch \
