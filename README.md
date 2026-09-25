@@ -44,7 +44,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run fmt` | Format those files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run dev` | Launch Pi with all six local extensions |
+| `mise run dev` | Launch Pi with all seven local extensions |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
@@ -52,6 +52,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 | `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
+| `mise run theme-inspector:dev` | Launch Pi with only @ikuma.cloud/pix-theme-inspector |
 
 The `dev` task runs from the repository root and disables automatically loaded
 extensions. It accepts Pi arguments, for example `mise run dev --help`.
@@ -91,6 +92,13 @@ Git-aware directory segments. Run `mise run statusline:dev` to try it or
 command for Claude and Codex subscription quotas using Pi-managed OAuth. It does
 not replace the footer or poll in the background. Run `mise run usage:dev` to try
 it or `mise run test --project pix-usage` for its isolated tests.
+
+[`@ikuma.cloud/pix-theme-inspector`](packages/pix-theme-inspector/README.md) adds
+`/theme-colors` to inspect the active theme's semantic foreground and background
+colors, with colored token names, background swatches, and effective RGB,
+indexed, or terminal-default values.
+Run `mise run theme-inspector:dev` to try it or
+`mise run test --project pix-theme-inspector` for its isolated tests.
 
 ## Layout
 
