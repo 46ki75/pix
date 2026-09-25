@@ -1,7 +1,9 @@
 {
   "name": "@ikuma.cloud/pix-usage",
   "version": "0.0.0",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "description": "On-demand Claude and Codex subscription usage for Pi Coding Agent",
   "keywords": [
