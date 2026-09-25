@@ -42,6 +42,41 @@ paths, and bounded output tails. Signal termination is distinct from success:
 Stopping with `bg_kill` returns the outcome directly without another notification.
 Stopping from `/bg` queues a next-turn message without waking the agent.
 
+## Background Pi subagents
+
+By default, `bg_run`'s prompt guidelines suggest delegating independent tasks to
+child Pi processes. This is optional guidance, not automatic delegation.
+To omit this hint, set `PIX_BG_SUBAGENT_HINTS=0` before starting Pi:
+
+```sh
+PIX_BG_SUBAGENT_HINTS=0 pi
+```
+
+Only the exact value `0` disables the hint. Background tools, no-polling
+instructions, and manually launching Pi remain available.
+
+With an interactive or RPC parent session, pass a command like this to `bg_run`:
+
+```sh
+pi --print --no-session --tools read,grep,find,ls \
+  --append-system-prompt 'Report actionable bugs with file paths and line numbers.' \
+  'Review src/ for correctness and error-handling problems.'
+```
+
+Run the child in the foreground inside the task: do not append `&` or daemonize.
+`--print` returns the final answer and exits; `--no-session` avoids saving the
+child's session. Read its task log after completion. Use `--model` when a specific
+model is required; the parent's active model is not automatically inherited.
+Extensions are not disabled, so configured custom providers and tools can load.
+
+Give each child a self-contained task and necessary context. Conversation history
+is separate, but filesystem access and OS permissions are shared; this is not a
+sandbox. Avoid concurrent edits to the same files. Parent shutdown, reload, and
+session replacement stop the child, as with any background task. Print/JSON
+parents do not wait for background tasks, so use an interactive/RPC parent for
+completion wake-ups. The print-mode child should finish its own work directly,
+not launch nested background tasks that stop when it exits.
+
 ## Interactive UI
 
 A two-line indicator appears above the input editor at session startup, even
