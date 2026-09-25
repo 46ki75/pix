@@ -440,7 +440,8 @@ export class OutputView {
 export class TaskUI {
   private disposed = false;
   private closeView: (() => void) | undefined;
-  private renderIndicator: (() => void) | undefined;
+  private requestRender: (() => void) | undefined;
+  private indicatorVisible = true;
   private counts: Partial<Record<StatusColor, number>> = {};
 
   constructor(
@@ -448,19 +449,31 @@ export class TaskUI {
     private ctx: ExtensionContext,
   ) {
     this.update();
+    this.updateIndicator();
   }
 
   update(): void {
     if (this.disposed) return;
     const tasks = this.registry.list();
-    if (!tasks.length) return;
     this.counts = {};
     for (const task of tasks) {
       const color = statusColor(task);
       this.counts[color] = (this.counts[color] ?? 0) + 1;
     }
-    if (this.renderIndicator) {
-      this.renderIndicator();
+    this.requestRender?.();
+  }
+
+  toggleIndicator(): boolean {
+    if (this.disposed) return false;
+    this.indicatorVisible = !this.indicatorVisible;
+    this.updateIndicator();
+    return this.indicatorVisible;
+  }
+
+  private updateIndicator(): void {
+    if (!this.indicatorVisible) {
+      this.ctx.ui.setWidget("pix-bg", undefined);
+      // Keep the TUI render callback so hidden-widget updates still refresh /bg views.
       return;
     }
     // setStatus stores precolored strings. A widget resolves theme tokens on
@@ -468,11 +481,11 @@ export class TaskUI {
     this.ctx.ui.setWidget(
       "pix-bg",
       (tui) => {
-        this.renderIndicator = () => tui.requestRender();
+        this.requestRender = () => tui.requestRender();
         return {
           invalidate() {},
           render: (width: number) => {
-            if (this.disposed || width < 1) return [];
+            if (this.disposed || !this.indicatorVisible || width < 1) return [];
             const theme = this.ctx.ui.theme;
             const heading =
               theme.fg("borderMuted", "── ") +
@@ -654,6 +667,6 @@ export class TaskUI {
     this.disposed = true;
     this.closeView?.();
     this.ctx.ui.setWidget("pix-bg", undefined);
-    this.renderIndicator = undefined;
+    this.requestRender = undefined;
   }
 }

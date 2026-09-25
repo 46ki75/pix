@@ -114,14 +114,17 @@ function interact(
   return screens;
 }
 
-test("indicator appears on first task, counts stopping as running, and retains outcome totals", () => {
+test("indicator appears by default, counts stopping as running, and retains outcome totals", () => {
   const tasks: Task[] = [];
   const harness = indicatorContext();
   const ui = new TaskUI(
     { list: () => tasks } as unknown as Registry,
     harness.ctx,
   );
-  expect(harness.ui.setWidget).not.toHaveBeenCalled();
+  expect(harness.text().split("\n")).toEqual([
+    "──  Background Tasks ".padEnd(100, "─"),
+    "  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+  ]);
   tasks.push(
     task,
     { ...task, status: "stopping" },
@@ -159,12 +162,50 @@ test("indicator appears on first task, counts stopping as running, and retains o
   ui.dispose();
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(calls);
   expect(harness.widget).toBeUndefined();
-  // A fresh runtime does not show the indicator based on session history.
+  // A fresh runtime shows zero counts rather than restoring session history.
   const replacement = new TaskUI(
     { list: () => [] } as unknown as Registry,
     harness.ctx,
   );
+  expect(harness.text().split("\n")[1]).toBe(
+    "  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+  );
+  replacement.dispose();
+});
+
+test("toggling the indicator preserves counts without task updates showing it again", () => {
+  const tasks: Task[] = [];
+  const harness = indicatorContext();
+  const ui = new TaskUI(
+    { list: () => tasks } as unknown as Registry,
+    harness.ctx,
+  );
+  expect(ui.toggleIndicator()).toBe(false);
   expect(harness.widget).toBeUndefined();
+  const calls = harness.ui.setWidget.mock.calls.length;
+  tasks.push(task);
+  ui.update();
+  tasks[0] = {
+    ...task,
+    status: "finished",
+    outcome: { kind: "exited", code: 0 },
+  };
+  ui.update();
+  expect(harness.widget).toBeUndefined();
+  expect(harness.ui.setWidget).toHaveBeenCalledTimes(calls);
+  expect(ui.toggleIndicator()).toBe(true);
+  expect(harness.text().split("\n")[1]).toBe(
+    "  Running 0  Succeeded 1  Failed 0  Timeout 0  Killed 0",
+  );
+  expect(ui.toggleIndicator()).toBe(false);
+  ui.dispose();
+  expect(ui.toggleIndicator()).toBe(false);
+  expect(harness.widget).toBeUndefined();
+  const replacement = new TaskUI(
+    { list: () => [] } as unknown as Registry,
+    harness.ctx,
+  );
+  expect(harness.text()).toContain("Succeeded 0");
   replacement.dispose();
 });
 
@@ -406,54 +447,64 @@ test("viewer honors remapped and disabled scroll, jump, and cancel actions", () 
   }
 });
 
-test("disposing while the task list is open closes it and registry updates refresh its rows", async () => {
-  const harness = indicatorContext();
-  const terminal = { rows: 24 };
-  let current = task;
-  let view: Component | undefined;
-  harness.ui.custom.mockImplementation(
-    (factory) =>
-      new Promise((resolve) => {
-        view = factory(
-          { terminal, requestRender: harness.requestRender },
-          harness.ui.theme,
-          harness.keys,
-          resolve,
-        );
-      }),
-  );
-  const ui = new TaskUI(
-    { list: () => [current] } as unknown as Registry,
-    harness.ctx,
-  );
-  const showing = ui.show(harness.ctx);
-  for (const rows of [6, 7, 8, 9, 24]) {
-    terminal.rows = rows;
+test.each([false, true])(
+  "task list refreshes and closes on disposal with indicator hidden=%s",
+  async (hidden) => {
+    const harness = indicatorContext();
+    const terminal = { rows: 24 };
+    let current = task;
+    let view: Component | undefined;
+    harness.ui.custom.mockImplementation(
+      (factory) =>
+        new Promise((resolve) => {
+          view = factory(
+            { terminal, requestRender: harness.requestRender },
+            harness.ui.theme,
+            harness.keys,
+            resolve,
+          );
+        }),
+    );
+    const ui = new TaskUI(
+      { list: () => [current] } as unknown as Registry,
+      harness.ctx,
+    );
+    if (hidden) ui.toggleIndicator();
+    const showing = ui.show(harness.ctx);
+    for (const rows of [6, 7, 8, 9, 24]) {
+      terminal.rows = rows;
+      expect(
+        stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
+      ).toContain("→  abc ");
+    }
+    const listText = stripVTControlCharacters(
+      view?.render(120).join("\n") ?? "",
+    );
+    expect(listText).toContain("Background tasks");
+    expect(listText).not.toContain(" Running");
+    if (hidden) expect(harness.widget).toBeUndefined();
+    else
+      expect(harness.text()).toContain(
+        "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+      );
+    current = {
+      ...task,
+      status: "finished",
+      outcome: { kind: "exited", code: 3 },
+    };
+    harness.requestRender.mockClear();
+    ui.update();
+    expect(harness.requestRender).toHaveBeenCalled();
+    if (hidden) expect(harness.widget).toBeUndefined();
     expect(
       stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-    ).toContain("→  abc ");
-  }
-  const listText = stripVTControlCharacters(view?.render(120).join("\n") ?? "");
-  expect(listText).toContain("Background tasks");
-  expect(listText).not.toContain(" Running");
-  expect(harness.text()).toContain(
-    "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
-  );
-  current = {
-    ...task,
-    status: "finished",
-    outcome: { kind: "exited", code: 3 },
-  };
-  ui.update();
-  expect(harness.requestRender).toHaveBeenCalled();
-  expect(
-    stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-  ).toContain("󰐦 3");
-  ui.dispose();
-  await showing;
-  expect(view?.render(120)).toEqual([]);
-  expect(harness.ui.select).not.toHaveBeenCalled();
-});
+    ).toContain("󰐦 3");
+    ui.dispose();
+    await showing;
+    expect(view?.render(120)).toEqual([]);
+    expect(harness.ui.select).not.toHaveBeenCalled();
+  },
+);
 
 test("task action menu shows the compact summary instead of pipe-separated text", async () => {
   const current: Task = {
