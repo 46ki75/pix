@@ -50,5 +50,5 @@ The report wraps with the terminal width and is scrollable like other Pi output.
 - Does not include HTML-export-only colors, edit themes, or make network requests.
 - Developed against Pi 0.87.1. New token names require a package update.
 
-This package is private while under development. To load it from another working
-directory, use `pi --no-extensions -e /absolute/path/to/packages/pix-theme-inspector`.
+To load the local package from another working directory, use
+`pi --no-extensions -e /absolute/path/to/packages/pix-theme-inspector`.
