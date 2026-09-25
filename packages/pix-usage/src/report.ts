@@ -29,7 +29,7 @@ function absoluteResetTime(resetsAt: string): string {
 export function formatUsageReport(
   results: readonly UsageResult[],
   formatText: (
-    color: "border" | "muted" | "text" | "warning" | "error",
+    color: "border" | "accent" | "text" | "warning" | "error",
     text: string,
   ) => string = (_color, text) => text,
   now = Date.now(),
@@ -38,8 +38,8 @@ export function formatUsageReport(
     .map((result) => {
       const name =
         result.provider === "claude"
-          ? `${formatText("muted", "")} Claude`
-          : `${formatText("muted", "")} Codex`;
+          ? `${formatText("accent", "")} Claude`
+          : `${formatText("accent", "")} Codex`;
       if (result.status !== "ok") return `${name}: ${result.message}`;
       if (result.usage.windows.length === 0)
         return `${name}: No quota windows reported.`;

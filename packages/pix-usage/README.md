@@ -77,7 +77,7 @@ Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
 `` for five-hour windows, `󱛡` for weekly windows (including model-specific
 weekly limits), `󰓅` for usage, `` for resets, and `󱘖` for the report title.
 Other or unknown durations have no window icon. In terminal mode, provider icons
-use the active theme's `muted` color, and window, usage, and reset icons use `text`.
+use the active theme's `accent` color, and window, usage, and reset icons use `text`.
 The dividers enclose all provider sections and use `border`; other text keeps Pi's
 notification color. RPC reports contain no ANSI colors.
 Icons are added only when formatting notifications; the reusable fetchers return
