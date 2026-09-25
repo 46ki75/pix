@@ -1,0 +1,7 @@
+min_version = "2026.9.9"
+
+[tools]
+lazygit = "0.65.1"
+node = "24.20.0"
+pnpm = "12.4.1"
+uv = "0.12.9"
