@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   discoverAndLoadExtensions,
+  type ExtensionCommandContext,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
@@ -79,8 +80,8 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       hasUI: mode === "rpc" || mode === "tui",
       cwd: directory,
       sessionManager: { getSessionId: () => sessionId },
-      ui: { setWidget: vi.fn() },
-    } as unknown as ExtensionContext;
+      ui: { setWidget: vi.fn(), notify: vi.fn() },
+    } as unknown as ExtensionCommandContext;
     const loaded = await discoverAndLoadExtensions(
       [fileURLToPath(new URL("../", import.meta.url))],
       directory,
@@ -132,21 +133,55 @@ test.each(["print", "json", "rpc", "tui"] as const)(
           ),
         ]),
       );
+      const command = extension.commands.get("bg");
+      if (!command) throw new Error("Missing /bg command");
+      expect(command.getArgumentCompletions?.("to")).toEqual([
+        { value: "toggle", label: "toggle" },
+      ]);
+      expect(command.getArgumentCompletions?.("unknown")).toBeNull();
+      await expect(command.handler("toggle", ctx)).rejects.toThrow(
+        mode === "tui" ? "not started" : "requires interactive mode",
+      );
       await expect(tool("bg_status")({})).rejects.toThrow("not started");
       await emit("session_start", "startup");
-      expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+      if (mode === "tui") {
+        expect(ctx.ui.setWidget).toHaveBeenCalledExactlyOnceWith(
+          "pix-bg",
+          expect.any(Function),
+          { placement: "aboveEditor" },
+        );
+        await command.handler("", ctx);
+        expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+          "No background tasks.",
+          "info",
+        );
+        await command.handler("invalid", ctx);
+        expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+          "Usage: /bg [toggle]",
+          "warning",
+        );
+        expect(ctx.ui.setWidget).toHaveBeenCalledTimes(1);
+        await command.handler(" toggle ", ctx);
+        expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pix-bg", undefined);
+        expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+          "Background task widget hidden.",
+          "info",
+        );
+      } else {
+        await expect(command.handler("toggle", ctx)).rejects.toThrow(
+          "requires interactive mode",
+        );
+        expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+      }
       const result = await tool("bg_run")({
         command: "sleep 30",
         name: "test sleeper",
       });
       const task = result.details.task as Task;
-      if (mode === "tui")
-        expect(ctx.ui.setWidget).toHaveBeenCalledWith(
-          "pix-bg",
-          expect.any(Function),
-          { placement: "aboveEditor" },
-        );
-      else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+      if (mode === "tui") {
+        expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pix-bg", undefined);
+        expect(ctx.ui.setWidget).toHaveBeenCalledTimes(2);
+      } else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       outputDir = dirname(task.outputPath);
       // A private shared /tmp/pi-bg parent would exclude every other OS user.
       expect(dirname(outputDir)).toBe(
@@ -163,6 +198,18 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         by: "agent",
       });
       expect(send).not.toHaveBeenCalled();
+      if (mode === "tui") {
+        await command.handler("toggle", ctx);
+        expect(ctx.ui.setWidget).toHaveBeenLastCalledWith(
+          "pix-bg",
+          expect.any(Function),
+          { placement: "aboveEditor" },
+        );
+        expect(ctx.ui.notify).toHaveBeenLastCalledWith(
+          "Background task widget shown.",
+          "info",
+        );
+      }
       const natural = (await tool("bg_run")({ command: "kill -KILL $$" }))
         .details.task as Task;
       await expect.poll(() => send.mock.calls.length).toBe(1);
@@ -178,6 +225,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       const status = await tool("bg_status")({ id: natural.id });
       expect(status.details.tasks[0]?.status).toBe("finished");
       for (const reason of ["reload", "new", "resume", "fork", "quit"]) {
+        if (mode === "tui") await command.handler("toggle", ctx);
         const running = (await tool("bg_run")({ command: "sleep 30" })).details
           .task as Task;
         await emit("session_shutdown", reason);
@@ -188,7 +236,8 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         if (mode === "tui")
           expect(ctx.ui.setWidget).toHaveBeenLastCalledWith(
             "pix-bg",
-            undefined,
+            expect.any(Function),
+            { placement: "aboveEditor" },
           );
         else expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       }

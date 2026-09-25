@@ -140,13 +140,33 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("bg", {
-    description: "Inspect background tasks, view output, or stop a task",
-    async handler(_args, ctx) {
+    description:
+      "Inspect background tasks or toggle the status widget: /bg [toggle]",
+    getArgumentCompletions(prefix) {
+      return "toggle".startsWith(prefix)
+        ? [{ value: "toggle", label: "toggle" }]
+        : null;
+    },
+    async handler(args, ctx) {
       if (ctx.mode !== "tui")
         throw new Error("/bg requires interactive mode; use bg_status instead");
       if (!runtime?.ui)
         throw new Error("Background task session has not started");
-      await runtime.ui.show(ctx);
+      switch (args.trim()) {
+        case "":
+          await runtime.ui.show(ctx);
+          break;
+        case "toggle": {
+          const visible = runtime.ui.toggleIndicator();
+          ctx.ui.notify(
+            `Background task widget ${visible ? "shown" : "hidden"}.`,
+            "info",
+          );
+          break;
+        }
+        default:
+          ctx.ui.notify("Usage: /bg [toggle]", "warning");
+      }
     },
   });
 }

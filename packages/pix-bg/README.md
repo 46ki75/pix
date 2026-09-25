@@ -44,21 +44,26 @@ Stopping from `/bg` queues a next-turn message without waking the agent.
 
 ## Interactive UI
 
-After the first task starts, a two-line indicator appears above the input editor:
+A two-line indicator appears above the input editor at session startup, even
+before any tasks have run:
 
 ```text
 ──  Background Tasks ──────────────────────────────────────
-  Running 0  Succeeded 2  Failed 0  Timeout 0  Killed 0
+  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0
 ```
+
+Use `/bg toggle` to hide or show the indicator. Hiding it does not stop tasks or
+reset counts; `/bg` still opens the task viewer. Visibility resets to shown on
+reload or session replacement.
 
 The title divider fills the available width; the counts line starts with one
 space. The `` icon uses the theme's `muted` color. Divider lines use `borderMuted`,
 heading text and status labels use `dim`, and numeric counts use `text`. Each
 status icon uses the color below; blue is approximated in 256-color terminals.
 Theme colors refresh when the theme changes, and both lines are truncated on
-narrow terminals. Counts remain visible while idle and reset on reload or session
-replacement; they are not restored from history. Commands that fail to launch are
-not counted.
+narrow terminals. Unless hidden, counts remain visible while idle. They reset on
+reload or session replacement and are not restored from history. Commands that
+fail to launch are not counted.
 
 `/bg` lists detailed outcomes with the same colored status icons as the indicator,
 without repeating its legend. Use a Nerd Font to display these icons:
