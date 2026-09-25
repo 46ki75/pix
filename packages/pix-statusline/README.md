@@ -82,8 +82,10 @@ The first row has one space of padding at each end. It places the selected
 provider/model and thinking level on the left, with the latest assistant prompt's
 cache-hit rate and context utilization aligned to the right: ` 98.4%  36.1% █▓░░`.
 The context-window size follows the model name, as in ` test-model 272k`.
-Provider, model, thinking-effort, and cache-hit icons use the theme's `muted`
-color (lighter than `dim` in the dark theme); their labels remain `dim`.
+Provider, model, and thinking-effort icons use the theme's primary UI color
+(`accent` in Pi's API). The cache-hit icon `` uses `text`. Provider/model names,
+thinking-level labels, and cache-hit values (including `----`) use `muted`.
+The context-window size and cache-hit `%` sign use `dim`.
 An unavailable cache-hit rate shows ` ----%`.
 Token counts, cache read/write totals, and cost are not displayed.
 Extension status messages appear below the directory/branch row.

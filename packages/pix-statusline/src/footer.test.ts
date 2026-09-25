@@ -226,7 +226,7 @@ test.each([
       );
       footer.invalidate();
       const line = footer.render(120)[2] ?? "";
-      expect(fg).not.toHaveBeenCalledWith("text", expect.any(String));
+      expect(line).not.toContain(color);
       expect(line).toContain(
         "\x1b[48;2;189;166;139m\x1b[38;2;64;68;76m  pix ",
       );
@@ -426,7 +426,7 @@ test.each([
     sessionManager.appendMessage(assistant());
     const theme = {
       fg: (color: string, text: string) =>
-        `${color === "muted" ? ANSI.fg.white : ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
+        `${color === "accent" || color === "text" ? ANSI.fg.white : ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
     };
     const footer = createFooter(ctx, tui, theme, footerData);
     const model = ` ${id} 272k${reasoning ? " 󱩔 high" : ""}`;
@@ -446,7 +446,7 @@ test.each([
         ` ${model}${" ".repeat(width - compactWidth + 2)}${metrics} `,
       );
       expect(line).toContain(
-        `${ANSI.fg.white}${ANSI.reset.fg} ${ANSI.fg.brightBlack}${id} 272k${ANSI.reset.fg}`,
+        `${ANSI.fg.white}${ANSI.reset.fg} ${ANSI.fg.brightBlack}${id}${ANSI.reset.fg} ${ANSI.fg.brightBlack}272k${ANSI.reset.fg}`,
       );
       expect(visibleWidth(line)).toBe(width);
     }
@@ -501,38 +501,52 @@ test.each([true, false])(
 );
 
 test.each([
-  [undefined, "----%"],
-  [assistant(0, 0), "----%"],
-  [assistant(100, 0), "0.0%"],
-  [assistant(0, 900), "100.0%"],
-  [assistant(100, 900, 200), "75.0%"],
+  [undefined, "----"],
+  [assistant(0, 0), "----"],
+  [assistant(100, 0), "0.0"],
+  [assistant(0, 900), "100.0"],
+  [assistant(100, 900, 200), "75.0"],
 ] as const)(
-  "uses lighter icons and dim labels for cache-hit rate case %# without token counters",
+  "uses muted labels and values with dim context size and percent sign for cache-hit rate case %#",
   (message, expected) => {
     const { ctx, sessionManager, tui, footerData } = fixture();
+    if (!ctx.model) throw new Error("Missing fixture model");
+    ctx.model.id = "gpt-6-astra";
+    ctx.thinkingLevel = "xhigh";
     if (message) sessionManager.appendMessage(message);
+    const colors: Record<string, string> = {
+      accent: ANSI.fg.cyan,
+      text: ANSI.fg.white,
+      muted: ANSI.fg.yellow,
+      dim: ANSI.fg.brightBlack,
+    };
     const theme = {
       fg: vi.fn(
         (color: string, text: string) =>
-          `${color === "muted" ? ANSI.fg.white : ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
+          `${colors[color]}${text}${ANSI.reset.fg}`,
       ),
     };
     const footer = createFooter(ctx, tui, theme, footerData);
     const lines = footer.render(120);
-    for (const [icon, label] of [
-      ["󱘖", "openai-codex"],
-      ["", "test-model 272k"],
-      ["󱩔", "high"],
-      ["", expected],
-    ]) {
-      expect(theme.fg).toHaveBeenCalledWith("muted", icon);
-      expect(theme.fg).toHaveBeenCalledWith("dim", label);
+    for (const [icon, label, color] of [
+      ["󱘖", "openai-codex", "accent"],
+      ["", "gpt-6-astra", "accent"],
+      ["󱩖", "xhigh", "accent"],
+      ["", expected, "text"],
+    ] as const) {
+      expect(theme.fg).toHaveBeenCalledWith(color, icon);
+      expect(theme.fg).toHaveBeenCalledWith("muted", label);
       expect(lines[0]).toContain(
-        `${ANSI.fg.white}${icon}${ANSI.reset.fg} ${ANSI.fg.brightBlack}${label}${ANSI.reset.fg}`,
+        `${colors[color]}${icon}${ANSI.reset.fg} ${ANSI.fg.yellow}${label}${ANSI.reset.fg}`,
       );
     }
+    expect(theme.fg).toHaveBeenCalledWith("dim", "272k");
+    expect(theme.fg).toHaveBeenCalledWith("dim", "%");
     expect(lines[0]).toContain(
-      `${ANSI.fg.brightBlack}${expected}${ANSI.reset.fg} ${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg}`,
+      `${ANSI.fg.yellow}gpt-6-astra${ANSI.reset.fg} ${ANSI.fg.brightBlack}272k${ANSI.reset.fg}`,
+    );
+    expect(lines[0]).toContain(
+      `${ANSI.fg.yellow}${expected}${ANSI.reset.fg}${ANSI.fg.brightBlack}%${ANSI.reset.fg} ${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg}`,
     );
     expect(stripVTControlCharacters(lines[0] ?? "")).not.toMatch(
       /[↑↓$]|[RW]\d/,
@@ -551,20 +565,32 @@ test.each([
   [75, "███░", "yellow"],
   [75.1, "███▓", "red"],
   [80, "███▓", "red"],
+  [null, "", "brightGreen"],
+  [undefined, "", "brightGreen"],
 ] as const)(
   "matches the context icon and percentage to the gauge at %s percent with %s in %s",
   (percent, bar, color) => {
     const { ctx, tui, theme, footerData } = fixture();
-    ctx.getContextUsage = () => ({
-      tokens: (272_000 * percent) / 100,
-      percent,
-      contextWindow: 272_000,
-    });
+    ctx.getContextUsage = () =>
+      percent === undefined
+        ? undefined
+        : {
+            tokens: percent === null ? null : (272_000 * percent) / 100,
+            percent,
+            contextWindow: 272_000,
+          };
+    vi.spyOn(theme, "fg").mockImplementation(
+      (role, text) =>
+        `${role === "muted" ? ANSI.fg.white : ANSI.fg.brightBlack}${text}${ANSI.reset.fg}`,
+    );
     const footer = createFooter(ctx, tui, theme, footerData);
     const stats = footer.render(120)[0] ?? "";
+    const value = percent == null ? "----" : percent.toFixed(1);
+    const gauge = bar ? ` ${ANSI.fg[color]}${bar}${ANSI.reset.fg}` : "";
     expect(stats).toContain(
-      `${ANSI.fg[color]} ${percent.toFixed(1)}%${ANSI.reset.fg} ${ANSI.fg[color]}${bar}${ANSI.reset.fg}`,
+      `${ANSI.fg[color]} ${value}%${ANSI.reset.fg}${gauge} `,
     );
+    if (!bar) expect(stats).not.toMatch(/[█▓░]/);
     expect(visibleWidth(stats)).toBe(120);
     footer.dispose();
   },
@@ -672,8 +698,8 @@ test.each([
       `󱘖 openai-codex  test-model 272k ${label}`,
     );
     const [icon, effort] = label.split(" ");
-    expect(fg).toHaveBeenCalledWith("muted", icon);
-    expect(fg).toHaveBeenCalledWith("dim", effort);
+    expect(fg).toHaveBeenCalledWith("accent", icon);
+    expect(fg).toHaveBeenCalledWith("muted", effort);
     footer.dispose();
   },
 );
@@ -699,11 +725,15 @@ test("fits ANSI and wide text at narrow widths and reads theme changes", () => {
   footerData.getExtensionStatuses.mockReturnValue(
     new Map([["a", "\u001b[32mReady 界🚀\u001b[0m"]]),
   );
-  let color = "2";
-  let iconColor = "37";
+  const colors: Record<string, string> = {
+    accent: "37",
+    text: "97",
+    muted: "2",
+    dim: "90",
+  };
   const theme = {
     fg: (role: string, text: string) =>
-      `\u001b[${role === "muted" ? iconColor : color}m${text}\u001b[0m`,
+      `\u001b[${colors[role]}m${text}\u001b[0m`,
   };
   const footer = createFooter(ctx, tui, theme, footerData);
   expect(footer.render(80)[0]).toContain(
@@ -720,17 +750,16 @@ test("fits ANSI and wide text at narrow widths and reads theme changes", () => {
       expect(line).not.toMatch(/[\r\n\t]/);
     }
   }
-  color = "36";
-  iconColor = "97";
+  Object.assign(colors, { accent: "97", text: "33", muted: "36", dim: "34" });
   footer.invalidate();
   expect(footer.render(80)[0]).toContain(
     `${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg} ${ANSI.fg.brightGreen}█▓░░${ANSI.reset.fg}`,
   );
   expect(footer.render(80)[0]).toContain(
-    `\u001b[97m\u001b[0m \u001b[36m----%\u001b[0m ${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg}`,
+    `\u001b[33m\u001b[0m \u001b[36m----\u001b[0m\u001b[34m%\u001b[0m ${ANSI.fg.brightGreen} 36.1%${ANSI.reset.fg}`,
   );
   expect(footer.render(80)[0]).toContain(
-    "\u001b[97m󱘖\u001b[0m \u001b[36mopenai-codex\u001b[0m \u001b[97m\u001b[0m \u001b[36mtest-model 272k\u001b[0m \u001b[97m󱩔\u001b[0m \u001b[36mhigh\u001b[0m",
+    "\u001b[97m󱘖\u001b[0m \u001b[36mopenai-codex\u001b[0m \u001b[97m\u001b[0m \u001b[36mtest-model\u001b[0m \u001b[34m272k\u001b[0m \u001b[97m󱩔\u001b[0m \u001b[36mhigh\u001b[0m",
   );
   footer.dispose();
 });

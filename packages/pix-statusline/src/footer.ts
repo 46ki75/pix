@@ -93,7 +93,10 @@ export function createFooter(
   const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
   // Theme.fg resets rather than restores foreground, so color each span separately.
   const detail = (icon: string, label: string) =>
-    `${theme.fg("muted", icon)} ${theme.fg("dim", singleLine(label))}`;
+    `${theme.fg("accent", icon)} ${theme.fg("muted", singleLine(label))}`;
+  const percentage = (value: number | null | undefined) =>
+    theme.fg("muted", value == null ? "----" : value.toFixed(1)) +
+    theme.fg("dim", "%");
   return {
     dispose: unsubscribe,
     // Session metrics and theme colors stay live; the directory is resolved at startup.
@@ -102,12 +105,7 @@ export function createFooter(
       if (width <= 0) return [];
       const metricsWidth = Math.max(0, width - 2);
       const usage = collectUsage(ctx.sessionManager.getEntries());
-      const cacheText = detail(
-        "",
-        usage.cacheHitRate === undefined
-          ? "----%"
-          : `${usage.cacheHitRate.toFixed(1)}%`,
-      );
+      const cacheText = `${theme.fg("text", "")} ${percentage(usage.cacheHitRate)}`;
 
       const context = ctx.getContextUsage();
       const contextWindow = context?.contextWindow ?? ctx.model?.contextWindow;
@@ -118,8 +116,8 @@ export function createFooter(
       const model = ctx.model;
       const thinking = ctx.thinkingLevel ?? "off";
       const modelText = model
-        ? `${detail("", `${model.id} ${windowText}`)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
-        : theme.fg("dim", `no-model ${windowText}`);
+        ? `${detail("", model.id)} ${theme.fg("dim", windowText)}${model.reasoning ? ` ${detail(THINKING_ICONS[thinking], thinking)}` : ""}`
+        : `${theme.fg("muted", "no-model")} ${theme.fg("dim", windowText)}`;
       let left = model
         ? `${detail("󱘖", model.provider)} ${modelText}`
         : modelText;
