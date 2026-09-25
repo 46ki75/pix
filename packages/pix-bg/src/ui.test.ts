@@ -123,7 +123,7 @@ test("indicator appears by default, counts stopping as running, and retains outc
   );
   expect(harness.text().split("\n")).toEqual([
     "──  Background Tasks ".padEnd(100, "─"),
-    "  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+    "  Running 0  Succeeded 0  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
   ]);
   tasks.push(
     task,
@@ -138,7 +138,7 @@ test("indicator appears by default, counts stopping as running, and retains outc
   );
   expect(harness.text().split("\n")).toEqual([
     "──  Background Tasks ".padEnd(100, "─"),
-    "  Running 2  Succeeded 1  Failed 0  Timeout 0  Killed 0",
+    "  Running 2  Succeeded 1  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
   ]);
   tasks[0] = {
     ...task,
@@ -152,7 +152,7 @@ test("indicator appears by default, counts stopping as running, and retains outc
   };
   ui.update();
   expect(harness.text().split("\n")[1]).toBe(
-    "  Running 0  Succeeded 2  Failed 0  Timeout 0  Killed 1",
+    "  Running 0  Succeeded 2  Failed 0 󰗖 Timeout 0 󰍷 Killed 1",
   );
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(1);
   expect(harness.requestRender).toHaveBeenCalled();
@@ -168,7 +168,7 @@ test("indicator appears by default, counts stopping as running, and retains outc
     harness.ctx,
   );
   expect(harness.text().split("\n")[1]).toBe(
-    "  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+    "  Running 0  Succeeded 0  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
   );
   replacement.dispose();
 });
@@ -195,7 +195,7 @@ test("toggling the indicator preserves counts without task updates showing it ag
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(calls);
   expect(ui.toggleIndicator()).toBe(true);
   expect(harness.text().split("\n")[1]).toBe(
-    "  Running 0  Succeeded 1  Failed 0  Timeout 0  Killed 0",
+    "  Running 0  Succeeded 1  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
   );
   expect(ui.toggleIndicator()).toBe(false);
   ui.dispose();
@@ -260,11 +260,11 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
     "\x1b[35m── \x1b[39m\x1b[90m\x1b[39m \x1b[2mBackground Tasks\x1b[39m ",
   );
   for (const [color, icon, label, count] of [
-    ["\x1b[38;2;104;119;159m", "", "Running", "1"],
-    ["\x1b[32m", "", "Succeeded", "0"],
-    ["\x1b[31m", "", "Failed", "0"],
-    ["\x1b[33m", "", "Timeout", "0"],
-    ["\x1b[90m", "", "Killed", "0"],
+    ["\x1b[38;2;104;119;159m", "", "Running", "1"],
+    ["\x1b[32m", "", "Succeeded", "0"],
+    ["\x1b[31m", "", "Failed", "0"],
+    ["\x1b[33m", "󰗖", "Timeout", "0"],
+    ["\x1b[90m", "󰍷", "Killed", "0"],
   ]) {
     expect(harness.ui.theme.fg).toHaveBeenCalledWith("dim", label);
     expect(harness.ui.theme.fg).toHaveBeenCalledWith("text", count);
@@ -280,7 +280,7 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
   expect(harness.widget?.render(100).join("")).not.toBe(first);
   harness.ui.theme.getColorMode.mockReturnValue("256color");
   expect(harness.widget?.render(100).join("")).toContain(
-    "\x1b[38;5;67m\x1b[39m",
+    "\x1b[38;5;67m\x1b[39m",
   );
   expect(harness.widget?.render(0)).toEqual([]);
   for (const width of [1, 12, 22, 40, 80, 120]) {
@@ -475,17 +475,17 @@ test.each([false, true])(
       terminal.rows = rows;
       expect(
         stripVTControlCharacters(view?.render(120).join("\n") ?? ""),
-      ).toContain("→  abc ");
+      ).toContain("→  abc ");
     }
     const listText = stripVTControlCharacters(
       view?.render(120).join("\n") ?? "",
     );
     expect(listText).toContain("Background tasks");
-    expect(listText).not.toContain(" Running");
+    expect(listText).not.toContain(" Running");
     if (hidden) expect(harness.widget).toBeUndefined();
     else
       expect(harness.text()).toContain(
-        "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+        "  Running 1  Succeeded 0  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
       );
     current = {
       ...task,
@@ -524,12 +524,12 @@ test("task action menu shows the compact summary instead of pipe-separated text"
   try {
     await ui.show(harness.ctx);
     expect(screens[1]?.split("\n")[1]).toBe(
-      " 09e8a86e51e9  checksum-check 󰐦 0 󰔛 0.0s",
+      " 09e8a86e51e9  checksum-check 󰐦 0 󰔛 0.0s",
     );
     expect(screens[1]).toContain("→ View output");
     expect(screens[1]).not.toContain("Kill");
     expect(screens[2]).toContain("Background tasks");
-    expect(harness.ui.theme.fg).toHaveBeenCalledWith("success", "");
+    expect(harness.ui.theme.fg).toHaveBeenCalledWith("success", "");
   } finally {
     ui.dispose();
   }
@@ -560,11 +560,11 @@ test.each([
     await ui.show(ctx);
     expect(stop).toHaveBeenCalledWith("abc", "user");
     expect(screens[2]).toContain(
-      "Kill background task?  abc  界 test running 󰔛",
+      "Kill background task?  abc  界 test running 󰔛",
     );
     expect(screens[2]).toContain("→ No");
     expect(harness.text().split("\n")[1]).toBe(
-      "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
+      "  Running 1  Succeeded 0  Failed 0 󰗖 Timeout 0 󰍷 Killed 0",
     );
     ui.dispose();
     ui.dispose();
@@ -633,7 +633,7 @@ test("task menus refresh compact headers, preserve selection when resized, and c
     await Promise.resolve();
     expect(harness.ui.custom).toHaveBeenCalledTimes(2);
     const header = () => view?.render(120)[1] ?? "";
-    expect(header()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
+    expect(header()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
     expect(stripVTControlCharacters(header())).toContain("running 󰔛 1.0s");
     now.mockReturnValue(2000);
     expect(stripVTControlCharacters(header())).toContain("running 󰔛 2.0s");
@@ -649,7 +649,7 @@ test("task menus refresh compact headers, preserve selection when resized, and c
           const title = stripVTControlCharacters(
             lines[rows >= 10 ? 1 : 0] ?? "",
           );
-          expect(title).toContain(" abc ");
+          expect(title).toContain(" abc ");
           expect(title).toContain("running 󰔛 2.0s");
         }
         if (width >= 12)
@@ -667,13 +667,13 @@ test("task menus refresh compact headers, preserve selection when resized, and c
     harness.requestRender.mockClear();
     ui.update();
     expect(harness.requestRender).toHaveBeenCalled();
-    expect(header()).toContain("\x1b[31m\x1b[39m");
+    expect(header()).toContain("\x1b[31m\x1b[39m");
     expect(stripVTControlCharacters(header())).toContain("󰐦 3 󰔛 2.0s");
     harness.ui.theme.fg.mockImplementation(
       (_color, text) => `\x1b[36m${text}\x1b[39m`,
     );
     view?.invalidate();
-    expect(header()).toContain("\x1b[36m\x1b[39m");
+    expect(header()).toContain("\x1b[36m\x1b[39m");
     expect(header()).not.toContain("\x1b[31m");
     harness.keys.setUserBindings({
       "tui.select.up": [],
@@ -858,7 +858,7 @@ test.each([9, 10, 12, 24, 40])(
       return text;
     };
     try {
-      expect(frame()).toContain("→  task-39");
+      expect(frame()).toContain("→  task-39");
       view?.handleInput?.("\r");
       await vi.waitFor(() =>
         expect(harness.ui.custom).toHaveBeenCalledTimes(2),

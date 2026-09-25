@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.8 targets macOS and Linux and is developed against Pi 0.87.1.
+Version 0.0.9 targets macOS and Linux and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -49,7 +49,7 @@ before any tasks have run:
 
 ```text
 ──  Background Tasks ──────────────────────────────────────
-  Running 0  Succeeded 0  Failed 0  Timeout 0  Killed 0
+  Running 0  Succeeded 0  Failed 0 󰗖 Timeout 0 󰍷 Killed 0
 ```
 
 Use `/bg toggle` to hide or show the indicator. Hiding it does not stop tasks or
@@ -70,18 +70,18 @@ without repeating its legend. Use a Nerd Font to display these icons:
 
 | Status | Icon color | Meaning |
 | --- | --- | --- |
-|  Running | Blue `#68779f` | Still running or cleaning up |
-|  Succeeded | Theme `success` | Exit code 0 |
-|  Failed | Theme `error` | Nonzero exit, signal, or execution error |
-|  Timeout | Theme `warning` | Timeout or output limit reached |
-|  Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
+|  Running | Blue `#68779f` | Still running or cleaning up |
+|  Succeeded | Theme `success` | Exit code 0 |
+|  Failed | Theme `error` | Nonzero exit, signal, or execution error |
+| 󰗖 Timeout | Theme `warning` | Timeout or output limit reached |
+| 󰍷 Killed | Theme `muted` | Intentionally stopped by the user, agent, or shutdown |
 
 Task-list rows, menu titles, and output-view headers share a compact summary.
 The task list aligns outcomes and durations across entries:
 
 ```text
-→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s
-   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s
+→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s
+   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s
 ```
 
 `` marks the task name, `󰐦` precedes the exit code, and `󰔛` precedes elapsed
@@ -176,9 +176,9 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.8.
+- Windows and reload survival are not supported in v0.0.9.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.8` and publish the package from
+After merging the reviewed changes, tag `bg-v0.0.9` and publish the package from
 `packages/pix-bg` manually. The repository has no automated publish workflow.
