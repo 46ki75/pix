@@ -13,6 +13,44 @@ import type { Task } from "./registry.ts";
 afterEach(() => vi.unstubAllEnvs());
 
 test.each([
+  ["default", undefined, true],
+  ["enabled", "1", true],
+  ["disabled", "0", false],
+] as const)(
+  "subagent hints are %s without changing tools",
+  async (_label, value, enabled) => {
+    const directory = await mkdtemp(join(tmpdir(), "pix-bg-hints-"));
+    vi.stubEnv("PIX_BG_SUBAGENT_HINTS", value);
+    try {
+      const loaded = await discoverAndLoadExtensions(
+        [fileURLToPath(new URL("../", import.meta.url))],
+        directory,
+        join(directory, "agent"),
+      );
+      expect(loaded.errors).toEqual([]);
+      const extension = loaded.extensions[0];
+      if (!extension) throw new Error("Extension did not load");
+      expect([...extension.tools.keys()]).toEqual([
+        "bg_run",
+        "bg_status",
+        "bg_kill",
+      ]);
+      const guidelines =
+        extension.tools.get("bg_run")?.definition.promptGuidelines;
+      expect(guidelines).toEqual([
+        "Never use bash sleep, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
+        "After bg_run, continue independent work or end the turn. In interactive/RPC mode, completion automatically starts another turn without user input.",
+        ...(enabled
+          ? [expect.stringContaining("pi --print --no-session")]
+          : []),
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test.each([
   ["permissive", "parent"],
   ["symlink", "parent"],
   ["permissive", "session"],

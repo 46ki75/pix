@@ -64,6 +64,11 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     promptGuidelines: [
       "Never use bash sleep, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
       "After bg_run, continue independent work or end the turn. In interactive/RPC mode, completion automatically starts another turn without user input.",
+      ...(process.env.PIX_BG_SUBAGENT_HINTS === "0"
+        ? []
+        : [
+            "In interactive/RPC sessions, you may delegate independent tasks through bg_run using pi --print --no-session. Give each child a self-contained task and necessary context; parent conversation history is not inherited. Run the child in the foreground (no &). Avoid overlapping file edits between agents.",
+          ]),
     ],
     parameters: Type.Object({
       command: Type.String({ minLength: 1, description: "Shell command" }),
