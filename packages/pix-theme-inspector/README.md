@@ -20,7 +20,8 @@ In Pi, run:
 
 The command prints the active theme's name, color mode, and all 56 terminal color
 tokens supported by Pi 0.87.1: 49 foreground colors and 7 background colors.
-Tokens are grouped by role, with a color preview and the effective color value:
+Tokens are grouped by role, with a color preview, the effective color value, and
+a short description of where the color is used. Values are shown as:
 
 - `#rrggbb`: the RGB color emitted by Pi.
 - `index N`: an ANSI palette index, not an assumed RGB value.
@@ -30,7 +31,8 @@ Tokens are grouped by role, with a color preview and the effective color value:
 
 Foreground token names use their own colors, including intentionally dim or
 low-contrast colors. Background swatches use spaces inside brackets.
-Background token names and all color values use the theme's normal text color.
+Background token names, color values, and descriptions use the theme's normal
+text color.
 The report wraps with the terminal width and is scrollable like other Pi output.
 
 ## Behavior and limitations

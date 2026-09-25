@@ -74,20 +74,43 @@ test.each(["truecolor", "256color"] as const)(
     expect(tokenRows(report)).toHaveLength(56);
     expect([...rows.keys()]).toEqual(TOKENS.map((token) => token.name));
     expect(rows.get("accent")).toMatch(
-      mode === "truecolor" ? /#112233$/ : /index \d+$/,
+      mode === "truecolor" ? /#112233 — / : /index \d+ — /,
     );
     expect(rows.get("toolSuccessBg")).toMatch(
-      mode === "truecolor" ? /#abcdef$/ : /index \d+$/,
+      mode === "truecolor" ? /#abcdef — / : /index \d+ — /,
     );
-    expect(rows.get("warning")).toMatch(/index 3$/);
-    expect(rows.get("toolErrorBg")).toMatch(/index 124$/);
-    expect(rows.get("userMessageText")).toMatch(/terminal default$/);
-    expect(rows.get("userMessageBg")).toMatch(/terminal default$/);
+    expect(rows.get("warning")).toMatch(/index 3 — /);
+    expect(rows.get("toolErrorBg")).toMatch(/index 124 — /);
+    expect(rows.get("userMessageText")).toMatch(/terminal default — /);
+    expect(rows.get("userMessageBg")).toMatch(/terminal default — /);
     expect(rows.get("accent")).not.toContain("[");
     expect(report).not.toContain("█");
     expect(rows.get("selectedBg")).toContain("[    ]");
   },
 );
+
+test("shows each token's description after its value in normal text", () => {
+  const theme = fixture();
+  const report = formatThemeReport(theme);
+  for (const token of TOKENS) {
+    const line = report
+      .split("\n")
+      .find((line) =>
+        stripTerminalSequences(line).startsWith(`${token.name} `),
+      );
+    expect(
+      line?.endsWith(
+        ` — ${token.description}\u001b[39m${theme.getFgAnsi("dim")}`,
+      ),
+    ).toBe(true);
+  }
+  expect(plainRows(theme).get("accent")).toContain(
+    "#112233 — Primary UI accent",
+  );
+  expect(plainRows(theme).get("toolSuccessBg")).toContain(
+    "#abcdef — Successful tool background",
+  );
+});
 
 test("resolves all five optional tokens through Pi's real Theme fallbacks", () => {
   const rows = plainRows(fixture());
@@ -100,9 +123,9 @@ test("resolves all five optional tokens through Pi's real Theme fallbacks", () =
   ] as const) {
     const value = rows
       .get(token)
-      ?.match(/(#[\da-f]{6}|index \d+|terminal default)$/)?.[0];
+      ?.match(/(#[\da-f]{6}|index \d+|terminal default) — /)?.[1];
     expect(value).toBeDefined();
-    expect(rows.get(fallback)?.endsWith(`  ${value}`)).toBe(true);
+    expect(rows.get(fallback)?.includes(`  ${value} — `)).toBe(true);
   }
 });
 
@@ -132,7 +155,7 @@ test("unknown color sequences are described but never replayed in labels or swat
   expect(report).not.toContain("\u001b[2J");
   expect(report).not.toContain("\u001b[0m");
   expect(
-    plainRows(theme).get("accent")?.endsWith('  unknown "\\u001b[2J"'),
+    plainRows(theme).get("accent")?.includes('  unknown "\\u001b[2J" — '),
   ).toBe(true);
   expect(plainRows(theme).get("accent")).not.toContain("????");
   expect(stripTerminalSequences(report)).toContain(
@@ -182,7 +205,10 @@ test.each([1, 2, 5, 24, 40, 80, 120])(
       .map(stripTerminalSequences)
       .join("")
       .replace(/\s/g, "");
-    for (const token of TOKENS) expect(content).toContain(token.name);
+    for (const token of TOKENS) {
+      expect(content).toContain(token.name);
+      expect(content).toContain(token.description.replace(/\s/g, ""));
+    }
     // The same component must reflow when the terminal resizes, not keep prewrapped rows.
     const wider = text.render(120);
     expect(wider).toHaveLength(85);

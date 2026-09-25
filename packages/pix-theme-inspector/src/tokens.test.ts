@@ -22,6 +22,16 @@ test("catalog covers Pi 0.87.1's 49 foreground and 7 background tokens exactly o
   ]);
 });
 
+test("every token has a short, single-line description", () => {
+  for (const token of TOKENS) {
+    expect(token.description).toEqual(expect.any(String));
+    expect(token.description.trim()).toBe(token.description);
+    expect(token.description.length).toBeGreaterThan(0);
+    expect(token.description.length).toBeLessThanOrEqual(64);
+    expect(token.description).not.toContain("\n");
+  }
+});
+
 test("groups remain contiguous and distinguish foreground from background roles", () => {
   const counts = new Map<string, number>();
   let previous = "";

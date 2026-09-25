@@ -28,11 +28,12 @@ export function formatThemeReport(theme: Theme): string {
         ? theme.getFgAnsi(token.name)
         : theme.getBgAnsi(token.name);
     const color = inspectColor(ansi, token.kind);
+    const details = `${describeColor(color)} — ${token.description}`;
     const label = token.name + " ".repeat(nameWidth - visibleWidth(token.name));
     if (token.kind === "foreground") {
       lines.push(
         theme.fg(color.kind === "unknown" ? "text" : token.name, label) +
-          theme.fg("text", `  ${describeColor(color)}`) +
+          theme.fg("text", `  ${details}`) +
           ambient,
       );
       continue;
@@ -44,7 +45,7 @@ export function formatThemeReport(theme: Theme): string {
     lines.push(
       theme.fg("text", `${label}  [`) +
         swatch +
-        theme.fg("text", `]  ${describeColor(color)}`) +
+        theme.fg("text", `]  ${details}`) +
         ambient,
     );
   }
