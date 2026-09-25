@@ -1,0 +1,27 @@
+{
+  "name": "@ikuma.cloud/pix-usage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "On-demand Claude and Codex subscription usage for Pi Coding Agent",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1"
+  }
+}

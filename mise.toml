@@ -53,7 +53,7 @@ description = "Launch Pi with all local extensions; accepts Pi arguments"
 dir = "{{config_root}}"
 raw_args = true
 raw = true
-run = "pnpm exec pi --no-extensions -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp -e ./packages/pix-bg -e ./packages/pix-statusline"
+run = "pnpm exec pi --no-extensions -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage"
 
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
@@ -84,6 +84,13 @@ run = "pnpm exec pi --no-extensions -e ."
 [tasks."statusline:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-statusline; accepts Pi arguments"
 dir = "{{config_root}}/packages/pix-statusline"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e ."
+
+[tasks."usage:dev"]
+description = "Launch Pi with only @ikuma.cloud/pix-usage; accepts Pi arguments"
+dir = "{{config_root}}/packages/pix-usage"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
