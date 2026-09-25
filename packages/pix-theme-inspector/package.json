@@ -1,7 +1,7 @@
 {
   "name": "@ikuma.cloud/pix-theme-inspector",
   "version": "0.0.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Inspect active semantic theme colors in Pi Coding Agent",
   "keywords": [
