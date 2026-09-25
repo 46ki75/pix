@@ -62,11 +62,11 @@ function statusColor(task: Task): StatusColor {
 }
 
 const statusIcons: Record<StatusColor, string> = {
-  running: "",
-  success: "",
-  error: "",
-  warning: "",
-  muted: "",
+  running: "",
+  success: "",
+  error: "",
+  warning: "󰗖",
+  muted: "󰍷",
 };
 
 function statusIcon(theme: StatusTheme, color: StatusColor): string {

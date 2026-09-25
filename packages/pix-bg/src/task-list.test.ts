@@ -99,7 +99,7 @@ test("task rows and output headers match the compact format", () => {
     h.keys,
   );
   try {
-    const expected = " 434c3aa0b5e2  100-line output test 󰐦 0 󰔛 0.0s";
+    const expected = " 434c3aa0b5e2  100-line output test 󰐦 0 󰔛 0.0s";
     expect.soft(h.text()).toContain(`→ ${expected}`);
     expect
       .soft(stripVTControlCharacters(viewer.render(120)[1] ?? ""))
@@ -133,8 +133,8 @@ test("task names align exit codes and durations like the requested example", () 
     .map(stripVTControlCharacters)
     .filter((line) => line.includes(""));
   expect(rows.map((line) => line.trimEnd())).toEqual([
-    "→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s",
-    "   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s",
+    "→  5f2e2ed719c9  computation-smoke-test 󰐦 0 󰔛 0.1s",
+    "   a2cdec80d7cc  runtime-smoke-test     󰐦 0 󰔛 0.0s",
   ]);
 });
 
@@ -234,7 +234,7 @@ test("columns include offscreen names and refresh without changing selection", (
   const initial = selected();
   for (let i = 0; i < 14; i++) h.view.handleInput("j");
   const last = selected();
-  expect(last).toContain("→  000000000000  computation-smoke-test");
+  expect(last).toContain("→  000000000000  computation-smoke-test");
   expect(column(last)).toBe(column(initial));
   h.tasks([
     ...tasks,
@@ -248,25 +248,25 @@ test("columns include offscreen names and refresh without changing selection", (
     },
   ]);
   const updated = selected();
-  expect(updated).toContain("→  000000000000  computation-smoke-test");
+  expect(updated).toContain("→  000000000000  computation-smoke-test");
   expect(column(updated)).toBeGreaterThan(column(last));
 });
 
 const outcomes: [Outcome, number, string, string][] = [
-  [{ kind: "exited", code: 0 }, 32, "", "󰐦 0"],
-  [{ kind: "exited", code: 3 }, 31, "", "󰐦 3"],
+  [{ kind: "exited", code: 0 }, 32, "", "󰐦 0"],
+  [{ kind: "exited", code: 3 }, 31, "", "󰐦 3"],
   [
     { kind: "signaled", signal: "SIGKILL", code: 137 },
     31,
-    "",
+    "",
     "󰐦 137 (SIGKILL)",
   ],
-  [{ kind: "failed", message: "I/O error" }, 31, "", "failed: I/O error"],
-  [{ kind: "timed_out" }, 33, "", "timed out"],
-  [{ kind: "output_capped" }, 33, "", "output cap reached"],
-  [{ kind: "killed", by: "user" }, 90, "", "killed by user"],
-  [{ kind: "killed", by: "agent" }, 90, "", "killed by agent"],
-  [{ kind: "killed", by: "shutdown" }, 90, "", "killed by shutdown"],
+  [{ kind: "failed", message: "I/O error" }, 31, "", "failed: I/O error"],
+  [{ kind: "timed_out" }, 33, "󰗖", "timed out"],
+  [{ kind: "output_capped" }, 33, "󰗖", "output cap reached"],
+  [{ kind: "killed", by: "user" }, 90, "󰍷", "killed by user"],
+  [{ kind: "killed", by: "agent" }, 90, "󰍷", "killed by agent"],
+  [{ kind: "killed", by: "shutdown" }, 90, "󰍷", "killed by shutdown"],
 ];
 
 test.each(outcomes)(
@@ -349,13 +349,13 @@ test.each(outcomes)(
 
 test("running and stopping icons match the footer blue, including the palette fallback", () => {
   const h = harness();
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.tasks([
     { ...task, status: "stopping", outcome: { kind: "killed", by: "user" } },
   ]);
-  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;2;104;119;159m\x1b[39m");
   h.theme.getColorMode.mockReturnValue("256color");
-  expect(h.row()).toContain("\x1b[38;5;67m\x1b[39m");
+  expect(h.row()).toContain("\x1b[38;5;67m\x1b[39m");
 });
 
 test("top and bottom borders follow the viewport width and current theme without crowding out tasks", () => {
@@ -380,7 +380,7 @@ test("top and bottom borders follow the viewport width and current theme without
   // Keep the selected task visible even when little room remains for borders.
   for (const rows of [3, 4, 6, 8, 9, 10]) {
     h.height(rows);
-    expect(h.text()).toContain("→  abc ");
+    expect(h.text()).toContain("→  abc ");
   }
 });
 
@@ -397,12 +397,12 @@ test.each([1, 40])(
         const title = lines.indexOf("Background tasks");
         const hint = lines.findIndex((line) => line.startsWith(" up k down j"));
         expect(lines[title + 1]).toBe("");
-        expect(lines[title + 2]).toContain(" task-");
+        expect(lines[title + 2]).toContain(" task-");
         expect(hint).toBeGreaterThan(title + 2);
         expect(lines[hint - 1]).toBe("");
         expect(lines[hint - 2]).not.toBe("");
         expect(lines.filter((line) => line === "")).toHaveLength(2);
-        expect(lines.filter((line) => line.includes(" task-"))).toHaveLength(
+        expect(lines.filter((line) => line.includes(" task-"))).toHaveLength(
           Math.min(count, rows - 7),
         );
         expect(lines.length).toBeLessThanOrEqual(rows);
@@ -435,28 +435,28 @@ test("task list omits the duplicate legend and uses the current theme for task i
   const first = h.view.render(120).join("\n");
   for (const label of ["Running", "Succeeded", "Failed", "Timeout", "Killed"])
     expect(h.text()).not.toContain(label);
-  expect(h.row()).toContain("\x1b[32m\x1b[39m");
+  expect(h.row()).toContain("\x1b[32m\x1b[39m");
   h.theme.fg.mockImplementation((_color, text) => `\x1b[35m${text}\x1b[39m`);
   h.view.invalidate();
   const next = h.view.render(120).join("\n");
   expect(next).not.toBe(first);
-  expect(h.row()).toContain("\x1b[35m\x1b[39m \x1b[35mabc");
+  expect(h.row()).toContain("\x1b[35m\x1b[39m \x1b[35mabc");
   expect(next).not.toContain("\x1b[32m");
 });
 
 test("live task changes retain selection by ID and preserve unselected text colors", () => {
   const h = harness([task, { ...task, id: "newer" }]);
-  expect(h.text()).toContain("→  newer ");
-  expect(h.row()).toContain("\x1b[39m \x1b[37mabc ");
+  expect(h.text()).toContain("→  newer ");
+  expect(h.row()).toContain("\x1b[39m \x1b[37mabc ");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→  abc ");
+  expect(h.text()).toContain("→  abc ");
   h.tasks([
     { ...task, status: "finished", outcome: { kind: "exited", code: 3 } },
     { ...task, id: "newer" },
     { ...task, id: "newest" },
   ]);
-  expect(h.text()).toContain("→  abc ");
-  expect(h.row()).toContain("\x1b[31m");
+  expect(h.text()).toContain("→  abc ");
+  expect(h.row()).toContain("\x1b[31m");
   expect(h.row()).toContain("󰐦 3");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
@@ -478,9 +478,9 @@ test("task list remains bounded and navigable after resizing", () => {
   h.height(10);
   h.view.render(80);
   for (let i = 0; i < 35; i++) h.view.handleInput("j");
-  expect(h.text(80)).toContain("→  task-4 ");
+  expect(h.text(80)).toContain("→  task-4 ");
   h.view.handleInput("k");
-  expect(h.text(80)).toContain("→  task-5 ");
+  expect(h.text(80)).toContain("→  task-5 ");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("task-5");
 });
@@ -505,9 +505,9 @@ test.each([
 ])("navigate and select with %j / %j / %j", (down, up, select) => {
   const h = harness([task, { ...task, id: "newer" }]);
   h.view.handleInput(down);
-  expect(h.text()).toContain("→  abc ");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput(up);
-  expect(h.text()).toContain("→  newer ");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput(select);
   expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
   h.view.handleInput(select);
@@ -524,12 +524,12 @@ test("task list follows injected semantic bindings and updates its hints", () =>
   expect(h.text()).toContain(" w s navigate · d select · a cancel");
   for (const key of ["j", "k", "l", "h", "q", "\x1b[B", "\r", "\x1b", "\x03"])
     h.view.handleInput(key);
-  expect(h.text()).toContain("→  newer ");
+  expect(h.text()).toContain("→  newer ");
   expect(h.done).not.toHaveBeenCalled();
   h.view.handleInput("s");
-  expect(h.text()).toContain("→  abc ");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput("w");
-  expect(h.text()).toContain("→  newer ");
+  expect(h.text()).toContain("→  newer ");
 
   h.keys.setUserBindings({
     "tui.select.up": [],
@@ -557,7 +557,7 @@ test("task list follows injected semantic bindings and updates its hints", () =>
   ])
     h.view.handleInput(key);
   expect(h.done).not.toHaveBeenCalled();
-  expect(h.text()).toContain("→  newer ");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput("f");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("newer");
 });
@@ -569,9 +569,9 @@ test("task list uses Pi defaults without implicit letter aliases", () => {
   );
   for (const key of ["j", "k", "l", "h", "q"]) h.view.handleInput(key);
   expect(h.done).not.toHaveBeenCalled();
-  expect(h.text()).toContain("→  newer ");
+  expect(h.text()).toContain("→  newer ");
   h.view.handleInput("\x1b[B");
-  expect(h.text()).toContain("→  abc ");
+  expect(h.text()).toContain("→  abc ");
   h.view.handleInput("\r");
   expect(h.done).toHaveBeenCalledExactlyOnceWith("abc");
 });
@@ -594,7 +594,7 @@ test.each([
       [task, { ...task, id: "middle" }, { ...task, id: "newest" }],
       bindings,
     );
-    expect(h.text()).toContain("→  newest ");
+    expect(h.text()).toContain("→  newest ");
     for (const [key, id] of [
       [up, "abc"],
       [down, "newest"],
@@ -604,12 +604,12 @@ test.each([
       [up, "abc"],
     ]) {
       h.view.handleInput(key ?? "");
-      expect(h.text()).toContain(`→  ${id} `);
+      expect(h.text()).toContain(`→  ${id} `);
     }
     h.keys.setUserBindings({ "tui.select.up": [], "tui.select.down": [] });
     for (const key of [up, down, "\x1b[A", "\x1b[B", "j", "k"]) {
       h.view.handleInput(key);
-      expect(h.text()).toContain("→  abc ");
+      expect(h.text()).toContain("→  abc ");
     }
     expect(h.text()).not.toContain("navigate");
     h.view.dispose();
@@ -629,7 +629,7 @@ test.each([0, 1])(
       "\x1b[106u",
     ]) {
       h.view.handleInput(key);
-      if (count) expect(h.text()).toContain("→  abc ");
+      if (count) expect(h.text()).toContain("→  abc ");
       else expect(h.text()).not.toContain("→");
     }
     h.view.handleInput("\r");
