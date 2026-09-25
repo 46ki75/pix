@@ -1,0 +1,23 @@
+{
+  "name": "@ikuma.cloud/pix-theme-elmethis",
+  "version": "0.0.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "description": "Elmethis dark and light themes for Pi Coding Agent",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "themes"
+  ],
+  "pi": {
+    "themes": [
+      "./themes/*.json"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1"
+  }
+}

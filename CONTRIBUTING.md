@@ -76,6 +76,19 @@ Use `packages/pix-websearch` as a reference for package layout and Pi tool regis
 Use strict TypeScript and explicit type-only imports. Add comments for rationale
 or constraints that would be costly to rediscover.
 
+## Adding a theme package
+
+Use `packages/pix-theme-elmethis` as the reference. Follow the package naming,
+private-development, documentation, and validation conventions above, but declare
+JSON resources through `pi.themes` instead of adding an extension entry point.
+Limit `files` to the theme directory; do not ship tests or personal symlinks.
+
+Keep each JSON `name` unique and aligned with its filename. Add a Vitest project
+and TypeScript configuration for tests, including an isolated Pi package-discovery
+check. Pi is only a development dependency when no runtime code imports it. Add
+an interactive development task when useful, then install dependencies and run
+the shared checks as described above.
+
 ## Git workflow
 
 Work on a short-lived branch and open a pull request targeting `main`.

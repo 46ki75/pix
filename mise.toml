@@ -49,11 +49,11 @@ description = "Check repository formatting, lint, types, and tests"
 depends = ["fmt-check --all-files", "lint --all-files", "typecheck", "test"]
 
 [tasks.dev]
-description = "Launch Pi with all local extensions; accepts Pi arguments"
+description = "Launch Pi with all local extensions and themes; accepts Pi arguments"
 dir = "{{config_root}}"
 raw_args = true
 raw = true
-run = "pnpm exec pi --no-extensions -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector"
+run = "pnpm exec pi --no-extensions -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
 
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
@@ -101,6 +101,13 @@ dir = "{{config_root}}/packages/pix-theme-inspector"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
+
+[tasks."theme-elmethis:dev"]
+description = "Launch Pi with Elmethis themes in automatic light/dark mode; accepts Pi arguments"
+dir = "{{config_root}}/packages/pix-theme-elmethis"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e . --use-theme elmethis-light/elmethis-dark"
 
 [tasks."web:dev"]
 description = "Launch Pi with web search and web fetch"
