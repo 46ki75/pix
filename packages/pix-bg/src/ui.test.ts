@@ -135,7 +135,7 @@ test("indicator appears on first task, counts stopping as running, and retains o
   );
   expect(harness.text().split("\n")).toEqual([
     "──  Background Tasks ".padEnd(100, "─"),
-    "  Running: 2  Succeeded: 1  Failed: 0  Timeout: 0  Killed: 0",
+    "  Running 2  Succeeded 1  Failed 0  Timeout 0  Killed 0",
   ]);
   tasks[0] = {
     ...task,
@@ -149,7 +149,7 @@ test("indicator appears on first task, counts stopping as running, and retains o
   };
   ui.update();
   expect(harness.text().split("\n")[1]).toBe(
-    "  Running: 0  Succeeded: 2  Failed: 0  Timeout: 0  Killed: 1",
+    "  Running 0  Succeeded 2  Failed 0  Timeout 0  Killed 1",
   );
   expect(harness.ui.setWidget).toHaveBeenCalledTimes(1);
   expect(harness.requestRender).toHaveBeenCalled();
@@ -189,13 +189,13 @@ test.each(outcomes)(
       } as unknown as Registry,
       harness.ctx,
     );
-    expect(harness.text()).toContain(`${label}: 1`);
-    expect(harness.text().match(/: \d+/g)?.sort()).toEqual([
-      ": 0",
-      ": 0",
-      ": 0",
-      ": 0",
-      ": 1",
+    expect(harness.text()).toContain(`${label} 1`);
+    expect(harness.text().match(/\d+/g)?.sort()).toEqual([
+      "0",
+      "0",
+      "0",
+      "0",
+      "1",
     ]);
     ui.dispose();
   },
@@ -219,11 +219,11 @@ test("indicator uses blue, current theme tokens, a palette fallback, and bounded
     "\x1b[35m── \x1b[39m\x1b[90m\x1b[39m \x1b[2mBackground Tasks\x1b[39m ",
   );
   for (const [color, icon, label, count] of [
-    ["\x1b[38;2;104;119;159m", "", "Running:", "1"],
-    ["\x1b[32m", "", "Succeeded:", "0"],
-    ["\x1b[31m", "", "Failed:", "0"],
-    ["\x1b[33m", "", "Timeout:", "0"],
-    ["\x1b[90m", "", "Killed:", "0"],
+    ["\x1b[38;2;104;119;159m", "", "Running", "1"],
+    ["\x1b[32m", "", "Succeeded", "0"],
+    ["\x1b[31m", "", "Failed", "0"],
+    ["\x1b[33m", "", "Timeout", "0"],
+    ["\x1b[90m", "", "Killed", "0"],
   ]) {
     expect(harness.ui.theme.fg).toHaveBeenCalledWith("dim", label);
     expect(harness.ui.theme.fg).toHaveBeenCalledWith("text", count);
@@ -437,7 +437,7 @@ test("disposing while the task list is open closes it and registry updates refre
   expect(listText).toContain("Background tasks");
   expect(listText).not.toContain(" Running");
   expect(harness.text()).toContain(
-    "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+    "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
   );
   current = {
     ...task,
@@ -513,7 +513,7 @@ test.each([
     );
     expect(screens[2]).toContain("→ No");
     expect(harness.text().split("\n")[1]).toBe(
-      "  Running: 1  Succeeded: 0  Failed: 0  Timeout: 0  Killed: 0",
+      "  Running 1  Succeeded 0  Failed 0  Timeout 0  Killed 0",
     );
     ui.dispose();
     ui.dispose();
@@ -797,7 +797,7 @@ test.each([9, 10, 12, 24, 40])(
       const text = lines.join("\n");
       expect(text).toContain("transcript");
       expect(text).toContain("Background Tasks");
-      expect(text).toContain("Running: 40");
+      expect(text).toContain("Running 40");
       expect(text).toContain("/tmp");
       expect(text).toContain("no-model");
       // No editor content may be clipped by the surrounding dock.
