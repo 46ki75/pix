@@ -111,7 +111,7 @@ test.each(["tui", "rpc"] as const)(
     expect(getProviderAuth).toHaveBeenCalledExactlyOnceWith("anthropic");
     expect(notify).toHaveBeenCalledExactlyOnceWith(
       expect.stringContaining(
-        " 5-hour 󰓅 12.3%   5h 2026-09-25 05:00:00 (UTC)",
+        " 5-hour 󰓅 12.3%          5h 2026-09-25 05:00:00 (UTC)",
       ),
       "info",
     );
