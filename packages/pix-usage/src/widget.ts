@@ -67,8 +67,8 @@ export function renderUsageWidget(
     theme.fg(color, text) + dim;
   return [
     truncateToWidth(heading + rule, width),
-    ...renderRows(state, formatText, now, width).map((row) =>
-      truncateToWidth(theme.fg("dim", row), width),
+    ...renderRows(state, formatText, now, width - 1).map(
+      (row) => ` ${truncateToWidth(theme.fg("dim", row), width - 1)}`,
     ),
   ];
 }

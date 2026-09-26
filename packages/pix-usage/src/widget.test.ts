@@ -80,8 +80,8 @@ test.each([
     );
     expect(rows).toEqual([
       `── 󱘖 Usage ${"─".repeat(109)}`,
-      `${name} 󱛡 Weekly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
-      `${name}  5-hour 󰓅 12.3%  2h 15m 2026-09-25 02:15:00 (UTC)`,
+      ` ${name} 󱛡 Weekly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
+      ` ${name}  5-hour 󰓅 12.3%  2h 15m 2026-09-25 02:15:00 (UTC)`,
     ]);
     expect(rows.join("\n")).not.toMatch(/checked|fetched/i);
   },
@@ -99,7 +99,7 @@ test.each([
   "chooses window icons by duration (%s seconds), not position or label",
   (windowSeconds, label, icon) => {
     expect(plain(success("codex", [window({ windowSeconds, label })]))[1]).toBe(
-      ` Codex ${icon}${label} 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
+      `  Codex ${icon}${label} 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
     );
   },
 );
@@ -123,7 +123,7 @@ test.each([
 ] as const)("renders reset %s without column padding as %s", (delta, reset) => {
   const resetsAt = delta === null ? null : new Date(NOW + delta).toISOString();
   expect(plain(success("claude", [window({ resetsAt })]))[1]).toBe(
-    ` Claude 󱛡 Weekly 󰓅  93%  ${reset}${resetsAt ? ` ${resetsAt.slice(0, 10)} ${resetsAt.slice(11, 19)} (UTC)` : ""}`,
+    `  Claude 󱛡 Weekly 󰓅  93%  ${reset}${resetsAt ? ` ${resetsAt.slice(0, 10)} ${resetsAt.slice(11, 19)} (UTC)` : ""}`,
   );
 });
 
@@ -138,7 +138,7 @@ test.each([
     const state = success(provider, [
       window({ label, resetsAt: "2026-09-30T22:59:59.123Z" }),
     ]);
-    const compact = `${name} 󱛡 ${label} 󰓅  93%  9h 39m`;
+    const compact = ` ${name} 󱛡 ${label} 󰓅  93%  9h 39m`;
     const full = `${compact} 2026-09-30 22:59:59 (UTC)`;
     const cutoff = visibleWidth(full);
     const theme = makeTheme();
@@ -156,8 +156,8 @@ test.each([
 test("fits reset timestamps independently for each quota row", () => {
   const resetsAt = "2026-09-30T22:59:59Z";
   const now = Date.parse("2026-09-30T13:20:00Z");
-  const short = " Claude 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)";
-  const long = " Claude 󱛡 Sonnet weekly 󰓅  93%  9h 39m";
+  const short = "  Claude 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)";
+  const long = "  Claude 󱛡 Sonnet weekly 󰓅  93%  9h 39m";
   const state = success("claude", [
     window({ resetsAt }),
     window({ label: "Sonnet weekly", resetsAt }),
@@ -175,7 +175,7 @@ test("unknown resets never add an absolute timestamp even with ample space", () 
     stripVTControlCharacters(
       renderUsageWidget(state, 500, makeTheme(), NOW)[1] ?? "",
     ),
-  ).toBe(" Codex 󱛡 Weekly 󰓅  93%  -d --h --m");
+  ).toBe("  Codex 󱛡 Weekly 󰓅  93%  -d --h --m");
 });
 
 test("uses render time rather than fetch time, including the default clock", () => {
@@ -234,7 +234,7 @@ test("matches the local pix-bg divider and restores dim text after each colored 
     `${colors.borderMuted}── ${RESET}${colors.muted}󱘖${RESET} ${colors.dim}Usage${RESET} ${colors.borderMuted}${"─".repeat(69)}${RESET}`,
   );
   expect(row).toBe(
-    `${colors.dim}${colors.accent}${RESET}${colors.dim} Codex ${colors.text}󱛡${RESET}${colors.dim} Weekly ${colors.text}󰓅${RESET}${colors.dim} ${colors.error} 93%${RESET}${colors.dim} ${colors.text}${RESET}${colors.dim} 3d  9h 47m 2026-09-28 09:47:00 (UTC)${RESET}`,
+    ` ${colors.dim}${colors.accent}${RESET}${colors.dim} Codex ${colors.text}󱛡${RESET}${colors.dim} Weekly ${colors.text}󰓅${RESET}${colors.dim} ${colors.error} 93%${RESET}${colors.dim} ${colors.text}${RESET}${colors.dim} 3d  9h 47m 2026-09-28 09:47:00 (UTC)${RESET}`,
   );
 });
 
@@ -287,7 +287,7 @@ test.each(otherStates)(
     const theme = makeTheme();
     const rows = renderUsageWidget(state, 120, theme, NOW);
     expect(rows).toHaveLength(2);
-    expect(stripVTControlCharacters(rows[1] ?? "")).toBe(text);
+    expect(stripVTControlCharacters(rows[1] ?? "")).toBe(` ${text}`);
     expect(rows.join("\n")).not.toMatch(/0%|󰓅|/);
     expect(
       theme.fg.mock.calls.filter(
@@ -316,6 +316,7 @@ test.each([
       const rows = renderUsageWidget(state, width, theme, NOW);
       expect(rows).toHaveLength(2);
       expect(visibleWidth(rows[0] ?? "")).toBe(width);
+      expect(stripVTControlCharacters(rows[1] ?? "")).toMatch(/^ (?:\S|$)/u);
       for (const row of rows) {
         expect(visibleWidth(row)).toBeLessThanOrEqual(width);
         const text = stripVTControlCharacters(row);

@@ -96,7 +96,7 @@ A compact widget appears above the editor by default in terminal sessions:
 
 ```text
 ── 󱘖 Usage ─────────────────────────────────────────────────────────────────────
- Codex 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)
+  Codex 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)
 ```
 
 Run `/usage toggle` to hide it, or again to show it. This choice applies only to
@@ -133,8 +133,9 @@ when the entire row fits. On narrower terminals, the absolute timestamp is omitt
 as a unit, keeping the countdown. Each row adapts independently when resized;
 unknown resets never add a date.
 
-The divider fills the available terminal width. If a row is still too long without
-its timestamp, it is truncated. The widget uses the current theme on every render,
+The divider fills the available terminal width; content rows have a one-space
+indent. If a row is still too long without its timestamp, it is truncated. The
+widget uses the current theme on every render,
 including after an idle theme change. It requires terminal mode; RPC users can
 still use the report commands.
 
