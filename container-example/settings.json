@@ -1,0 +1,18 @@
+{
+  "cacheWarming": "streaming",
+  "compaction": {
+    "enabled": true
+  },
+  "packages": [
+    "npm:@ikuma.cloud/pix-webfetch",
+    "npm:@ikuma.cloud/pix-websearch",
+    "npm:@ikuma.cloud/pix-mcp",
+    "npm:@ikuma.cloud/pix-bg",
+    "npm:@ikuma.cloud/pix-statusline",
+    "npm:@ikuma.cloud/pix-usage",
+    "npm:@ikuma.cloud/pix-theme-inspector",
+    "npm:@ikuma.cloud/pix-theme-elmethis"
+  ],
+  "theme": "elmethis-dark",
+  "tuiMode": "fullscreen"
+}
