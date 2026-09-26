@@ -89,10 +89,12 @@ footer with model details, cache-hit rate, context utilization, and
 Git-aware directory segments. Run `mise run statusline:dev` to try it or
 `mise run test --project pix-statusline` for its tests.
 
-[`@ikuma.cloud/pix-usage`](packages/pix-usage/README.md) adds an on-demand `/usage`
-command for Claude and Codex subscription quotas using Pi-managed OAuth. It does
-not replace the footer or poll in the background. Run `mise run usage:dev` to try
-it or `mise run test --project pix-usage` for its isolated tests.
+[`@ikuma.cloud/pix-usage`](packages/pix-usage/README.md) adds on-demand `/usage`
+reports for Claude and Codex subscription quotas using Pi-managed OAuth.
+A current-provider widget appears by default in terminal sessions and refreshes
+while visible, without replacing the footer. `/usage toggle` hides or shows it.
+Run `mise run usage:dev` to try it or `mise run test --project pix-usage` for its
+isolated tests.
 
 [`@ikuma.cloud/pix-theme-inspector`](packages/pix-theme-inspector/README.md) adds
 `/theme-colors` to inspect the active theme's semantic foreground and background

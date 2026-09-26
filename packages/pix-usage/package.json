@@ -5,7 +5,7 @@
     "access": "public"
   },
   "type": "module",
-  "description": "On-demand Claude and Codex subscription usage for Pi Coding Agent",
+  "description": "Claude and Codex subscription usage reports and a widget for Pi Coding Agent",
   "keywords": [
     "pi-package"
   ],

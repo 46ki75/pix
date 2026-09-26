@@ -90,7 +90,7 @@ test("Pi loads the package without starting network or registering tools", async
     const extension = loaded.extensions[0];
     expect(extension?.commands.has("usage")).toBe(true);
     expect(extension?.tools.size).toBe(0);
-    expect(extension?.handlers.has("session_start")).toBe(false);
+    expect(extension?.handlers.has("session_start")).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -302,7 +302,7 @@ test("validates arguments and completes provider names", async () => {
   const { command, ctx, getProviderAuth, notify } = harness();
   await command.handler("claude codex", ctx);
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    "Usage: /usage [claude|codex|all]",
+    "Usage: /usage [claude|codex|all|toggle]",
     "warning",
   );
   expect(getProviderAuth).not.toHaveBeenCalled();
