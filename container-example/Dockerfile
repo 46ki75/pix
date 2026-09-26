@@ -18,4 +18,6 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.87.1 \
 
 COPY --chown=vscode:vscode settings.json /home/vscode/.pi/agent/settings.json
 
+RUN pi update --extensions
+
 CMD ["pi"]
