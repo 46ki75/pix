@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import {
   discoverAndLoadExtensions,
   type ExtensionAPI,
@@ -159,8 +160,8 @@ test.each([
     const accent = "\u001b[38;5;14m";
     const text = "\u001b[38;5;15m";
     const border = "\u001b[38;5;6m";
-    const ambient = warning ? "\u001b[38;5;11m" : dim;
-    const width = warning ? 87 : 30;
+    const ambient = dim;
+    const width = warning ? 80 : 30;
     const header = `── 󱘖 Usage ${"─".repeat(width - 11)}`;
     const footer = "─".repeat(width);
     fg.mockImplementation(
@@ -185,7 +186,7 @@ test.each([
 
     await command.handler(warning ? "all" : "claude", ctx);
     const message = notify.mock.calls[0]?.[0];
-    expect(notify.mock.calls[0]?.[1]).toBe(warning ? "warning" : "info");
+    expect(notify.mock.calls[0]?.[1]).toBe("info");
     if (mode === "rpc") {
       expect(fg).not.toHaveBeenCalled();
       expect(getFgAnsi).not.toHaveBeenCalled();
@@ -205,11 +206,19 @@ test.each([
         ["text", "󱛡"],
         ["text", "󰓅"],
         ["text", ""],
-        ...(warning ? [["accent", ""]] : []),
+        ...(warning
+          ? [
+              ["accent", ""],
+              [
+                "warning",
+                "No Pi subscription login; use /login openai-codex with OAuth (not an API key).",
+              ],
+            ]
+          : []),
         ["border", header],
         ["border", footer],
       ]);
-      expect(getFgAnsi).toHaveBeenCalledWith(warning ? "warning" : "dim");
+      expect(getFgAnsi).toHaveBeenCalledWith("dim");
       expect(
         message?.startsWith(`${border}${header}\u001b[39m${ambient}\n\n`),
       ).toBe(true);
@@ -237,7 +246,7 @@ test.each([
   async ({ mode, warning }) => {
     const { command, ctx, notify, fg, getFgAnsi, getProviderAuth } =
       harness(mode);
-    const ambient = warning ? "\u001b[38;5;11m" : "\u001b[38;5;8m";
+    const ambient = "\u001b[38;5;8m";
     fg.mockImplementation(
       (color, text) =>
         `\u001b[${color === "warning" ? 33 : color === "error" ? 31 : 37}m${text}\u001b[39m`,
@@ -260,7 +269,7 @@ test.each([
 
     await command.handler(warning ? "all" : "claude", ctx);
     const message = notify.mock.calls[0]?.[0];
-    expect(notify.mock.calls[0]?.[1]).toBe(warning ? "warning" : "info");
+    expect(notify.mock.calls[0]?.[1]).toBe("info");
     if (mode === "rpc") {
       expect(fg).not.toHaveBeenCalled();
       expect(getFgAnsi).not.toHaveBeenCalled();
@@ -270,7 +279,7 @@ test.each([
     } else {
       expect(fg).toHaveBeenCalledWith("warning", " 51%");
       expect(fg).toHaveBeenCalledWith("error", " 76%");
-      expect(getFgAnsi).toHaveBeenCalledWith(warning ? "warning" : "dim");
+      expect(getFgAnsi).toHaveBeenCalledWith("dim");
       expect(message).toContain(`\u001b[33m 51%\u001b[39m${ambient} `);
       expect(message).toContain(`\u001b[31m 76%\u001b[39m${ambient} `);
     }
@@ -327,9 +336,83 @@ test.each(["", "all"])(
     expect(notify).toHaveBeenCalledOnce();
     expect(notify.mock.calls[0]?.[0]).toContain("󱛡 Weekly 󰓅  75%  -d --h --m");
     expect(notify.mock.calls[0]?.[0]).toContain(
-      " Codex: No Pi subscription login",
+      " Codex\n\n  No Pi subscription login",
     );
-    expect(notify.mock.calls[0]?.[1]).toBe("warning");
+    expect(notify.mock.calls[0]?.[1]).toBe("info");
+  },
+);
+
+test.each(
+  (["tui", "rpc"] as const).flatMap((mode) =>
+    (["missing login", "expired login", "refresh failure"] as const).flatMap(
+      (failure) => [false, true].map((mixed) => ({ mode, failure, mixed })),
+    ),
+  ),
+)(
+  "keeps the report neutral in $mode with $failure (mixed results: $mixed)",
+  async ({ mode, failure, mixed }) => {
+    const { command, ctx, notify, fg, getFgAnsi, getProviderAuth } =
+      harness(mode);
+    const dim = "\u001b[38;5;8m";
+    fg.mockImplementation(
+      (color, text) =>
+        `\u001b[${color === "warning" ? 33 : color === "error" ? 31 : 37}m${text}\u001b[39m`,
+    );
+    getFgAnsi.mockReturnValue(dim);
+    const payload = Buffer.from(
+      JSON.stringify({
+        "https://api.openai.com/auth": { chatgpt_account_id: "test-account" },
+      }),
+    ).toString("base64url");
+    getProviderAuth.mockImplementation(async (provider) => {
+      if (provider === "openai-codex")
+        return { source: "OAuth", auth: { apiKey: `header.${payload}.sig` } };
+      if (failure === "missing login") return undefined;
+      if (failure === "refresh failure") throw new Error("private details");
+      return { source: "OAuth", auth: { apiKey: "expired-token" } };
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof globalThis.fetch>().mockImplementation(async (url) =>
+        String(url).includes("anthropic.com")
+          ? new Response(null, { status: 401 })
+          : Response.json({
+              rate_limit: {
+                primary_window: {
+                  used_percent: 90,
+                  limit_window_seconds: 604800,
+                },
+              },
+            }),
+      ),
+    );
+
+    await command.handler(mixed ? "all" : "claude", ctx);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(expect.any(String), "info");
+    const message = notify.mock.calls[0]?.[0] ?? "";
+    const plain = stripVTControlCharacters(message);
+    expect(plain).toMatch(/ Claude\n\n {2}.+/);
+    expect(plain).not.toContain("Warning:");
+    expect(plain).not.toContain("private details");
+    const lines = plain.split("\n");
+    expect(visibleWidth(lines[0] ?? "")).toBe(visibleWidth(lines.at(-1) ?? ""));
+    if (mixed) expect(plain).toContain(" Codex\n\n  󱛡 Weekly 󰓅  90% ");
+    if (mode === "tui") {
+      expect(fg).toHaveBeenCalledWith(
+        failure === "missing login" ? "warning" : "error",
+        expect.stringMatching(
+          /No Pi subscription login|Usage access denied|Could not resolve Pi credentials/,
+        ),
+      );
+      expect(getFgAnsi.mock.calls.every(([color]) => color === "dim")).toBe(
+        true,
+      );
+      if (mixed) expect(message).toContain(`\u001b[31m 90%\u001b[39m${dim} `);
+    } else {
+      expect(message).toBe(plain);
+      expect(fg).not.toHaveBeenCalled();
+      expect(getFgAnsi).not.toHaveBeenCalled();
+    }
   },
 );
 
@@ -405,14 +488,14 @@ test("the command timeout bounds auth lookup and releases the in-flight guard", 
   timeout.abort();
   await pending;
   expect(notify).toHaveBeenLastCalledWith(
-    `── 󱘖 Usage ${"─".repeat(36)}\n\n Claude: Usage request cancelled or timed out.\n\n${"─".repeat(47)}`,
-    "warning",
+    `── 󱘖 Usage ${"─".repeat(28)}\n\n Claude\n\n  Usage request cancelled or timed out.\n\n${"─".repeat(39)}`,
+    "info",
   );
   getProviderAuth.mockResolvedValue(undefined);
   await command.handler("claude", ctx);
   expect(getProviderAuth).toHaveBeenCalledTimes(2);
   expect(notify).toHaveBeenLastCalledWith(
     expect.stringContaining("No Pi subscription login"),
-    "warning",
+    "info",
   );
 });

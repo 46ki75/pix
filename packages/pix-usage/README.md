@@ -54,9 +54,12 @@ remaining until each reset:
 
 Report dividers match the longest visible content line, with a minimum width for
 the `󱘖 Usage` heading. Their width does not depend on terminal size; Pi may wrap
-long reports on narrow terminals. If any provider is unavailable or fails, the
-report is a warning notification, and Pi's TUI adds its native `Warning: ` prefix
-before the header.
+long reports on narrow terminals. Reports always use an informational notification,
+so provider failures do not add a `Warning: ` prefix or recolor the whole report.
+Missing-login and error messages appear on an indented line beneath the provider
+heading, like quota rows. In terminal mode, missing logins use `warning` and failed
+requests or credential resolution use `error`; other providers keep their normal
+colors.
 
 Percentage values are right-aligned to a minimum width of three characters,
 without truncating longer values. In terminal mode, percentages above 75% use the
@@ -79,7 +82,7 @@ weekly limits), `󰓅` for usage, `` for resets, and `󱘖` for the report ti
 Other or unknown durations have no window icon. In terminal mode, provider icons
 use the active theme's `accent` color, and window, usage, and reset icons use `text`.
 The dividers enclose all provider sections and use `border`; other text keeps Pi's
-notification color. RPC reports contain no ANSI colors.
+informational notification color (`dim`). RPC reports contain no ANSI colors.
 Icons are added only when formatting notifications; the reusable fetchers return
 plain labels.
 

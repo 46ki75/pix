@@ -52,29 +52,21 @@ export default function subscriptionUsage(pi: ExtensionAPI): void {
         );
         // Shutdown/reload invalidates ctx. Never deliver old results to a new session.
         if (controller.signal.aborted || active !== controller) return;
-        const notificationType = results.some(
-          (result) => result.status !== "ok",
-        )
-          ? "warning"
-          : "info";
         const theme = ctx.mode === "tui" ? ctx.ui.theme : undefined;
+        // Keep the frame neutral: warning notifications prepend "Warning: " and
+        // tint the whole report. Provider failures are styled inside their sections.
         ctx.ui.notify(
           formatUsageReport(
             results,
             theme
               ? (color, text) => {
-                  // Pi wraps notifications in dim/warning. fg() resets to the terminal
-                  // default, so restore that surrounding color after each styled span.
-                  return (
-                    theme.fg(color, text) +
-                    theme.getFgAnsi(
-                      notificationType === "info" ? "dim" : "warning",
-                    )
-                  );
+                  // fg() resets to the terminal default; restore Pi's info color
+                  // after each span so a provider's severity cannot leak into others.
+                  return theme.fg(color, text) + theme.getFgAnsi("dim");
                 }
               : undefined,
           ),
-          notificationType,
+          "info",
         );
       } finally {
         if (active === controller) active = undefined;

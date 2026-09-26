@@ -40,9 +40,12 @@ export function formatUsageReport(
         result.provider === "claude"
           ? `${formatText("accent", "")} Claude`
           : `${formatText("accent", "")} Codex`;
-      if (result.status !== "ok") return `${name}: ${result.message}`;
+      if (result.status !== "ok") {
+        const color = result.status === "unavailable" ? "warning" : "error";
+        return `${name}\n\n  ${formatText(color, result.message)}`;
+      }
       if (result.usage.windows.length === 0)
-        return `${name}: No quota windows reported.`;
+        return `${name}\n\n  No quota windows reported.`;
       const rows = result.usage.windows.map((window) => {
         // Large finite numbers are already integers; don't overflow them by scaling.
         const percent = String(

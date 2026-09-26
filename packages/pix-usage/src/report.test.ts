@@ -19,9 +19,9 @@ test.each(
   (
     [
       ["", 12],
-      ["No login.", 19],
-      ["認証", 14],
-      ["x".repeat(90), 100],
+      ["No login.", 12],
+      ["認証".repeat(4), 18],
+      ["x".repeat(90), 92],
     ] as const
   ).flatMap(([message, width]) =>
     [false, true].map((themed) => ({ message, width, themed })),
@@ -38,7 +38,7 @@ test.each(
     expect(visibleWidth(lines[0] ?? "")).toBe(width);
     expect(visibleWidth(lines.at(-1) ?? "")).toBe(width);
     expect(stripVTControlCharacters(report)).toBe(
-      `── 󱘖 Usage ${"─".repeat(width - 11)}\n\n Claude: ${message}\n\n${"─".repeat(width)}`,
+      `── 󱘖 Usage ${"─".repeat(width - 11)}\n\n Claude\n\n  ${message}\n\n${"─".repeat(width)}`,
     );
   },
 );
@@ -53,7 +53,7 @@ test.each(["claude", "codex"] as const)(
         message: provider === longest ? "x".repeat(30) : "Short.",
       })),
     );
-    const width = longest === "claude" ? 40 : 39;
+    const width = 32;
     const lines = report.split("\n");
     expect(lines[0]).toBe(`── 󱘖 Usage ${"─".repeat(width - 11)}`);
     expect(lines.at(-1)).toBe("─".repeat(width));
@@ -323,9 +323,56 @@ test("empty quotas and unavailable providers are not displayed as zero usage", (
       },
     ]),
   ).toBe(
-    " Claude: No quota windows reported.\n\n Codex: No subscription login.",
+    " Claude\n\n  No quota windows reported.\n\n Codex\n\n  No subscription login.",
   );
 });
+
+test.each([
+  ["unavailable", "warning"],
+  ["error", "error"],
+] as const)(
+  "keeps %s details below the heading and colors only the message",
+  (status, color) => {
+    const formatText = vi.fn(
+      (token: string, text: string) => `<${token}>${text}</${token}>`,
+    );
+    const body = reportBody(
+      [
+        { provider: "claude", status, message: "Sign in again." },
+        {
+          provider: "codex",
+          status: "ok",
+          usage: {
+            provider: "codex",
+            fetchedAt: new Date(NOW).toISOString(),
+            windows: [
+              {
+                id: "weekly",
+                label: "Weekly",
+                usedPercent: 90,
+                resetsAt: null,
+                windowSeconds: 604800,
+              },
+            ],
+          },
+        },
+      ],
+      formatText,
+      NOW,
+    );
+    expect(body).toBe(
+      `<accent></accent> Claude\n\n  <${color}>Sign in again.</${color}>\n\n<accent></accent> Codex\n\n  <text>󱛡</text> Weekly <text>󰓅</text> <error> 90%</error> <text></text> -d --h --m`,
+    );
+    expect(
+      formatText.mock.calls.filter(
+        ([token]) => token === "warning" || token === "error",
+      ),
+    ).toEqual([
+      [color, "Sign in again."],
+      ["error", " 90%"],
+    ]);
+  },
+);
 
 test("safe errors are labeled by provider", () => {
   expect(
@@ -336,7 +383,7 @@ test("safe errors are labeled by provider", () => {
         message: "Usage request timed out.",
       },
     ]),
-  ).toBe(" Codex: Usage request timed out.");
+  ).toBe(" Codex\n\n  Usage request timed out.");
 });
 
 test.each([
