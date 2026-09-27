@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -166,6 +166,7 @@ async function setup(
   const notify = vi.spyOn(ui, "notify");
   const custom = vi.spyOn(ui, "custom");
   const inputDialog = vi.spyOn(ui, "input");
+  const setEditorText = vi.spyOn(ui, "setEditorText");
   const setStatus = vi.spyOn(ui, "setStatus");
   const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
   const hasUI = options.mode === "tui" || options.mode === "rpc";
@@ -300,6 +301,7 @@ async function setup(
     notify,
     custom,
     inputDialog,
+    setEditorText,
     setStatus,
     confirm,
     flags: resourceLoader
@@ -368,9 +370,15 @@ test("lists and runs user-selected MCP prompts through one stable command", asyn
   expect(sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
-test("opens a native TUI picker and collects prompt arguments", async () => {
-  const { prompt, custom, inputDialog, setStatus, sendUserMessage } =
-    await setup({ mode: "tui" });
+test("opens a native TUI picker and stages the selected prompt for editing", async () => {
+  const {
+    prompt,
+    custom,
+    inputDialog,
+    setEditorText,
+    setStatus,
+    sendUserMessage,
+  } = await setup({ mode: "tui" });
   custom.mockResolvedValue(promptKey("fixture", "review"));
   inputDialog.mockResolvedValueOnce("the API").mockResolvedValueOnce("concise");
 
@@ -381,20 +389,37 @@ test("opens a native TUI picker and collects prompt arguments", async () => {
     "topic (required)",
     "tone (optional)",
   ]);
-  expect(sendUserMessage).toHaveBeenCalledWith(
-    [
-      {
-        type: "text",
-        text: expect.stringContaining("Review the API in a concise tone."),
-      },
-    ],
-    undefined,
+  expect(setEditorText).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining("Review the API in a concise tone."),
   );
+  expect(sendUserMessage).not.toHaveBeenCalled();
   expect(setStatus).toHaveBeenCalledWith(
     "mcp-prompt",
     "Loading fixture / review…",
   );
   expect(setStatus).toHaveBeenLastCalledWith("mcp-prompt", undefined);
+});
+
+test("keeps editable prompt images private until session shutdown", async () => {
+  const { session, prompt, custom, inputDialog, setEditorText } = await setup({
+    mode: "tui",
+  });
+  custom.mockResolvedValue(promptKey("fixture", "review"));
+  inputDialog.mockResolvedValueOnce("image").mockResolvedValueOnce("");
+
+  await prompt("");
+
+  const draft = setEditorText.mock.calls[0]?.[0];
+  const path = draft?.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing editable image reference");
+  expect((await stat(path)).mode & 0o777).toBe(0o600);
+
+  await session.extensionRunner.emit({
+    type: "session_shutdown",
+    reason: "quit",
+  });
+  await expect(stat(path)).rejects.toThrow();
 });
 
 test.each([

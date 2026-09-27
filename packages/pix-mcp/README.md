@@ -274,9 +274,12 @@ commands behind:
 In TUI mode, `/mcp-prompt` without arguments opens a native prompt selector
 that shows the focused prompt's title and description, followed by native input
 dialogs. Required and optional arguments are requested in declaration order;
-leaving an optional input empty omits it. Escape cancels without retrieving
-the prompt. The explicit `list` and `run` forms remain available in every mode and
-can pass an intentional empty value as `name=`.
+leaving an optional input empty omits it. The rendered prompt is placed in Pi's
+editor so you can review or modify it before sending. Image blocks are stored in
+private temporary files and inserted as `@` references. Escape cancels without
+retrieving the prompt. The explicit `list` and `run` forms remain available in
+every mode; `run` submits immediately and can pass an intentional empty value as
+`name=`.
 
 Arguments use shell-style quoting. Positional values map to the prompt's declared
 argument order; `name=value` selects a declared argument explicitly. Quote or escape

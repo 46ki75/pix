@@ -1,7 +1,12 @@
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { expect, test } from "vitest";
-import { formatContent, formatResult, MAX_TEXT_BYTES } from "./output.ts";
+import {
+  formatContent,
+  formatEditableContent,
+  formatResult,
+  MAX_TEXT_BYTES,
+} from "./output.ts";
 
 test("keeps text, supported images and small structured results", async () => {
   const response = await formatResult({
@@ -76,6 +81,26 @@ test("ordered content reuses the byte-bounded preview around images", async () =
   } finally {
     await rm(dirname(path), { recursive: true, force: true });
   }
+});
+
+test("materializes prompt images as private references in editable content", async () => {
+  const editable = await formatEditableContent([
+    { type: "text", text: "Before" },
+    { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+    { type: "text", text: "\n\nAfter" },
+  ]);
+  const path = editable.text.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing image reference");
+  try {
+    expect(editable.text).toBe(`Before\n\n@"${path}"\n\nAfter`);
+    expect(await readFile(path, "utf8")).toBe("hello");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
+  } finally {
+    await editable.cleanup();
+  }
+  await expect(stat(dirname(path))).rejects.toThrow();
 });
 
 test("spills oversized output, large details and unsupported content without silently dropping it", async () => {

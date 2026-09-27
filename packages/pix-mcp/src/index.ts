@@ -9,7 +9,7 @@ import type { Prompt, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
-import { formatResult } from "./output.ts";
+import { formatEditableContent, formatResult } from "./output.ts";
 import { pickPrompt } from "./prompt-picker.ts";
 import {
   formatPromptList,
@@ -44,6 +44,7 @@ interface State {
   connections: Map<string, Connection>;
   rejected: Map<string, Rejections>;
   configIssues: ConfigIssue[];
+  promptDraftCleanups: Set<() => Promise<void>>;
 }
 
 const discoveryParameters = Type.Object(
@@ -85,10 +86,10 @@ export default function mcp(pi: ExtensionAPI) {
         const owner = state;
         if (!owner) throw new Error("MCP session has not started.");
         current(owner);
-        const command =
-          ctx.mode === "tui" && input.trim() === ""
-            ? await choosePrompt(owner, ctx)
-            : parsePromptCommand(input);
+        const editBeforeSending = ctx.mode === "tui" && input.trim() === "";
+        const command = editBeforeSending
+          ? await choosePrompt(owner, ctx)
+          : parsePromptCommand(input);
         if (!command) return;
         if (command.action === "list") {
           if (
@@ -151,10 +152,23 @@ export default function mcp(pi: ExtensionAPI) {
           );
           current(owner);
           ctx.signal?.throwIfAborted();
-          pi.sendUserMessage(
-            formatted.content,
-            ctx.isIdle() ? undefined : { deliverAs: "followUp" },
-          );
+          if (editBeforeSending) {
+            const draft = await formatEditableContent(formatted.content);
+            try {
+              current(owner);
+              ctx.signal?.throwIfAborted();
+              ctx.ui.setEditorText(draft.text);
+              owner.promptDraftCleanups.add(draft.cleanup);
+            } catch (error) {
+              await draft.cleanup();
+              throw error;
+            }
+          } else {
+            pi.sendUserMessage(
+              formatted.content,
+              ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+            );
+          }
         } finally {
           if (ctx.mode === "tui") ctx.ui.setStatus("mcp-prompt", undefined);
         }
@@ -513,9 +527,14 @@ export default function mcp(pi: ExtensionAPI) {
     owner.alive = false;
     state = undefined;
     deactivate(owned);
-    await Promise.all(
-      [...owner.connections.values()].map((connection) => connection.close()),
-    );
+    const promptDraftCleanups = [...owner.promptDraftCleanups];
+    owner.promptDraftCleanups.clear();
+    await Promise.all([
+      ...[...owner.connections.values()].map((connection) =>
+        connection.close(),
+      ),
+      ...promptDraftCleanups.map((cleanup) => cleanup()),
+    ]);
   }
 
   async function start(ctx: ExtensionContext) {
@@ -529,6 +548,7 @@ export default function mcp(pi: ExtensionAPI) {
       connections: new Map(),
       rejected: new Map(),
       configIssues: [],
+      promptDraftCleanups: new Set(),
     };
     state = owner;
     try {

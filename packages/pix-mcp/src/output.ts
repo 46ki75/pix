@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
@@ -133,6 +133,53 @@ export async function formatContent(
         ? { structuredContent: structured }
         : {}),
       ...(largeDetails ? { structuredContentOmitted: true } : {}),
+    },
+  };
+}
+
+const imageExtensions: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+export async function formatEditableContent(
+  content: (TextContent | ImageContent)[],
+): Promise<{ text: string; cleanup: () => Promise<void> }> {
+  let text = "";
+  let imageDirectory: string | undefined;
+  let imageIndex = 0;
+  try {
+    for (const block of content) {
+      if (block.type === "text") {
+        text += block.text;
+        continue;
+      }
+      imageDirectory ??= await mkdtemp(join(tmpdir(), "pix-mcp-prompt-"));
+      const extension = imageExtensions[block.mimeType] ?? "img";
+      const path = join(
+        imageDirectory,
+        `prompt-image-${++imageIndex}.${extension}`,
+      );
+      await writeFile(path, Buffer.from(block.data, "base64"), { mode: 0o600 });
+      const separator = text.endsWith("\n\n")
+        ? ""
+        : text.endsWith("\n")
+          ? "\n"
+          : "\n\n";
+      text += `${separator}@${JSON.stringify(path.replaceAll("\\", "/"))}`;
+    }
+  } catch (error) {
+    if (imageDirectory)
+      await rm(imageDirectory, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    text,
+    cleanup: async () => {
+      if (imageDirectory)
+        await rm(imageDirectory, { recursive: true, force: true });
     },
   };
 }
