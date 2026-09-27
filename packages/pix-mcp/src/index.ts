@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Prompt, Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -16,6 +17,8 @@ import {
   promptCompletions,
   promptKey,
   resolvePromptArguments,
+  type PromptArgumentToken,
+  type PromptCommand,
   type PromptEntry,
 } from "./prompts.ts";
 import { prepareSchema } from "./schema.ts";
@@ -73,7 +76,7 @@ export default function mcp(pi: ExtensionAPI) {
       "Read this MCP config file for this session (default: .mcp.json).",
   });
   pi.registerCommand("mcp-prompt", {
-    description: "List or run a user-selected MCP prompt",
+    description: "Select, list, or run a user-controlled MCP prompt",
     getArgumentCompletions: (prefix) =>
       promptCompletions(prefix, [...(state?.prompts.values() ?? [])]),
     async handler(input, ctx) {
@@ -81,7 +84,11 @@ export default function mcp(pi: ExtensionAPI) {
         const owner = state;
         if (!owner) throw new Error("MCP session has not started.");
         current(owner);
-        const command = parsePromptCommand(input);
+        const command =
+          ctx.mode === "tui" && input.trim() === ""
+            ? await choosePrompt(owner, ctx)
+            : parsePromptCommand(input);
+        if (!command) return;
         if (command.action === "list") {
           if (
             command.server &&
@@ -124,23 +131,32 @@ export default function mcp(pi: ExtensionAPI) {
           item.prompt,
           command.argumentTokens,
         );
-        const result = await connection.getPrompt(
-          item.prompt.name,
-          args,
-          ctx.signal,
-        );
-        current(owner);
-        const formatted = await formatPromptResult(
-          result,
-          item.server,
-          item.prompt.name,
-        );
-        current(owner);
-        ctx.signal?.throwIfAborted();
-        pi.sendUserMessage(
-          formatted.content,
-          ctx.isIdle() ? undefined : { deliverAs: "followUp" },
-        );
+        if (ctx.mode === "tui")
+          ctx.ui.setStatus(
+            "mcp-prompt",
+            `Loading ${item.server} / ${item.prompt.name}…`,
+          );
+        try {
+          const result = await connection.getPrompt(
+            item.prompt.name,
+            args,
+            ctx.signal,
+          );
+          current(owner);
+          const formatted = await formatPromptResult(
+            result,
+            item.server,
+            item.prompt.name,
+          );
+          current(owner);
+          ctx.signal?.throwIfAborted();
+          pi.sendUserMessage(
+            formatted.content,
+            ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+          );
+        } finally {
+          if (ctx.mode === "tui") ctx.ui.setStatus("mcp-prompt", undefined);
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "MCP prompt failed.";
@@ -149,6 +165,68 @@ export default function mcp(pi: ExtensionAPI) {
       }
     },
   });
+
+  async function choosePrompt(
+    owner: State,
+    ctx: ExtensionCommandContext,
+  ): Promise<PromptCommand | undefined> {
+    const entries = [...owner.prompts.values()].sort(
+      (a, b) =>
+        a.server.localeCompare(b.server, "en") ||
+        a.prompt.name.localeCompare(b.prompt.name, "en"),
+    );
+    if (entries.length === 0) {
+      ctx.ui.notify("No MCP prompts are available.", "warning");
+      return;
+    }
+
+    const options = entries.map(
+      (item) => `${item.server} / ${item.prompt.name}`,
+    );
+    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
+    const selected = await ctx.ui.select(
+      "Select MCP prompt",
+      options,
+      dialogOptions,
+    );
+    if (selected === undefined) return;
+    ctx.signal?.throwIfAborted();
+
+    const index = options.indexOf(selected);
+    const item = entries[index];
+    if (!item) throw new Error("Unknown prompt selection.");
+    const key = promptKey(item.server, item.prompt.name);
+    const ensureCurrent = () => {
+      current(owner);
+      if (owner.prompts.get(key) !== item)
+        throw new Error("MCP prompt catalog changed. Open the picker again.");
+    };
+    ensureCurrent();
+
+    const argumentTokens: PromptArgumentToken[] = [];
+    for (const argument of item.prompt.arguments ?? []) {
+      const value = await ctx.ui.input(
+        `${argument.name} (${argument.required ? "required" : "optional"})`,
+        argument.required ? "Enter a value" : "Leave empty to omit",
+        dialogOptions,
+      );
+      if (value === undefined) return;
+      ctx.signal?.throwIfAborted();
+      ensureCurrent();
+      if (argument.required || value !== "")
+        argumentTokens.push({
+          value: `${argument.name}=${value}`,
+          separator: argument.name.length,
+        });
+    }
+
+    return {
+      action: "run",
+      server: item.server,
+      name: item.prompt.name,
+      argumentTokens,
+    };
+  }
 
   function deactivate(names: Iterable<string>) {
     const removed = new Set(names);

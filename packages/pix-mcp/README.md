@@ -266,9 +266,16 @@ the stable `/mcp-prompt` command so catalog changes do not leave stale slash
 commands behind:
 
 ```text
+/mcp-prompt
 /mcp-prompt list [server]
 /mcp-prompt run <server> <prompt> [name=value ...]
 ```
+
+In TUI mode, `/mcp-prompt` without arguments opens Pi's native prompt selector
+and input dialogs. Required and optional arguments are requested in declaration
+order; leaving an optional input empty omits it. Escape cancels without retrieving
+the prompt. The explicit `list` and `run` forms remain available in every mode and
+can pass an intentional empty value as `name=`.
 
 Arguments use shell-style quoting. Positional values map to the prompt's declared
 argument order; `name=value` selects a declared argument explicitly. Quote or escape
