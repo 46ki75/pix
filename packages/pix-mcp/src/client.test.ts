@@ -7,9 +7,12 @@ import type { AddressInfo } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
-  ListToolsRequestSchema,
   CallToolRequestSchema,
   EmptyResultSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListToolsRequestSchema,
+  type Prompt,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, expect, test } from "vitest";
@@ -42,9 +45,11 @@ async function httpFixture(
     notificationContentType?: string;
     legacyOutput?: boolean;
     draft07Output?: boolean;
+    onToolsChanged?: (tools: Tool[], connection: Connection) => void;
+    onPromptsChanged?: (prompts: Prompt[], connection: Connection) => void;
   } = {},
 ) {
-  const { server, calls } = fixtureServer();
+  const { server, calls, promptCalls } = fixtureServer();
   if (options.badSchema || options.paginatedSchema)
     server.setRequestHandler(ListToolsRequestSchema, (request) => {
       if (request.params?.cursor === "second") return { tools: [] };
@@ -180,7 +185,19 @@ async function httpFixture(
     catalogTimeoutMs: options.catalogTimeoutMs ?? 1000,
   };
   const catalogs: Tool[][] = [];
-  const connection = new Connection(config, (tools) => catalogs.push(tools));
+  const promptCatalogs: Prompt[][] = [];
+  let connection: Connection;
+  connection = new Connection(
+    config,
+    (tools) => {
+      catalogs.push(tools);
+      options.onToolsChanged?.(tools, connection);
+    },
+    (prompts) => {
+      promptCatalogs.push(prompts);
+      options.onPromptsChanged?.(prompts, connection);
+    },
+  );
   cleanups.push(() => connection.close());
   return {
     connection,
@@ -188,7 +205,9 @@ async function httpFixture(
     methods,
     authorizations,
     catalogs,
+    promptCatalogs,
     calls,
+    promptCalls,
     cancelled,
     closedCalls: () => closedCalls,
     server,
@@ -206,7 +225,9 @@ test("HTTP shares initialization, follows pagination, propagates headers and ter
   await connection.start();
   expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
   expect(methods.filter((method) => method === "tools/list")).toHaveLength(2);
+  expect(methods.filter((method) => method === "prompts/list")).toHaveLength(2);
   expect(catalogs.at(-1)).toHaveLength(5);
+  expect(fixture.promptCatalogs.at(-1)).toHaveLength(2);
   expect(
     authorizations.every((value) => value === "Bearer fixture-token"),
   ).toBe(true);
@@ -243,6 +264,7 @@ test.each([false, true])(
     await expect
       .poll(() => fixture.catalogs.at(-1), { timeout: 500 })
       .toEqual([]);
+    expect(fixture.promptCatalogs.at(-1)).toEqual([]);
     expect(fixture.connection.status).not.toBe("Connected");
     await expect(
       fixture.connection.call("echo", { message: "must not execute" }),
@@ -334,6 +356,147 @@ test("HTTP notifications refresh the catalog", async () => {
   await expect.poll(() => catalogs.at(-1)?.[0]?.name).toBe("echo_v2");
 });
 
+test.each(["tools", "prompts"] as const)(
+  "%s refreshes do not lose dirty state while their promise settles",
+  async (feature) => {
+    let armed = false;
+    let queued = false;
+    const onChanged = (_items: Tool[] | Prompt[], connection: Connection) => {
+      if (!armed || queued) return;
+      queued = true;
+      // Reach the gap after the refresh loop settles but before the public
+      // refresh promise's cleanup reaction runs.
+      queueMicrotask(() =>
+        queueMicrotask(() =>
+          queueMicrotask(() => {
+            const refresh =
+              feature === "tools"
+                ? connection.refresh()
+                : connection.refreshPrompts();
+            void refresh.catch(() => {});
+          }),
+        ),
+      );
+    };
+    const fixture = await httpFixture(
+      feature === "tools"
+        ? { onToolsChanged: onChanged }
+        : { onPromptsChanged: onChanged },
+    );
+    await fixture.connection.start();
+    const method = feature === "tools" ? "tools/list" : "prompts/list";
+    const before = fixture.methods.filter((item) => item === method).length;
+    armed = true;
+    await (feature === "tools"
+      ? fixture.connection.refresh()
+      : fixture.connection.refreshPrompts());
+    expect(fixture.methods.filter((item) => item === method)).toHaveLength(
+      before + 4,
+    );
+  },
+);
+
+test("discovers paginated prompts and gets one with string arguments", async () => {
+  const fixture = await httpFixture();
+  await fixture.connection.start();
+  expect(fixture.promptCatalogs.at(-1)?.map((prompt) => prompt.name)).toEqual([
+    "review",
+    "conversation",
+  ]);
+  await expect(
+    fixture.connection.getPrompt("review", {
+      topic: "deadlines",
+      tone: "concise",
+    }),
+  ).resolves.toMatchObject({
+    messages: [
+      {
+        role: "user",
+        content: { text: "Review deadlines in a concise tone." },
+      },
+    ],
+  });
+  expect(fixture.promptCalls).toEqual(["review"]);
+  await expect(
+    fixture.connection.getPrompt("missing", undefined),
+  ).rejects.toThrow("unavailable");
+  expect(fixture.promptCalls).toEqual(["review"]);
+});
+
+test("prompt list-change notifications replace the prompt catalog", async () => {
+  const fixture = await httpFixture();
+  let name = "first";
+  fixture.server.setRequestHandler(ListPromptsRequestSchema, () => ({
+    prompts: [{ name }],
+  }));
+  await fixture.connection.start();
+  expect(fixture.promptCatalogs.at(-1)?.[0]?.name).toBe("first");
+  name = "second";
+  await fixture.server.notification({
+    method: "notifications/prompts/list_changed",
+  });
+  await expect
+    .poll(() => fixture.promptCatalogs.at(-1)?.[0]?.name)
+    .toBe("second");
+});
+
+test.each([
+  ["request", undefined],
+  ["line-separator metadata", "SECRET\u2028invalid"],
+  ["bidi metadata", "safe\u202Espoofed"],
+] as const)(
+  "prompt discovery %s failures leave tools usable",
+  async (_failure, invalidName) => {
+    const fixture = await httpFixture();
+    fixture.server.setRequestHandler(ListPromptsRequestSchema, () => {
+      if (invalidName === undefined)
+        throw new Error("SECRET prompt discovery error");
+      return { prompts: [{ name: invalidName }] };
+    });
+    await expect(fixture.connection.start()).rejects.toThrow(
+      "discovery failed",
+    );
+    expect(fixture.connection.promptStatus).toContain("failed");
+    expect(fixture.promptCatalogs.at(-1)).toEqual([]);
+    expect(
+      (await fixture.connection.call("echo", { message: "still usable" }))
+        .content[0],
+    ).toMatchObject({ text: "still usable" });
+  },
+);
+
+test("tool discovery failures leave prompts usable", async () => {
+  const fixture = await httpFixture({ badPagination: true });
+  await expect(fixture.connection.start()).rejects.toThrow("discovery failed");
+  expect(fixture.connection.toolStatus).toContain("failed");
+  await expect(
+    fixture.connection.getPrompt("review", { topic: "healthy prompt" }),
+  ).resolves.toMatchObject({
+    messages: [{ content: { text: "Review healthy prompt." }, role: "user" }],
+  });
+});
+
+test("prompt requests use the invocation deadline without disabling tools", async () => {
+  const fixture = await httpFixture({ timeout: 100 });
+  fixture.server.setRequestHandler(
+    GetPromptRequestSchema,
+    async (_request, extra) => {
+      await setTimeout(1000, undefined, { signal: extra.signal });
+      return {
+        messages: [{ role: "user", content: { type: "text", text: "late" } }],
+      };
+    },
+  );
+  await fixture.connection.start();
+  await expect(
+    fixture.connection.getPrompt("review", { topic: "timeout" }),
+  ).rejects.toThrow("failed or timed out");
+  expect(
+    (await fixture.connection.call("echo", { message: "still usable" }))
+      .content[0],
+  ).toMatchObject({ text: "still usable" });
+});
+
 test("request timeouts never retry a possibly mutating call", async () => {
   const { connection, config, calls } = await httpFixture();
   await connection.start();
@@ -352,7 +515,7 @@ test.each([{ reject: true }, { redirect: true }])(
   async (options) => {
     const { connection, authorizations } = await httpFixture(options);
     await expect(connection.start()).rejects.toThrow(
-      /^MCP server http: connection or discovery failed\.$/,
+      /^MCP server http: connection failed\.$/,
     );
     expect(authorizations).toHaveLength(1);
   },
@@ -611,9 +774,7 @@ test("a long call budget does not extend initialization or paginated catalog dea
     startupTimeoutMs: 80,
     initializeDelay: 250,
   });
-  await expect(startup.connection.start()).rejects.toThrow(
-    "connection or discovery failed",
-  );
+  await expect(startup.connection.start()).rejects.toThrow("connection failed");
   const catalog = await httpFixture({
     timeout: 960000,
     catalogTimeoutMs: 150,

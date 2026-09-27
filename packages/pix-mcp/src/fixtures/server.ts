@@ -4,7 +4,10 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
+  type Prompt,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 
@@ -35,10 +38,14 @@ export function fixtureServer() {
   let changed = false;
   let revised = false;
   const calls: string[] = [];
+  const promptCalls: string[] = [];
   const server = new Server(
     { name: "fixture", version: "1" },
     {
-      capabilities: { tools: { listChanged: true } },
+      capabilities: {
+        tools: { listChanged: true },
+        prompts: { listChanged: true },
+      },
       instructions: "Fixture tools for testing echo and lifecycle behavior.",
     },
   );
@@ -174,6 +181,71 @@ export function fixtureServer() {
       });
     return { tools, nextCursor: "page2" };
   });
+  const prompt = (name: string): Prompt => ({
+    name,
+    description: `${name} fixture prompt`,
+    ...(name === "review"
+      ? {
+          title: "Review a topic",
+          arguments: [
+            { name: "topic", description: "Topic to review", required: true },
+            { name: "tone", description: "Optional response tone" },
+          ],
+        }
+      : {}),
+  });
+  server.setRequestHandler(ListPromptsRequestSchema, (request) =>
+    request.params?.cursor === "prompt-page2"
+      ? { prompts: [prompt("conversation")] }
+      : { prompts: [prompt("review")], nextCursor: "prompt-page2" },
+  );
+  server.setRequestHandler(GetPromptRequestSchema, (request) => {
+    promptCalls.push(request.params.name);
+    if (request.params.name === "conversation")
+      return {
+        messages: [
+          { role: "user", content: { type: "text", text: "Question" } },
+          { role: "assistant", content: { type: "text", text: "Example" } },
+          {
+            role: "user",
+            content: {
+              type: "resource",
+              resource: {
+                uri: "fixture://notes",
+                mimeType: "text/plain",
+                text: "Embedded notes",
+              },
+            },
+          },
+        ],
+      };
+    const topic = request.params.arguments?.topic ?? "";
+    const tone = request.params.arguments?.tone;
+    return {
+      description: "Rendered review prompt",
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Review ${topic}${tone ? ` in a ${tone} tone` : ""}.`,
+          },
+        },
+        ...(topic === "image"
+          ? [
+              {
+                role: "user" as const,
+                content: {
+                  type: "image" as const,
+                  mimeType: "image/png",
+                  data: tinyPng,
+                },
+              },
+            ]
+          : []),
+      ],
+    };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     calls.push(name);
@@ -209,7 +281,7 @@ export function fixtureServer() {
       structuredContent: { message: args.message },
     };
   });
-  return { server, calls };
+  return { server, calls, promptCalls };
 }
 
 if (

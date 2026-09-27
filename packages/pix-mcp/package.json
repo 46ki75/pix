@@ -5,7 +5,7 @@
     "access": "public"
   },
   "type": "module",
-  "description": "MCP discovery and lazily activated native tools for Pi Coding Agent",
+  "description": "MCP prompts and lazily activated native tools for Pi Coding Agent",
   "keywords": [
     "pi-package"
   ],

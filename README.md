@@ -73,9 +73,10 @@ Web search and web fetch have separate package versions and runtime dependencies
 so provider updates and content-extraction updates can be released independently.
 
 [`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) connects to configured stdio and
-Streamable HTTP MCP servers, exposes compact discovery, and activates native tool
-schemas on demand. Run `mise run mcp:dev` for an isolated development launch or
-`mise run test --project pix-mcp` for its tests. Review its configuration and
+Streamable HTTP MCP servers, exposes compact discovery, activates native tool
+schemas on demand, and runs user-selected MCP prompts. Run `mise run mcp:dev` for
+an isolated development launch or `mise run test --project pix-mcp` for its tests.
+Review its configuration and
 automatic startup behavior before connecting servers. Tool-call permissions are
 left to Pi extensions rather than enforced by the adapter.
 
