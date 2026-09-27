@@ -4,11 +4,20 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { Prompt, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
 import { formatResult } from "./output.ts";
+import {
+  formatPromptList,
+  formatPromptResult,
+  parsePromptCommand,
+  promptCompletions,
+  promptKey,
+  resolvePromptArguments,
+  type PromptEntry,
+} from "./prompts.ts";
 import { prepareSchema } from "./schema.ts";
 import { ToolRejectionError, type RejectionCode } from "./rejection.ts";
 
@@ -26,6 +35,7 @@ interface State {
   alive: boolean;
   status: string;
   entries: Map<string, Entry>;
+  prompts: Map<string, PromptEntry>;
   loaded: Map<string, string>;
   connections: Map<string, Connection>;
   rejected: Map<string, Rejections>;
@@ -61,6 +71,83 @@ export default function mcp(pi: ExtensionAPI) {
     type: "string",
     description:
       "Read this MCP config file for this session (default: .mcp.json).",
+  });
+  pi.registerCommand("mcp-prompt", {
+    description: "List or run a user-selected MCP prompt",
+    getArgumentCompletions: (prefix) =>
+      promptCompletions(prefix, [...(state?.prompts.values() ?? [])]),
+    async handler(input, ctx) {
+      try {
+        const owner = state;
+        if (!owner) throw new Error("MCP session has not started.");
+        current(owner);
+        const command = parsePromptCommand(input);
+        if (command.action === "list") {
+          if (
+            command.server &&
+            !owner.connections.has(command.server) &&
+            !owner.configIssues.some((issue) => issue.name === command.server)
+          )
+            throw new Error("Unknown MCP server.");
+          const promptStatus = [
+            ...owner.configIssues
+              .filter(
+                (issue) => !command.server || issue.name === command.server,
+              )
+              .map((issue) => `${issue.name}: ${issue.message}`),
+            ...[...owner.connections.values()]
+              .filter(
+                (connection) =>
+                  !command.server || connection.config.name === command.server,
+              )
+              .map(
+                (connection) =>
+                  `${connection.config.name}: ${connection.promptStatus}`,
+              ),
+          ].join("\n");
+          const text = `${promptStatus}${promptStatus ? "\n\n" : ""}${formatPromptList(
+            [...owner.prompts.values()],
+            command.server,
+          )}`;
+          if (!ctx.hasUI) throw new Error(text);
+          ctx.ui.notify(text, "info");
+          return;
+        }
+        const item = owner.prompts.get(promptKey(command.server, command.name));
+        if (!item)
+          throw new Error(
+            "Unknown or unavailable MCP prompt. List prompts again.",
+          );
+        const connection = owner.connections.get(command.server);
+        if (!connection) throw new Error("MCP connection unavailable.");
+        const args = resolvePromptArguments(
+          item.prompt,
+          command.argumentTokens,
+        );
+        const result = await connection.getPrompt(
+          item.prompt.name,
+          args,
+          ctx.signal,
+        );
+        current(owner);
+        const formatted = await formatPromptResult(
+          result,
+          item.server,
+          item.prompt.name,
+        );
+        current(owner);
+        ctx.signal?.throwIfAborted();
+        pi.sendUserMessage(
+          formatted.content,
+          ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "MCP prompt failed.";
+        if (!ctx.hasUI) throw new Error(message);
+        ctx.ui.notify(message, "error");
+      }
+    },
   });
 
   function deactivate(names: Iterable<string>) {
@@ -230,6 +317,23 @@ export default function mcp(pi: ExtensionAPI) {
     if (active) pi.setActiveTools(active);
   }
 
+  function synchronizePrompts(
+    owner: State,
+    config: ServerConfig,
+    prompts: Prompt[],
+  ) {
+    if (!owner.alive || state !== owner) return;
+    for (const [key, item] of owner.prompts) {
+      if (item.server === config.name) owner.prompts.delete(key);
+    }
+    for (const prompt of prompts) {
+      owner.prompts.set(promptKey(config.name, prompt.name), {
+        server: config.name,
+        prompt,
+      });
+    }
+  }
+
   function synchronize(owner: State, config: ServerConfig, tools: Tool[]) {
     if (!owner.alive || state !== owner) return;
     const previous = new Map(
@@ -351,6 +455,7 @@ export default function mcp(pi: ExtensionAPI) {
       alive: true,
       status: "No MCP servers configured.",
       entries: new Map(),
+      prompts: new Map(),
       loaded: new Map(),
       connections: new Map(),
       rejected: new Map(),
@@ -382,7 +487,11 @@ export default function mcp(pi: ExtensionAPI) {
       for (const server of config.servers) {
         owner.connections.set(
           server.name,
-          new Connection(server, (tools) => synchronize(owner, server, tools)),
+          new Connection(
+            server,
+            (tools) => synchronize(owner, server, tools),
+            (prompts) => synchronizePrompts(owner, server, prompts),
+          ),
         );
       }
       // Bound startup concurrency without letting one broken server hide healthy ones.

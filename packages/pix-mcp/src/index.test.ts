@@ -19,6 +19,7 @@ import {
   SessionManager,
   SettingsManager,
   type ExtensionAPI,
+  type ExtensionCommandContext,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
@@ -106,6 +107,7 @@ async function setup(
   const agentDir = join(directory, "agent");
   const settingsManager = SettingsManager.inMemory();
   let unrelatedApi: ExtensionAPI | undefined;
+  let commandContext: ExtensionCommandContext | undefined;
   const resourceLoader = new DefaultResourceLoader({
     cwd: directory,
     agentDir,
@@ -114,6 +116,9 @@ async function setup(
     extensionFactories: [
       (pi) => {
         unrelatedApi = pi;
+        pi.on("session_start", (_event, ctx) => {
+          commandContext = ctx as ExtensionCommandContext;
+        });
         options.extension?.(pi);
       },
     ],
@@ -168,6 +173,8 @@ async function setup(
   });
   expect(session.extensionRunner.hasUI()).toBe(hasUI);
   expect(errors).toEqual([]);
+  const sendUserMessage = vi.fn();
+  resourceLoader.getExtensions().runtime.sendUserMessage = sendUserMessage;
   async function call(name: string, args: JsonObject, signal?: AbortSignal) {
     const tools = session.agent.state.tools;
     const tool = tools.find((tool) => tool.name === name);
@@ -202,6 +209,19 @@ async function setup(
         omittedRejections?: number;
       }[];
     };
+  }
+  async function prompt(
+    input: string,
+    signal: AbortSignal = new AbortController().signal,
+  ) {
+    const command = session.extensionRunner
+      .getRegisteredCommands()
+      .find((item) => item.name === "mcp-prompt");
+    if (!command) throw new Error("Missing /mcp-prompt command");
+    if (!commandContext) throw new Error("Missing command context");
+    const context = Object.create(commandContext) as ExtensionCommandContext;
+    Object.defineProperty(context, "signal", { value: signal });
+    await command.handler(input, context);
   }
   function registerUnrelated() {
     if (!unrelatedApi) throw new Error("Missing test extension");
@@ -268,6 +288,8 @@ async function setup(
     session,
     call,
     discover,
+    prompt,
+    sendUserMessage,
     registerUnrelated,
     requestTools,
     configPath,
@@ -309,6 +331,55 @@ test("Pi loads the package, holds native schemas inactive, then activates and ca
     discover({ action: "load", names: ["unknown"] }),
   ).rejects.toThrow("Unknown");
   expect(session.getActiveToolNames()).toContain("read");
+});
+
+test("lists and runs user-selected MCP prompts through one stable command", async () => {
+  const { prompt, sendUserMessage, notify } = await setup({ mode: "tui" });
+  await prompt("list fixture");
+  expect(notify).toHaveBeenLastCalledWith(
+    expect.stringContaining("fixture review <topic> [tone]"),
+    "info",
+  );
+  await prompt('run fixture review "the API" tone=concise');
+  expect(sendUserMessage).toHaveBeenCalledOnce();
+  expect(sendUserMessage).toHaveBeenCalledWith(
+    [
+      {
+        type: "text",
+        text: expect.stringContaining(
+          "[MCP prompt from fixture/review]\n\nReview the API in a concise tone.",
+        ),
+      },
+    ],
+    undefined,
+  );
+  await prompt("run fixture review");
+  expect(notify).toHaveBeenLastCalledWith(
+    "Missing required prompt arguments: topic.",
+    "error",
+  );
+  expect(sendUserMessage).toHaveBeenCalledTimes(1);
+});
+
+test("prompt commands fail safely in headless mode", async () => {
+  const { prompt, sendUserMessage } = await setup();
+  await expect(prompt("list missing")).rejects.toThrow("Unknown MCP server");
+  await expect(prompt("run fixture missing")).rejects.toThrow(
+    "Unknown or unavailable MCP prompt",
+  );
+  expect(sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("prompt cancellation after formatting prevents message injection", async () => {
+  const { prompt, sendUserMessage } = await setup();
+  const signal = new AbortController().signal;
+  vi.spyOn(signal, "throwIfAborted").mockImplementation(() => {
+    throw new Error("cancelled after formatting");
+  });
+  await expect(prompt('run fixture review "the API"', signal)).rejects.toThrow(
+    "cancelled after formatting",
+  );
+  expect(sendUserMessage).not.toHaveBeenCalled();
 });
 
 test.each(["schema", "rename"])(

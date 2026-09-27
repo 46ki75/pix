@@ -1,7 +1,7 @@
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { expect, test } from "vitest";
-import { formatResult, MAX_TEXT_BYTES } from "./output.ts";
+import { formatContent, formatResult, MAX_TEXT_BYTES } from "./output.ts";
 
 test("keeps text, supported images and small structured results", async () => {
   const response = await formatResult({
@@ -51,6 +51,32 @@ test.each([0, 1, 2])(
     }
   },
 );
+
+test("ordered content reuses the byte-bounded preview around images", async () => {
+  const source = "日本語".repeat(10_000);
+  const response = await formatContent(
+    [
+      { type: "text", text: source },
+      { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+      { type: "text", text: "tail" },
+    ],
+    { artifact: { source }, preserveOrder: true },
+  );
+  const path = response.details.fullOutputPath;
+  expect(path).toBeDefined();
+  if (!path) throw new Error("No artifact");
+  try {
+    const expected = Buffer.from(source)
+      .subarray(0, MAX_TEXT_BYTES)
+      .toString("utf8")
+      .replace(/\uFFFD$/, "");
+    expect(response.content[0]).toEqual({ type: "text", text: expected });
+    expect(response.content[1]).toMatchObject({ type: "image" });
+    expect(Buffer.byteLength(expected)).toBeLessThanOrEqual(MAX_TEXT_BYTES);
+  } finally {
+    await rm(dirname(path), { recursive: true, force: true });
+  }
+});
 
 test("spills oversized output, large details and unsupported content without silently dropping it", async () => {
   const response = await formatResult({
