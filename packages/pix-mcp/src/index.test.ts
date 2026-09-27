@@ -25,6 +25,7 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 import { eagleSchema, tinyPng } from "./fixtures/server.ts";
 import { toolName } from "./catalog.ts";
+import { promptKey } from "./prompts.ts";
 import type { RejectionCode } from "./rejection.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -163,7 +164,7 @@ async function setup(
   const errors: string[] = [];
   const ui = session.extensionRunner.getUIContext();
   const notify = vi.spyOn(ui, "notify");
-  const select = vi.spyOn(ui, "select");
+  const custom = vi.spyOn(ui, "custom");
   const inputDialog = vi.spyOn(ui, "input");
   const setStatus = vi.spyOn(ui, "setStatus");
   const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
@@ -297,7 +298,7 @@ async function setup(
     requestTools,
     configPath,
     notify,
-    select,
+    custom,
     inputDialog,
     setStatus,
     confirm,
@@ -368,18 +369,14 @@ test("lists and runs user-selected MCP prompts through one stable command", asyn
 });
 
 test("opens a native TUI picker and collects prompt arguments", async () => {
-  const { prompt, select, inputDialog, setStatus, sendUserMessage } =
+  const { prompt, custom, inputDialog, setStatus, sendUserMessage } =
     await setup({ mode: "tui" });
-  select.mockResolvedValue("fixture / review");
+  custom.mockResolvedValue(promptKey("fixture", "review"));
   inputDialog.mockResolvedValueOnce("the API").mockResolvedValueOnce("concise");
 
   await prompt("");
 
-  expect(select).toHaveBeenCalledWith(
-    "Select MCP prompt",
-    ["fixture / conversation", "fixture / review"],
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
-  );
+  expect(custom).toHaveBeenCalledOnce();
   expect(inputDialog.mock.calls.map(([title]) => title)).toEqual([
     "topic (required)",
     "tone (optional)",
@@ -406,15 +403,17 @@ test.each([
 ] as const)(
   "cancelling the native prompt %s does not retrieve a prompt",
   async (_stage, selection, values) => {
-    const { prompt, select, inputDialog, sendUserMessage } = await setup({
+    const { prompt, custom, inputDialog, sendUserMessage } = await setup({
       mode: "tui",
     });
-    select.mockResolvedValue(selection);
+    custom.mockResolvedValue(
+      selection === undefined ? undefined : promptKey("fixture", "review"),
+    );
     inputDialog.mockResolvedValueOnce(values[0]);
 
     await prompt("");
 
-    expect(select).toHaveBeenCalledOnce();
+    expect(custom).toHaveBeenCalledOnce();
     expect(inputDialog).toHaveBeenCalledTimes(values.length);
     expect(sendUserMessage).not.toHaveBeenCalled();
   },
@@ -423,18 +422,18 @@ test.each([
 test.each(["picker", "argument input"])(
   "aborting the native prompt %s closes it silently",
   async (stage) => {
-    const { prompt, select, inputDialog, notify, sendUserMessage } =
+    const { prompt, custom, inputDialog, notify, sendUserMessage } =
       await setup({
         mode: "tui",
       });
     const controller = new AbortController();
     if (stage === "picker") {
-      select.mockImplementation(async () => {
+      custom.mockImplementation(async () => {
         controller.abort();
         return undefined;
       });
     } else {
-      select.mockResolvedValue("fixture / review");
+      custom.mockResolvedValue(promptKey("fixture", "review"));
       inputDialog.mockImplementationOnce(async () => {
         controller.abort();
         return undefined;
@@ -449,14 +448,14 @@ test.each(["picker", "argument input"])(
 );
 
 test("the native picker reports an empty prompt catalog", async () => {
-  const { prompt, select, notify } = await setup({
+  const { prompt, custom, notify } = await setup({
     mode: "tui",
     configValue: { mcpServers: {} },
   });
 
   await prompt("");
 
-  expect(select).not.toHaveBeenCalled();
+  expect(custom).not.toHaveBeenCalled();
   expect(notify).toHaveBeenLastCalledWith(
     "No MCP prompts are available.",
     "warning",

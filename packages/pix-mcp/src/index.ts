@@ -10,6 +10,7 @@ import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
 import { formatResult } from "./output.ts";
+import { pickPrompt } from "./prompt-picker.ts";
 import {
   formatPromptList,
   formatPromptResult,
@@ -180,21 +181,10 @@ export default function mcp(pi: ExtensionAPI) {
       return;
     }
 
-    const options = entries.map(
-      (item) => `${item.server} / ${item.prompt.name}`,
-    );
-    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
-    const selected = await ctx.ui.select(
-      "Select MCP prompt",
-      options,
-      dialogOptions,
-    );
-    if (selected === undefined) return;
+    const item = await pickPrompt(entries, ctx);
+    if (!item) return;
     ctx.signal?.throwIfAborted();
 
-    const index = options.indexOf(selected);
-    const item = entries[index];
-    if (!item) throw new Error("Unknown prompt selection.");
     const key = promptKey(item.server, item.prompt.name);
     const ensureCurrent = () => {
       current(owner);
@@ -203,6 +193,7 @@ export default function mcp(pi: ExtensionAPI) {
     };
     ensureCurrent();
 
+    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
     const argumentTokens: PromptArgumentToken[] = [];
     for (const argument of item.prompt.arguments ?? []) {
       const value = await ctx.ui.input(

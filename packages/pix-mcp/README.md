@@ -271,9 +271,10 @@ commands behind:
 /mcp-prompt run <server> <prompt> [name=value ...]
 ```
 
-In TUI mode, `/mcp-prompt` without arguments opens Pi's native prompt selector
-and input dialogs. Required and optional arguments are requested in declaration
-order; leaving an optional input empty omits it. Escape cancels without retrieving
+In TUI mode, `/mcp-prompt` without arguments opens a native prompt selector
+that shows the focused prompt's title and description, followed by native input
+dialogs. Required and optional arguments are requested in declaration order;
+leaving an optional input empty omits it. Escape cancels without retrieving
 the prompt. The explicit `list` and `run` forms remain available in every mode and
 can pass an intentional empty value as `name=`.
 
