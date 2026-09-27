@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,8 +78,9 @@ export async function formatContent(
   const largeDetails =
     structured !== undefined &&
     Buffer.byteLength(JSON.stringify(structured)) > MAX_DETAILS_BYTES;
+  const textTruncated = bounded !== fullText;
   const truncated =
-    bounded !== fullText ||
+    textTruncated ||
     omitted ||
     largeDetails ||
     (options.preserveErrorImages === true && images.length > 0);
@@ -100,7 +102,7 @@ export async function formatContent(
     let textIndex = 0;
     for (const block of ordered) {
       if (block.type === "image") {
-        content.push(block);
+        if (!textTruncated || offset < bounded.length) content.push(block);
         continue;
       }
       const value = `${textIndex++ > 0 ? "\n\n" : ""}${block.text}`;
@@ -139,6 +141,36 @@ export async function formatContent(
   };
 }
 
+function createEditablePromptGuard(): string {
+  const bytes = randomBytes(8);
+  let guard = "\u2060\u2063";
+  for (const byte of bytes)
+    for (let bit = 7; bit >= 0; bit--)
+      guard += byte & (1 << bit) ? "\u2063" : "\u2060";
+  return guard;
+}
+
+export function removeEditablePromptGuard(text: string, guard: string): string {
+  return text.replaceAll(guard, "");
+}
+
+function prepareEditablePrompt(text: string): {
+  text: string;
+  guard?: string;
+} {
+  // The TUI interprets leading / and ! as commands. An invisible guard keeps
+  // untrusted prompt text inert in the editor and is removed at message_end.
+  const sanitized = text
+    .replace(/\r\n?/gu, "\n")
+    .replace(/\p{Cc}/gu, (character) =>
+      character === "\n" || character === "\t" ? character : "",
+    )
+    .replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu, "");
+  if (!/^[!/]/u.test(sanitized.trimStart())) return { text: sanitized };
+  const guard = createEditablePromptGuard();
+  return { text: `${guard}${sanitized}`, guard };
+}
+
 const imageExtensions: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -148,7 +180,7 @@ const imageExtensions: Record<string, string> = {
 
 export async function formatEditableContent(
   content: (TextContent | ImageContent)[],
-): Promise<{ text: string; cleanup: () => Promise<void> }> {
+): Promise<{ text: string; guard?: string; cleanup: () => Promise<void> }> {
   let text = "";
   let imageDirectory: string | undefined;
   let imageIndex = 0;
@@ -178,7 +210,7 @@ export async function formatEditableContent(
     throw error;
   }
   return {
-    text,
+    ...prepareEditablePrompt(text),
     cleanup: async () => {
       if (imageDirectory)
         await rm(imageDirectory, { recursive: true, force: true });

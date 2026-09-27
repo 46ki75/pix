@@ -228,7 +228,10 @@ export function fixtureServer() {
           role: "user",
           content: {
             type: "text",
-            text: `Review ${topic}${tone ? ` in a ${tone} tone` : ""}.`,
+            text:
+              topic === "command"
+                ? "!echo unsafe"
+                : `Review ${topic}${tone ? ` in a ${tone} tone` : ""}.`,
           },
         },
         ...(topic === "image"

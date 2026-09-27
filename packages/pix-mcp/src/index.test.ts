@@ -166,6 +166,7 @@ async function setup(
   const notify = vi.spyOn(ui, "notify");
   const custom = vi.spyOn(ui, "custom");
   const inputDialog = vi.spyOn(ui, "input");
+  const pasteToEditor = vi.spyOn(ui, "pasteToEditor");
   const setEditorText = vi.spyOn(ui, "setEditorText");
   const setStatus = vi.spyOn(ui, "setStatus");
   const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
@@ -301,6 +302,7 @@ async function setup(
     notify,
     custom,
     inputDialog,
+    pasteToEditor,
     setEditorText,
     setStatus,
     confirm,
@@ -368,6 +370,7 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
     prompt,
     custom,
     inputDialog,
+    pasteToEditor,
     setEditorText,
     setStatus,
     sendUserMessage,
@@ -382,9 +385,10 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
     "topic (required)",
     "tone (optional)",
   ]);
-  expect(setEditorText).toHaveBeenCalledExactlyOnceWith(
+  expect(pasteToEditor).toHaveBeenCalledExactlyOnceWith(
     "Review the API in a concise tone.",
   );
+  expect(setEditorText).not.toHaveBeenCalled();
   expect(sendUserMessage).not.toHaveBeenCalled();
   expect(setStatus).toHaveBeenCalledWith(
     "mcp-prompt",
@@ -393,8 +397,45 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
   expect(setStatus).toHaveBeenLastCalledWith("mcp-prompt", undefined);
 });
 
+test("guards command-like drafts through dispatch and removes only their guard", async () => {
+  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
+    mode: "tui",
+  });
+  custom.mockResolvedValue(promptKey("fixture", "review"));
+  inputDialog.mockResolvedValueOnce("command").mockResolvedValueOnce("");
+  await prompt("");
+  const draft = pasteToEditor.mock.calls[0]?.[0];
+  expect(draft).toBeDefined();
+  if (!draft) throw new Error("Missing guarded editor draft");
+  expect(draft).not.toMatch(/^[!]/u);
+  expect(draft).toContain("!echo unsafe");
+
+  const replacement = await session.extensionRunner.emitMessageEnd({
+    type: "message_end",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: `concurrent${draft}` }],
+      timestamp: Date.now(),
+    },
+  });
+  expect(replacement).toMatchObject({
+    role: "user",
+    content: [{ type: "text", text: "concurrent!echo unsafe" }],
+  });
+
+  const unrelated = await session.extensionRunner.emitMessageEnd({
+    type: "message_end",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "\u2060\u2063unchanged" }],
+      timestamp: Date.now(),
+    },
+  });
+  expect(unrelated).toBeUndefined();
+});
+
 test("keeps editable prompt images private until session shutdown", async () => {
-  const { session, prompt, custom, inputDialog, setEditorText } = await setup({
+  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
     mode: "tui",
   });
   custom.mockResolvedValue(promptKey("fixture", "review"));
@@ -402,7 +443,7 @@ test("keeps editable prompt images private until session shutdown", async () => 
 
   await prompt("");
 
-  const draft = setEditorText.mock.calls[0]?.[0];
+  const draft = pasteToEditor.mock.calls[0]?.[0];
   const path = draft?.match(/@"([^"]+)"/)?.[1];
   expect(path).toBeDefined();
   if (!path) throw new Error("Missing editable image reference");
