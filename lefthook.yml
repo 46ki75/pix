@@ -11,28 +11,32 @@ output:
 fmt:
   files: git ls-files
   jobs:
-    - &biome-format
-      name: biome
+    - &oxfmt
+      name: oxfmt
       glob: "**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc}"
       exclude: ".mise/locks/**"
-      run: pnpm exec biome format --write {files}
+      run: pnpm exec oxfmt --write {files}
 
 fmt-check:
   files: git ls-files
   jobs:
-    - <<: *biome-format
-      run: pnpm exec biome format {files}
+    - <<: *oxfmt
+      run: pnpm exec oxfmt --check {files}
 
 lint:
   files: git ls-files
   jobs:
-    - <<: *biome-format
-      run: pnpm exec biome lint --error-on-warnings {files}
+    - &oxlint
+      name: oxlint
+      glob: "**/*.{ts,tsx,js,jsx,mjs,cjs}"
+      run: pnpm exec oxlint {files}
 
 pre-commit:
   jobs:
-    - <<: *biome-format
-      run: pnpm exec biome check --error-on-warnings {staged_files}
+    - <<: *oxfmt
+      run: pnpm exec oxfmt --check {staged_files}
+    - <<: *oxlint
+      run: pnpm exec oxlint {staged_files}
 
 commit-msg:
   jobs:

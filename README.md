@@ -40,8 +40,8 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run test --project pix-websearch` | Run one test project |
 | `mise run test:watch` | Watch tests |
 | `mise run typecheck` | Check root configuration and all packages |
-| `mise run lint` | Lint tracked TypeScript, JavaScript, and JSON files |
-| `mise run fmt` | Format those files |
+| `mise run lint` | Lint tracked TypeScript and JavaScript files |
+| `mise run fmt` | Format tracked TypeScript, JavaScript, and JSON files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
 | `mise run dev` | Launch Pi with all seven local extensions and Elmethis themes |

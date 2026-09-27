@@ -173,7 +173,7 @@ const constraints: {
     name: "conditionals",
     schema: {
       if: { type: "string" },
-      // biome-ignore lint/suspicious/noThenProperty: JSON Schema's non-callable conditional keyword.
+      // oxlint-disable-next-line unicorn/no-thenable -- JSON Schema's non-callable conditional keyword.
       then: { minLength: 2 },
       else: { type: "integer", minimum: 1 },
     },
@@ -276,7 +276,7 @@ test("never applies modern sibling semantics to a draft-07 reference", () => {
   // Draft-07 core §8.3 ignores the sibling type:number; 'text' is valid there.
   // https://json-schema.org/draft-07/draft-handrews-json-schema-01#rfc.section.8.3
   expectRejection(legacySchema, "draft07-reference");
-  const { $schema, ...stripped } = legacySchema;
+  const { $schema: _schema, ...stripped } = legacySchema;
   expect(compileSchema(stripped).Check({ message: "text" })).toBe(false);
 });
 

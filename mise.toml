@@ -25,7 +25,7 @@ raw_args = true
 run = "pnpm exec lefthook run fmt-check --no-auto-install"
 
 [tasks.lint]
-description = "Lint tracked TypeScript, JavaScript, and JSON files; accepts --file"
+description = "Lint tracked TypeScript and JavaScript files; accepts --file"
 raw_args = true
 run = "pnpm exec lefthook run lint --no-auto-install"
 

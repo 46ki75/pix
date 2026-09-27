@@ -137,7 +137,7 @@ test("defaults to Markdown with headings, nested lists, blockquotes, and final-U
   expect(result).toContain(
     "[continue](https://example.com/next?q=1&amp;lang=en)",
   );
-  expect(result).toMatch(/1\. +First\n +\- +Nested\n2\. +Second/);
+  expect(result).toMatch(/1\. +First\n +- +Nested\n2\. +Second/);
   expect(result).toContain("> Remember this\\.");
 });
 
