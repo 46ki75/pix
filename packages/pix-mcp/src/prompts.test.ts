@@ -126,31 +126,25 @@ test("lists prompts compactly and completes actions, servers, and names", () => 
 });
 
 test("formats roles, images, and embedded text resources for Pi", async () => {
-  const result = await formatPromptResult(
-    {
-      messages: [
-        { role: "user", content: { type: "text", text: "Question" } },
-        {
-          role: "assistant",
-          content: { type: "image", mimeType: "image/png", data: tinyPng },
+  const result = await formatPromptResult({
+    messages: [
+      { role: "user", content: { type: "text", text: "Question" } },
+      {
+        role: "assistant",
+        content: { type: "image", mimeType: "image/png", data: tinyPng },
+      },
+      {
+        role: "user",
+        content: {
+          type: "resource",
+          resource: { uri: "fixture://notes", text: "Reference" },
         },
-        {
-          role: "user",
-          content: {
-            type: "resource",
-            resource: { uri: "fixture://notes", text: "Reference" },
-          },
-        },
-      ],
-    },
-    "fixture",
-    "conversation",
-  );
+      },
+    ],
+  });
   expect(result.content[0]).toMatchObject({
     type: "text",
-    text: expect.stringContaining(
-      "[MCP prompt from fixture/conversation]\n\n[user]\n\nQuestion",
-    ),
+    text: expect.stringContaining("[user]\n\nQuestion"),
   });
   expect(result.content[0]).toMatchObject({
     text: expect.stringContaining("[assistant]"),
@@ -168,23 +162,70 @@ test("formats roles, images, and embedded text resources for Pi", async () => {
   });
 });
 
-test("preserves unsupported prompt content in a private artifact", async () => {
-  const result = await formatPromptResult(
+test("preserves a single-user image prompt without adding text", async () => {
+  const result = await formatPromptResult({
+    messages: [
+      {
+        role: "user",
+        content: { type: "image", mimeType: "image/png", data: tinyPng },
+      },
+    ],
+  });
+
+  expect(result.content).toEqual([
+    { type: "image", mimeType: "image/png", data: tinyPng },
+  ]);
+});
+
+test.each([
+  [{ role: "user" as const, content: { type: "text" as const, text: "" } }],
+  [
     {
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "audio",
-            mimeType: "audio/wav",
-            data: "aGVsbG8=",
-          },
-        },
-      ],
+      role: "assistant" as const,
+      content: { type: "text" as const, text: "" },
     },
-    "fixture",
-    "audio",
+  ],
+  [
+    { role: "user" as const, content: { type: "text" as const, text: "" } },
+    {
+      role: "assistant" as const,
+      content: { type: "text" as const, text: "  " },
+    },
+  ],
+  [
+    {
+      role: "user" as const,
+      content: { type: "image" as const, mimeType: "image/png", data: "" },
+    },
+  ],
+  [
+    {
+      role: "user" as const,
+      content: {
+        type: "resource" as const,
+        resource: { uri: "fixture://empty", text: "\n" },
+      },
+    },
+  ],
+])("rejects a prompt with no usable content", async (...messages) => {
+  await expect(formatPromptResult({ messages })).rejects.toThrow(
+    "MCP prompt returned no usable content.",
   );
+});
+
+test("preserves unsupported prompt content in a private artifact", async () => {
+  const result = await formatPromptResult({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "audio",
+          mimeType: "audio/wav",
+          data: "aGVsbG8=",
+        },
+      },
+    ],
+  });
   const path = result.details.fullOutputPath;
   expect(path).toBeDefined();
   if (!path) throw new Error("Missing prompt artifact");

@@ -322,21 +322,29 @@ function tokenize(input: string): PromptArgumentToken[] {
   return tokens;
 }
 
-export async function formatPromptResult(
-  result: GetPromptResult,
-  server: string,
-  name: string,
-) {
+function hasUsablePromptContent(
+  content: GetPromptResult["messages"][number]["content"],
+): boolean {
+  if (content.type === "text") return content.text.trim().length > 0;
+  if (content.type === "resource")
+    return "text" in content.resource
+      ? content.resource.text.trim().length > 0
+      : content.resource.blob.length > 0;
+  if (content.type === "resource_link") return content.uri.trim().length > 0;
+  return content.data.length > 0;
+}
+
+export async function formatPromptResult(result: GetPromptResult) {
   if (result.messages.length === 0)
     throw new Error("MCP prompt returned no messages.");
-  const blocks: ContentBlock[] = [
-    { type: "text", text: `[MCP prompt from ${server}/${name}]` },
-  ];
+  const blocks: ContentBlock[] = [];
+  let hasSourceContent = false;
   const showRoles =
     result.messages.length > 1 || result.messages[0]?.role !== "user";
   for (const message of result.messages) {
     if (showRoles) blocks.push({ type: "text", text: `[${message.role}]` });
     const content = message.content;
+    if (hasUsablePromptContent(content)) hasSourceContent = true;
     if (content.type === "resource") {
       if ("text" in content.resource) {
         blocks.push({
@@ -362,5 +370,13 @@ export async function formatPromptResult(
       });
     } else blocks.push(content);
   }
-  return formatContent(blocks, { artifact: result, preserveOrder: true });
+  if (!hasSourceContent)
+    throw new Error("MCP prompt returned no usable content.");
+  const formatted = await formatContent(blocks, {
+    artifact: result,
+    preserveOrder: true,
+  });
+  if (formatted.content.length === 0)
+    throw new Error("MCP prompt returned no usable content.");
+  return formatted;
 }

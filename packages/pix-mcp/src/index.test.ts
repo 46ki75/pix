@@ -352,14 +352,7 @@ test("lists and runs user-selected MCP prompts through one stable command", asyn
   await prompt('run fixture review "the API" tone=concise');
   expect(sendUserMessage).toHaveBeenCalledOnce();
   expect(sendUserMessage).toHaveBeenCalledWith(
-    [
-      {
-        type: "text",
-        text: expect.stringContaining(
-          "[MCP prompt from fixture/review]\n\nReview the API in a concise tone.",
-        ),
-      },
-    ],
+    [{ type: "text", text: "Review the API in a concise tone." }],
     undefined,
   );
   await prompt("run fixture review");
@@ -390,7 +383,7 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
     "tone (optional)",
   ]);
   expect(setEditorText).toHaveBeenCalledExactlyOnceWith(
-    expect.stringContaining("Review the API in a concise tone."),
+    "Review the API in a concise tone.",
   );
   expect(sendUserMessage).not.toHaveBeenCalled();
   expect(setStatus).toHaveBeenCalledWith(

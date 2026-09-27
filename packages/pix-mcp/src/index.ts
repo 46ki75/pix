@@ -145,11 +145,7 @@ export default function mcp(pi: ExtensionAPI) {
             ctx.signal,
           );
           current(owner);
-          const formatted = await formatPromptResult(
-            result,
-            item.server,
-            item.prompt.name,
-          );
+          const formatted = await formatPromptResult(result);
           current(owner);
           ctx.signal?.throwIfAborted();
           if (editBeforeSending) {

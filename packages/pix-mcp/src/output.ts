@@ -70,7 +70,8 @@ export async function formatContent(
       `Structured content:\n${JSON.stringify(options.structuredContent)}`,
     );
   }
-  const fullText = text.join("\n\n") || "(No text output)";
+  const fullText =
+    text.join("\n\n") || (options.preserveOrder ? "" : "(No text output)");
   const bounded = preview(fullText);
   const structured = options.structuredContent;
   const largeDetails =
@@ -112,7 +113,8 @@ export async function formatContent(
       if (previous?.type === "text") previous.text += visible;
       else content.push({ type: "text", text: visible });
     }
-    if (textIndex === 0) content.unshift({ type: "text", text: bounded });
+    if (textIndex === 0 && bounded)
+      content.unshift({ type: "text", text: bounded });
     if (artifactNotice)
       content.push({ type: "text", text: `\n\n${artifactNotice}` });
   } else {
