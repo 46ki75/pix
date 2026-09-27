@@ -1,0 +1,9 @@
+{
+  "$schema": "./mcp.schema.json",
+  "mcpServers": {
+    "everything": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything@2026.8.31"]
+    }
+  }
+}
