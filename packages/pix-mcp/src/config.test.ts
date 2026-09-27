@@ -1,4 +1,4 @@
-// biome-ignore-all lint/suspicious/noTemplateCurlyInString: Fixtures contain configuration interpolation, not JavaScript interpolation.
+/* oxlint-disable eslint/no-template-curly-in-string -- Fixtures contain configuration interpolation, not JavaScript interpolation. */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { tmpdir } from "node:os";

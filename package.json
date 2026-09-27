@@ -4,9 +4,10 @@
   "type": "module",
   "packageManager": "pnpm@12.4.1",
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
     "@types/node": "24.13.6",
     "lefthook": "2.1.14",
+    "oxfmt": "0.70.0",
+    "oxlint": "1.85.0",
     "typescript": "7.0.2",
     "vite": "8.3.0",
     "vitest": "5.0.1"

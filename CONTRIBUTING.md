@@ -18,15 +18,31 @@ for package-specific development guidance.
 - After changing dependencies, run `mise exec -- pnpm install`, then
   `mise run setup` to verify a frozen installation and synchronize hooks.
 - Run `mise run check` before submitting changes. CI runs the same task.
-  Type checking and tests cover all configured packages; formatting and linting
-  cover tracked TypeScript, JavaScript, and JSON/JSONC files.
+  Type checking and tests cover all configured packages. Formatting covers
+  tracked TypeScript, JavaScript, and JSON/JSONC files; linting covers tracked
+  TypeScript and JavaScript files.
 
 ## Formatting and hooks
 
-Biome owns formatting and lint rules in `biome.json`; `.editorconfig` supplies
-shared text-file conventions. Configure your editor's Biome integration to use
-the repository's installed version. Lefthook owns file selection in
-`lefthook.yml`.
+Oxfmt owns formatting rules in `.oxfmtrc.json`, and Oxlint owns TypeScript and
+JavaScript lint rules in `.oxlintrc.json`. `.editorconfig` supplies shared
+text-file conventions. Configure editor integrations to use the repository's
+installed versions. Lefthook owns file selection in `lefthook.yml`.
+
+Conform.nvim's built-in Oxfmt integration resolves the project-local executable:
+
+```lua
+require("conform").setup({
+  formatters_by_ft = {
+    javascript = { "oxfmt" },
+    javascriptreact = { "oxfmt" },
+    typescript = { "oxfmt" },
+    typescriptreact = { "oxfmt" },
+    json = { "oxfmt" },
+    jsonc = { "oxfmt" },
+  },
+})
+```
 
 Formatting and lint tasks default to tracked files. Select new or changed files
 explicitly with repository-root-relative paths; repeated `--file` arguments are
@@ -39,12 +55,13 @@ mise run lint --file packages/pix-websearch/src/index.ts
 ```
 
 Verify that the expected jobs actually run; an empty selection is a skip, not
-evidence that a file passed validation. Markdown, YAML, TOML, and generated
-lockfiles are outside the Biome hook file selection.
+evidence that a file passed validation. Oxfmt parses JSON while formatting, but
+Oxlint does not lint JSON or detect duplicate object keys. Markdown, YAML, TOML,
+and generated lockfiles are outside the hook file selection.
 
-Pre-commit checks formatting and lint without rewriting files. Hooks invoke
-mise explicitly, so make mise available on your editor's Git PATH and run
-`mise run setup` before committing.
+Pre-commit checks formatting and TypeScript/JavaScript lint without rewriting
+files. Hooks invoke mise explicitly, so make mise available on your editor's Git
+PATH and run `mise run setup` before committing.
 
 ## Adding an extension
 

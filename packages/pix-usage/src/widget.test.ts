@@ -322,7 +322,7 @@ test.each([
         const text = stripVTControlCharacters(row);
         expect(text).not.toMatch(/\p{Control}/u);
         expect(text).not.toMatch(/\p{Surrogate}/u);
-        // biome-ignore lint/suspicious/noControlCharactersInRegex: Check that truncation introduces only complete SGR sequences.
+        // oxlint-disable-next-line eslint/no-control-regex -- Check that truncation introduces only complete SGR sequences.
         expect(row.replace(/\x1b\[[0-9;]*m/g, "")).toBe(text);
       }
     }
