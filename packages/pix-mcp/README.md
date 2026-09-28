@@ -28,28 +28,45 @@ Review the file first; `npx` downloads and runs the pinned package.
 
 ## Configuration
 
-By default, read only `.mcp.json` in Pi's working directory. There is no ancestor
-search, global config merge, automatic import, or persistent metadata cache.
-Relative `--mcp-config` paths resolve from that working directory; a stdio
-server's `cwd` resolves from the config directory and defaults to that directory.
+Without an explicit selection, the adapter reads these files in order:
 
-The adapter automatically loads the selected file and starts its enabled servers
-in all modes, without a confirmation prompt. Use `--mcp-config <path>` to select
-a different file.
+1. `<agent-dir>/mcp.json` for user-level servers. Pi's agent directory defaults
+   to `~/.pi/agent` and can be changed with `PI_CODING_AGENT_DIR`.
+2. `.mcp.json` in Pi's working directory for project-level servers.
+
+Missing files are ignored. Project declarations replace global declarations by
+server name as complete entries; fields are not merged. A project entry with
+`"disabled": true` masks the corresponding global server. An invalid project
+entry also masks its global counterpart and reports the validation issue instead
+of starting the global definition. Relative stdio `cwd` values resolve from the
+file that declares the server and default to that file's directory. There is no
+ancestor search, cross-client import, or persistent metadata cache.
+
+Use `--mcp-config <path>` to read only that file for the session, without global
+or project fallback. A relative explicit path resolves from Pi's working
+directory. The adapter automatically starts every effective enabled server in all
+modes without a confirmation prompt.
+
+`getAgentDir()` cannot observe an `agentDir` supplied only through Pi 0.87's SDK
+because extensions do not receive it. Embedded users should also set
+`PI_CODING_AGENT_DIR` when they want the global file to follow an SDK override.
 
 **Breaking change:** `--mcp-trust-config` has been removed. Remove it from existing
-launch commands; print and JSON sessions also load the default file automatically.
+launch commands; print and JSON sessions also load the default files
+automatically.
 
-Review the file before starting Pi: it can launch arbitrary local programs and
-contact remote services. A bare `.mcp.json` is not protected by Pi's project-trust
-mechanism, and the adapter is not an OS sandbox. Set a server's `disabled` field
-to `true` to prevent it from starting.
+Review both files before starting Pi: they can launch arbitrary local programs
+and contact remote services. Global servers start in every working directory. A
+bare project `.mcp.json` is not protected by Pi's project-trust mechanism, and
+the adapter is not an OS sandbox. Set a server's `disabled` field to `true` to
+prevent it from starting.
 
-At session startup, interactive and RPC sessions receive an `MCP config: <path>`
-notice with the resolved absolute path after the file is read. The notice
-identifies the configuration file, not whether every server connected; it never
-includes configuration contents. Missing, unreadable, or malformed files produce
-no notice. Print and JSON sessions remain silent.
+At session startup, interactive and RPC sessions display every successfully
+loaded file as `MCP config (<scope>): <absolute-path>`, in precedence order. They
+display `MCP config: none found` when no applicable file exists, or a path-only
+error notice when a file fails to load. These notices occur before server startup
+and never include configuration contents or indicate that every server connected.
+Print and JSON sessions remain silent.
 
 ```json
 {
@@ -110,15 +127,17 @@ Unknown fields invalidate their server entry rather than being silently ignored.
 
 ### Configuration errors
 
-An invalid server entry is skipped without hiding healthy servers. Discovery's
-`servers` list includes a safe diagnostic for each skipped entry; a valid server
-name can still be used with `mcp({ action: "list", server: "name" })` to inspect
+An invalid server entry is skipped without hiding unrelated healthy servers.
+Discovery's `servers` list includes a safe diagnostic for each skipped entry; a
+valid server name can still be used with `mcp({ action: "list", server: "name" })` to inspect
 its status. Invalid names are replaced with their one-based entry positions.
 Diagnostics identify supported fields or migration steps without echoing URLs,
 commands, headers, argument values, or environment-variable names.
 
 Malformed JSON, invalid root structure, unknown root fields, and the file/server
-count limits remain fatal for the whole file. An invalid-only configuration
+count limits remain fatal. A fatal error in either default file prevents servers
+from the other file from starting. Each file may declare at most 32 entries, and
+the merged result may enable at most 32 servers. An invalid-only configuration
 reports that no valid servers remain. Disabled entries are omitted, not reported
 as failed connections. Correct the file and reload Pi to retry.
 
@@ -384,8 +403,9 @@ These artifacts may contain sensitive data and are **not deleted at session
 shutdown**; remove them when no
 longer needed. Output limits are not a complete memory or security sandbox.
 
-Configuration is limited to 256 KiB and 32 servers. Startup connects at most four
-servers concurrently. Each tool or prompt catalog is limited to 1000 entries,
+Each configuration file is limited to 256 KiB and 32 entries; the merged result
+can enable at most 32 servers. Startup connects at most four servers concurrently.
+Each tool or prompt catalog is limited to 1000 entries,
 100 pagination cursors, and 2 MiB of metadata. Direct resources and templates
 share a 1000-entry and 2 MiB limit, with up to 100 cursors for each endpoint.
 Individual input/output schemas are limited to 64 KiB. Prompt arguments and

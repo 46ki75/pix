@@ -4,7 +4,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { MAX_TIMEOUT_MS, readConfig } from "./config.ts";
+import { MAX_TIMEOUT_MS, mergeConfigs, readConfig } from "./config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -402,6 +402,83 @@ test("collects entry errors in order and redacts unsafe names, keys, and values"
   ]);
   expect(JSON.stringify(result?.issues)).not.toContain("SECRET");
   expect(result?.issues.at(-1)?.message).toContain("Removed; use timeout");
+});
+
+test("project declarations replace, disable, or fail closed over global servers", async () => {
+  const global = await config({
+    mcpServers: {
+      replaced: { command: "global", cwd: "global-service" },
+      disabled: { command: "global" },
+      invalid: { command: "global" },
+      repaired: { command: "global", timeout: 0 },
+    },
+  });
+  const project = await config({
+    mcpServers: {
+      replaced: { command: "project", cwd: "project-service" },
+      disabled: { disabled: true },
+      invalid: { command: "project", timeout: 0 },
+      repaired: { command: "project" },
+    },
+  });
+  const merged = mergeConfigs([global!, project!]);
+  expect(merged.servers.map((server) => server.name)).toEqual([
+    "replaced",
+    "repaired",
+  ]);
+  expect(merged.servers[0]).toMatchObject({
+    command: "project",
+    cwd: join(project?.path ?? "", "../project-service"),
+  });
+  expect(merged.issues.map((issue) => issue.name)).toEqual(["invalid"]);
+});
+
+test("project declarations replace matching invalid-name diagnostics", async () => {
+  const global = await config({
+    mcpServers: { "SECRET.bad": { command: "global" } },
+  });
+  const project = await config({
+    mcpServers: {
+      disabled: { disabled: true },
+      "SECRET.bad": { command: "project" },
+    },
+  });
+  const merged = mergeConfigs([global!, project!]);
+  expect(merged.issues.map((issue) => issue.name)).toEqual([
+    "Invalid server #2",
+  ]);
+  expect(JSON.stringify(merged)).not.toContain("SECRET");
+});
+
+test("merged configs retain source-relative paths and enforce the enabled-server limit", async () => {
+  const globalDefinitions = Object.fromEntries(
+    Array.from({ length: 16 }, (_, index) => [
+      `global${index}`,
+      { command: "node", cwd: "global-service" },
+    ]),
+  );
+  const projectDefinitions = Object.fromEntries(
+    Array.from({ length: 16 }, (_, index) => [
+      `project${index}`,
+      { command: "node", cwd: "project-service" },
+    ]),
+  );
+  const global = await config({ mcpServers: globalDefinitions });
+  const project = await config({ mcpServers: projectDefinitions });
+  const merged = mergeConfigs([global!, project!]);
+  expect(merged.servers).toHaveLength(32);
+  expect(merged.servers[0]).toHaveProperty(
+    "cwd",
+    join(global?.path ?? "", "../global-service"),
+  );
+  expect(merged.servers[16]).toHaveProperty(
+    "cwd",
+    join(project?.path ?? "", "../project-service"),
+  );
+  const extra = await config({
+    mcpServers: { extra: { command: "node" } },
+  });
+  expect(() => mergeConfigs([global!, project!, extra!])).toThrow("At most 32");
 });
 
 test("file-size and server-count limits remain fatal before isolation", async () => {

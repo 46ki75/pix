@@ -31,6 +31,19 @@ export interface Config {
   servers: ServerConfig[];
   issues: ConfigIssue[];
 }
+export interface MergedConfig {
+  servers: ServerConfig[];
+  issues: ConfigIssue[];
+}
+
+type ConfigDeclaration = ServerConfig | ConfigIssue | undefined;
+// Raw names can contain credentials. Keep precedence identities private while
+// exposing only validated server names or positional issue labels.
+const declarationsByConfig = new WeakMap<
+  Config,
+  Map<string, ConfigDeclaration>
+>();
+const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,48}$/;
 
 class ConfigError extends Error {
   readonly field: string | undefined;
@@ -121,7 +134,7 @@ function parseServer(
   path: string,
   env: NodeJS.ProcessEnv,
 ): ServerConfig | undefined {
-  if (!/^[A-Za-z0-9_-]{1,48}$/.test(name))
+  if (!SERVER_NAME_PATTERN.test(name))
     invalid(
       undefined,
       "Server names must contain 1–48 ASCII letters, digits, underscores, or hyphens.",
@@ -268,15 +281,17 @@ export async function readConfig(
     invalid("mcpServers", "At most 32 servers are supported.");
   const servers: ServerConfig[] = [];
   const issues: ConfigIssue[] = [];
+  const declarations = new Map<string, ConfigDeclaration>();
   for (const [index, [name, raw]] of entries.entries()) {
     try {
       const server = parseServer(name, raw, path, env);
+      declarations.set(name, server);
       if (server) servers.push(server);
     } catch (error) {
       // Invalid names and unknown keys can themselves contain credentials. Only
       // validated names and our fixed validation messages reach discovery.
-      issues.push({
-        name: /^[A-Za-z0-9_-]{1,48}$/.test(name)
+      const issue: ConfigIssue = {
+        name: SERVER_NAME_PATTERN.test(name)
           ? name
           : `Invalid server #${index + 1}`,
         ...(error instanceof ConfigError && error.field
@@ -286,8 +301,38 @@ export async function readConfig(
           error instanceof ConfigError
             ? error.message
             : "Invalid MCP configuration. Server could not be validated.",
-      });
+      };
+      declarations.set(name, issue);
+      issues.push(issue);
     }
   }
-  return { path, servers, issues };
+  const config = { path, servers, issues };
+  declarationsByConfig.set(config, declarations);
+  return config;
+}
+
+export function mergeConfigs(configs: Config[]): MergedConfig {
+  const declarations = new Map<string, ConfigDeclaration>();
+  for (const config of configs) {
+    const sourceDeclarations = declarationsByConfig.get(config);
+    if (!sourceDeclarations)
+      invalid(undefined, "Configuration declarations are unavailable.");
+    for (const [name, declaration] of sourceDeclarations) {
+      // Reinsertion makes effective declaration order follow source precedence.
+      declarations.delete(name);
+      declarations.set(name, declaration);
+    }
+  }
+  const merged: MergedConfig = { servers: [], issues: [] };
+  for (const declaration of declarations.values()) {
+    if (!declaration) continue;
+    if ("message" in declaration) merged.issues.push(declaration);
+    else merged.servers.push(declaration);
+  }
+  if (merged.servers.length > 32)
+    invalid(
+      "mcpServers",
+      "At most 32 enabled servers are supported across merged configurations.",
+    );
+  return merged;
 }
