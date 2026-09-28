@@ -4,6 +4,12 @@ import type {
   Prompt,
 } from "@modelcontextprotocol/sdk/types.js";
 import { compact } from "./catalog.ts";
+import {
+  quoteCommandArgument,
+  renderCommandToken,
+  tokenizeCommand,
+  type CommandToken,
+} from "./command.ts";
 import { formatContent } from "./output.ts";
 
 export interface PromptEntry {
@@ -11,10 +17,7 @@ export interface PromptEntry {
   prompt: Prompt;
 }
 
-export interface PromptArgumentToken {
-  value: string;
-  separator?: number;
-}
+export type PromptArgumentToken = CommandToken;
 
 export type PromptCommand =
   | { action: "list"; server?: string }
@@ -30,7 +33,7 @@ export function promptKey(server: string, name: string): string {
 }
 
 export function parsePromptCommand(input: string): PromptCommand {
-  const tokens = tokenize(input);
+  const tokens = tokenizeCommand(input, "prompt");
   const action = tokens.shift()?.value;
   if (action === "list") {
     if (tokens.length > 1) throw new Error("Usage: /mcp-prompt list [server]");
@@ -120,15 +123,15 @@ export function formatPromptList(
     const argumentsHint = (entry.prompt.arguments ?? [])
       .map((argument) =>
         argument.required
-          ? `<${quote(argument.name)}>`
-          : `[${quote(argument.name)}]`,
+          ? `<${quoteCommandArgument(argument.name)}>`
+          : `[${quoteCommandArgument(argument.name)}]`,
       )
       .join(" ");
     const description = compact(
       entry.prompt.description ?? entry.prompt.title ?? "",
       160,
     );
-    const line = `${entry.server} ${quote(entry.prompt.name)}${argumentsHint ? ` ${argumentsHint}` : ""}${description ? ` — ${description}` : ""}`;
+    const line = `${entry.server} ${quoteCommandArgument(entry.prompt.name)}${argumentsHint ? ` ${argumentsHint}` : ""}${description ? ` — ${description}` : ""}`;
     if (shown >= 100 || lines.join("\n").length + line.length > 15_000) {
       lines.push(`${selected.length - shown} additional prompts omitted.`);
       break;
@@ -149,7 +152,7 @@ export function promptCompletions(
   const trailingSpace = /\s$/.test(prefix);
   let tokens: PromptArgumentToken[];
   try {
-    tokens = tokenize(prefix);
+    tokens = tokenizeCommand(prefix);
   } catch {
     return null;
   }
@@ -191,7 +194,7 @@ export function promptCompletions(
       )
       .sort((a, b) => a.prompt.name.localeCompare(b.prompt.name, "en"));
     return prompts.map((entry) => ({
-      value: `run ${quote(server)} ${quote(entry.prompt.name)}`,
+      value: `run ${quoteCommandArgument(server)} ${quoteCommandArgument(entry.prompt.name)}`,
       label: entry.prompt.name,
       ...(entry.prompt.description || entry.prompt.title
         ? {
@@ -237,9 +240,9 @@ export function promptCompletions(
   }
   const base = [
     "run",
-    quote(server),
-    quote(selected.prompt.name),
-    ...supplied.map((token) => quote(token.value)),
+    quoteCommandArgument(server),
+    quoteCommandArgument(selected.prompt.name),
+    ...supplied.map(renderCommandToken),
   ].join(" ");
   const arguments_ = definitions.filter(
     (argument) =>
@@ -247,7 +250,7 @@ export function promptCompletions(
   );
   return arguments_.length > 0
     ? arguments_.map((argument) => ({
-        value: `${base} ${quote(argument.name)}=`,
+        value: `${base} ${quoteCommandArgument(argument.name)}=`,
         label: `${argument.name}=`,
         ...(argument.description
           ? { description: compact(argument.description, 100) }
@@ -262,64 +265,9 @@ function completionItems(
   label: (value: string) => string,
 ) {
   return values.map((value) => ({
-    value: `${prefix}${quote(value)}`,
+    value: `${prefix}${quoteCommandArgument(value)}`,
     label: label(value),
   }));
-}
-
-function quote(value: string): string {
-  return /^[A-Za-z0-9_.:/-]+$/.test(value)
-    ? value
-    : `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-
-function tokenize(input: string): PromptArgumentToken[] {
-  const tokens: PromptArgumentToken[] = [];
-  let token = "";
-  let separator: number | undefined;
-  let quote: '"' | "'" | undefined;
-  let escaped = false;
-  let started = false;
-  for (const character of input) {
-    if (escaped) {
-      token += character;
-      escaped = false;
-      started = true;
-    } else if (character === "\\" && quote !== "'") {
-      escaped = true;
-      started = true;
-    } else if (quote) {
-      if (character === quote) quote = undefined;
-      else token += character;
-      started = true;
-    } else if (character === '"' || character === "'") {
-      quote = character;
-      started = true;
-    } else if (/\s/u.test(character)) {
-      if (started) {
-        tokens.push({
-          value: token,
-          ...(separator !== undefined ? { separator } : {}),
-        });
-        token = "";
-        separator = undefined;
-        started = false;
-      }
-    } else {
-      if (character === "=" && separator === undefined)
-        separator = token.length;
-      token += character;
-      started = true;
-    }
-  }
-  if (quote) throw new Error("Unterminated quote in prompt arguments.");
-  if (escaped) throw new Error("Trailing escape in prompt arguments.");
-  if (started)
-    tokens.push({
-      value: token,
-      ...(separator !== undefined ? { separator } : {}),
-    });
-  return tokens;
 }
 
 function hasUsablePromptContent(

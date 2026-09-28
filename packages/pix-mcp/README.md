@@ -1,8 +1,8 @@
 # @ikuma.cloud/pix-mcp
 
 A small Pi MCP adapter: discover tools, load their schemas on demand, call
-those tools natively, and run user-selected MCP prompts. No scripting engine or
-model-provider-specific API is required.
+those tools natively, and use user-selected MCP prompts and resources. No
+scripting engine or model-provider-specific API is required.
 
 ## Usage
 
@@ -13,9 +13,18 @@ pi -e /absolute/path/to/pix/packages/pix-mcp
 ```
 
 Disable any other MCP adapter that would collide with the `mcp` tool,
-`/mcp-prompt` command, or flags, but keep any permission-control extensions
-enabled. Review the configuration and automatic startup behavior below before
-connecting servers.
+`/mcp-prompt` or `/mcp-resource` commands, or flags, but keep any
+permission-control extensions enabled. Review the configuration and automatic
+startup behavior below before connecting servers.
+
+From this repository, the included configuration launches the pinned MCP
+Everything server for manual prompt and resource testing:
+
+```sh
+mise run mcp:dev --mcp-config pix-mcp-test.json
+```
+
+Review the file first; `npx` downloads and runs the pinned package.
 
 ## Configuration
 
@@ -83,7 +92,7 @@ URLs, and HTTP headers.
 | `type` | `stdio`, `http`, or `streamable-http` (alias of `http`); only stdio is inferred, when `command` is present |
 | `command`, `args`, `env` | Stdio only; executable and argument array, not a shell command |
 | `url`, `headers` | Streamable HTTP only; explicit `type` required; no legacy SSE fallback or redirect following |
-| `timeout` | Hard deadline for each tool invocation or prompt retrieval, in milliseconds; default 30000 |
+| `timeout` | Hard deadline for each tool invocation, prompt retrieval, or resource read, in milliseconds; default 30000 |
 | `cwd` | Stdio extension: working directory relative to the config directory |
 | `description` | Discovery extension: optional summary, truncated to 500 characters |
 | `startupTimeoutMs` | pix extension: complete connection/initialization handshake deadline; default 30000 |
@@ -117,9 +126,9 @@ as failed connections. Correct the file and reload Pi to retry.
 
 All three deadline fields accept integers from 1 through 2,147,483,647 milliseconds
 (Node's timer-safe maximum). Each defaults independently to 30 seconds. Setting
-`"timeout": 960000` permits a 16-minute tool call or prompt retrieval without
-lengthening startup or discovery. The invocation clock starts after connection
-startup; progress does not reset it. Catalog deadlines cover all pages of one
+`"timeout": 960000` permits a 16-minute tool call, prompt retrieval, or resource
+read without lengthening startup or discovery. The invocation clock starts after
+connection startup; progress does not reset it. Catalog deadlines cover all pages of one
 snapshot; a subsequent list-change refresh starts a new deadline.
 
 HTTP deadlines cover response headers and bodies, including JSON and SSE. MCP
@@ -130,8 +139,9 @@ Upstream proxies and servers may still impose their own limits.
 
 **Breaking changes from 0.0.1:**
 
-- Replace `timeoutMs` with `timeout` for tool calls. Set `startupTimeoutMs` and
-  `catalogTimeoutMs` separately if their defaults are unsuitable. The removed
+- Replace `timeoutMs` with `timeout` for tool calls, prompt retrievals, and
+  resource reads. Set `startupTimeoutMs` and `catalogTimeoutMs` separately if
+  their defaults are unsuitable. The removed
   field produces a migration diagnostic; it is not an alias.
 - Add `"type": "http"` to remote entries that previously specified only `url`.
 - Connection strings now expand environment references beyond `env` and `headers`.
@@ -159,10 +169,9 @@ credentials; debug a failing server separately in a trusted environment.
 ## Discovery and execution
 
 At session startup, the adapter connects to enabled servers and fetches their
-advertised paginated tool and prompt catalogs. A server's configuration,
-connection, or discovery failure does not hide healthy features from other
-servers.
-Full schemas stay out of model context until selected. **Schema exposure is lazy;
+advertised paginated tool, prompt, resource, and resource-template catalogs. A
+server's configuration, connection, or discovery failure does not hide healthy
+features from other servers. Full schemas stay out of model context until selected. **Schema exposure is lazy;
 initial connections and metadata discovery are not.**
 
 The agent uses the `mcp` tool:
@@ -198,8 +207,8 @@ exceptions, schema contents, invalid tool names, and dialect URLs are not expose
 
 An unsupported output schema still fails that server's tool discovery rather than
 producing a per-tool rejection. Losing an established HTTP notification stream
-withdraws tool and prompt catalogs rather than silently keeping stale metadata;
-servers that decline the optional stream with HTTP 405 remain usable. Reload Pi
+withdraws tool, prompt, and resource catalogs rather than silently keeping stale
+metadata; servers that decline the optional stream with HTTP 405 remain usable. Reload Pi
 to reconnect a failed server or reread configuration.
 
 Pi handles provider compatibility. Some providers support transcript-anchored
@@ -282,12 +291,12 @@ every mode; `run` submits immediately and can pass an intentional empty value as
 `name=`.
 
 Arguments use shell-style quoting. Positional values map to the prompt's declared
-argument order; `name=value` selects a declared argument explicitly. Quote or escape
-an equals sign in a positional value (for example, `"a=b"` or `a\=b`) to avoid
-assignment parsing. Argument names containing `=` work when the name is quoted,
+argument order; `name=value` selects a declared argument explicitly. Quote or
+escape an equals sign in a positional value (for example, `"a=b"` or `a\=b`) to
+avoid assignment parsing. Argument names containing `=` work when the name is quoted,
 as in `"x=y"=value`. The adapter checks required arguments before sending
-`prompts/get`. Prompt retrieval uses the
-server's `timeout`; prompt discovery uses `catalogTimeoutMs` and follows pagination.
+`prompts/get`. Prompt retrieval uses the server's `timeout`; prompt discovery uses
+`catalogTimeoutMs` and follows pagination.
 Prompt list-change notifications atomically replace that server's prompt catalog.
 Duplicate or invalid prompt metadata fails only that server's prompt catalog. A
 prompt discovery failure does not hide healthy tools, and a tool discovery failure
@@ -305,6 +314,60 @@ Prompt metadata and bodies are untrusted server content. Catalog metadata stays
 in command UI; a prompt body enters model context only after the user explicitly
 runs it. Review configured servers and selected prompts accordingly.
 
+## Resources
+
+MCP resources are application-controlled and are not exposed as model-callable
+tools. Use the stable `/mcp-resource` command:
+
+```text
+/mcp-resource
+/mcp-resource list [server]
+/mcp-resource read <server> <uri-or-template> [name=value ...]
+```
+
+In TUI mode, the bare command opens a native selector for direct resources and
+resource templates. Focusing an item shows its bounded metadata but does not read
+it. Selecting a template requests every variable in declaration order and expands
+it according to [RFC 6570 Level 4](https://www.rfc-editor.org/rfc/rfc6570).
+Escape cancels without reading. The result is placed in Pi's editor for review;
+image contents use private temporary `@` references that are removed at session
+shutdown.
+
+The explicit `list` and `read` forms work in every mode. `read` immediately sends
+the resource contents as a user message and starts or queues a model turn; Pi
+commands do not provide a raw structured-result channel. A concrete URI need not
+appear in the catalog, allowing known or optional-template URIs to be read
+explicitly. Arguments are accepted only when the target exactly matches a
+cataloged template. Template variables use the same shell-style positional and
+`name=value` syntax as prompt arguments. MCP does not mark template variables as
+required: omitted variables use RFC 6570's undefined-variable behavior, leaving a
+picker input empty omits it, and explicit `name=` supplies an intentional empty
+value. The expanded result must still be a valid absolute URI. MCP completion
+requests for variable values are not supported.
+
+Each returned content item gets a server/URI source marker because one read can
+return multiple resources. Text and supported images are retained in order.
+Non-image blobs and oversized or unsupported content are omitted from the preview
+and preserved in the private full-result artifact. Unsafe terminal and
+bidirectional controls are removed from displayed or editable text; the original
+content remains in the artifact when sanitization changes it, while `_meta` is
+excluded.
+
+Direct resources and templates are discovered independently from tools and
+prompts, but committed together as one atomic per-server resource snapshot.
+Resource list-change notifications refresh both catalogs. Duplicate, malformed,
+or oversized metadata fails only that server's resource catalog. Picker
+selections are rejected if any catalog refresh replaces the selected entry while
+variables are being collected, content is being read or formatted, or the editor
+is being updated.
+
+Resource metadata, URIs, template values, and bodies are untrusted server content.
+Icons are neither displayed nor fetched, `_meta` is not retained or included in
+resource artifacts, and URIs containing userinfo credentials are rejected. A body
+enters model context only after an explicit user selection or `read` command. Resource subscriptions
+and update notifications are not supported, and resources are never reread or
+injected automatically.
+
 ## Output and limits
 
 Text, supported images, and structured content are retained. Long text gets a
@@ -314,22 +377,30 @@ content is explicitly omitted from the preview, not silently discarded. Pi's
 error-result path is text-only, so images in MCP errors are preserved in a
 full-result artifact rather than displayed inline.
 
-When necessary, the full MCP tool or prompt result is written to
+When necessary, the full MCP tool, prompt, or resource result is written to
 `pix-mcp-*/result.json` under the system temp directory (directory mode 0700,
-file mode 0600). Pi can inspect it with `read`. These artifacts may contain
-sensitive data and are **not deleted at session shutdown**; remove them when no
+file mode 0600). Pi can inspect it with `read`; resource artifacts omit `_meta`.
+These artifacts may contain sensitive data and are **not deleted at session
+shutdown**; remove them when no
 longer needed. Output limits are not a complete memory or security sandbox.
 
 Configuration is limited to 256 KiB and 32 servers. Startup connects at most four
 servers concurrently. Each tool or prompt catalog is limited to 1000 entries,
-100 pagination cursors, and 2 MiB of metadata; individual input/output schemas are
-limited to 64 KiB. Prompt arguments are limited to 256 KiB per retrieval;
-prompt and prompt-argument names are limited to 256 bytes, cannot contain Unicode
-control, format, or line-separator characters, and each prompt can declare at most
-100 arguments. Tool names must use 1–128 ASCII letters, digits,
-underscores, hyphens, or periods. Tool and prompt descriptions, prompt-argument
-descriptions, and prompt titles are limited to 16 KiB. Stdio messages are limited
-to 16 MiB.
+100 pagination cursors, and 2 MiB of metadata. Direct resources and templates
+share a 1000-entry and 2 MiB limit, with up to 100 cursors for each endpoint.
+Individual input/output schemas are limited to 64 KiB. Prompt arguments and
+resource-template arguments are limited to 256 KiB per retrieval; prompt and
+prompt-argument names are limited to 256 bytes, cannot contain Unicode control,
+format, or line-separator characters, and each prompt can declare at most 100
+arguments. Tool names must use 1–128 ASCII letters, digits, underscores, hyphens,
+or periods. Tool and prompt descriptions, prompt-argument descriptions, and
+prompt titles are limited to 16 KiB. Resource URIs, templates, names, titles, and
+descriptions are limited to 16 KiB; MIME types and template-variable names are
+limited to 256 bytes; templates may contain at most 100 unique variables, and
+resource annotations may contain at most two audience hints. A resource read may
+return at most 100 content items and 16 MiB of serialized data.
+Stdio messages are limited to 16 MiB. HTTP JSON responses and individual SSE
+events are streaming-limited to 16 MiB plus 64 KiB of protocol framing.
 Schemas are syntax-checked before compilation; see [schema compatibility](#schema-compatibility)
 for supported dialects and the draft-07 subset. Schema nesting is limited to 64
 levels, including literal data. External schema references are unsupported, but
@@ -340,16 +411,16 @@ The adapter never automatically retries `tools/call`: a timeout or lost response
 may occur after a mutating operation took effect. Cancellation or expiration
 aborts only the affected HTTP request and sends a best-effort MCP cancellation
 notification; concurrent sibling calls remain usable. Successful output is
-validated against the schema captured when the call began; MCP error results are exempt
-from that success schema. Cancellation is best-effort at the server and does not
+validated against the schema captured when the call began; MCP error results are
+exempt from that success schema. Cancellation is best-effort at the server and does not
 roll back effects.
 
 ## Deliberately out of scope
 
-OAuth, legacy SSE transport, MCP resources APIs, prompt argument completion,
-sampling, elicitation, MCP apps, task execution, semantic search, scripting,
-config UI, and persistent catalog caching. Use a fuller adapter when those
-capabilities are required.
+OAuth, legacy SSE transport, resource subscriptions, MCP prompt/resource
+argument-value completion, sampling, elicitation, MCP apps, task execution,
+semantic search, scripting, config UI, and persistent catalog caching. Use a
+fuller adapter when those capabilities are required.
 
 ## Contributing
 

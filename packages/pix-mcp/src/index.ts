@@ -5,7 +5,12 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Prompt, Tool } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  Prompt,
+  Resource,
+  ResourceTemplate,
+  Tool,
+} from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
@@ -15,6 +20,21 @@ import {
   removeEditablePromptGuard,
 } from "./output.ts";
 import { pickPrompt } from "./prompt-picker.ts";
+import { pickResource } from "./resource-picker.ts";
+import {
+  formatResourceList,
+  formatResourceResult,
+  parseResourceCommand,
+  resourceCompletions,
+  resourceEntryKey,
+  resourceKey,
+  resourceTemplateVariables,
+  resolveResourceUri,
+  type ResourceArgumentToken,
+  type ResourceCommand,
+  type ResourceEntry,
+  type TemplateResourceEntry,
+} from "./resources.ts";
 import {
   formatPromptList,
   formatPromptResult,
@@ -44,17 +64,23 @@ interface PromptSelection {
   item: PromptEntry;
 }
 
+interface ResourceSelection {
+  command: ResourceCommand;
+  item: ResourceEntry;
+}
+
 interface State {
   alive: boolean;
   status: string;
   entries: Map<string, Entry>;
   prompts: Map<string, PromptEntry>;
+  resources: Map<string, ResourceEntry>;
   loaded: Map<string, string>;
   connections: Map<string, Connection>;
   rejected: Map<string, Rejections>;
   configIssues: ConfigIssue[];
-  promptDraftCleanups: Set<() => Promise<void>>;
-  promptDraftGuards: Set<string>;
+  draftCleanups: Set<() => Promise<void>>;
+  draftGuards: Set<string>;
 }
 
 const discoveryParameters = Type.Object(
@@ -178,8 +204,8 @@ export default function mcp(pi: ExtensionAPI) {
               ensureSelectedPromptCurrent();
               ctx.signal?.throwIfAborted();
               ctx.ui.pasteToEditor(draft.text);
-              owner.promptDraftCleanups.add(draft.cleanup);
-              if (draft.guard) owner.promptDraftGuards.add(draft.guard);
+              owner.draftCleanups.add(draft.cleanup);
+              if (draft.guard) owner.draftGuards.add(draft.guard);
             } catch (error) {
               await draft.cleanup();
               throw error;
@@ -201,6 +227,197 @@ export default function mcp(pi: ExtensionAPI) {
       }
     },
   });
+
+  pi.registerCommand("mcp-resource", {
+    description: "Select, list, or read a user-controlled MCP resource",
+    getArgumentCompletions: (prefix) =>
+      resourceCompletions(
+        prefix,
+        [...(state?.resources.values() ?? [])],
+        state?.connections.keys() ?? [],
+      ),
+    async handler(input, ctx) {
+      try {
+        const owner = state;
+        if (!owner) throw new Error("MCP session has not started.");
+        current(owner);
+        const editBeforeSending = ctx.mode === "tui" && input.trim() === "";
+        const selection = editBeforeSending
+          ? await chooseResource(owner, ctx)
+          : undefined;
+        const command =
+          selection?.command ??
+          (editBeforeSending ? undefined : parseResourceCommand(input));
+        if (!command) return;
+        if (command.action === "list") {
+          if (
+            command.server &&
+            !owner.connections.has(command.server) &&
+            !owner.configIssues.some((issue) => issue.name === command.server)
+          )
+            throw new Error("Unknown MCP server.");
+          const resourceStatus = [
+            ...owner.configIssues
+              .filter(
+                (issue) => !command.server || issue.name === command.server,
+              )
+              .map((issue) => `${issue.name}: ${issue.message}`),
+            ...[...owner.connections.values()]
+              .filter(
+                (connection) =>
+                  !command.server || connection.config.name === command.server,
+              )
+              .map(
+                (connection) =>
+                  `${connection.config.name}: ${connection.resourceStatus}`,
+              ),
+          ].join("\n");
+          const text = `${resourceStatus}${resourceStatus ? "\n\n" : ""}${formatResourceList(
+            [...owner.resources.values()],
+            command.server,
+          )}`;
+          if (!ctx.hasUI) throw new Error(text);
+          ctx.ui.notify(text, "info");
+          return;
+        }
+
+        const direct = owner.resources.get(
+          resourceKey(command.server, "resource", command.target),
+        );
+        const template = owner.resources.get(
+          resourceKey(command.server, "template", command.target),
+        );
+        const item =
+          selection?.item ??
+          (command.argumentTokens.length > 0 ? template : (direct ?? template));
+        const selectedKey = item ? resourceEntryKey(item) : undefined;
+        const ensureSelectedResourceCurrent = () => {
+          if (
+            selection &&
+            selectedKey &&
+            owner.resources.get(selectedKey) !== item
+          )
+            throw new Error(
+              "MCP resource catalog changed. Open the picker again.",
+            );
+        };
+        ensureSelectedResourceCurrent();
+        const templateEntry =
+          item?.kind === "template"
+            ? item
+            : template?.kind === "template"
+              ? template
+              : undefined;
+        const uri = resolveResourceUri(
+          command.target,
+          templateEntry,
+          command.argumentTokens,
+        );
+        const connection = owner.connections.get(command.server);
+        if (!connection) throw new Error("MCP connection unavailable.");
+        if (ctx.mode === "tui")
+          ctx.ui.setStatus(
+            "mcp-resource",
+            `Loading ${command.server} / ${compact(uri, 120)}…`,
+          );
+        try {
+          const result = await connection.readResource(uri, ctx.signal);
+          current(owner);
+          ensureSelectedResourceCurrent();
+          const formatted = await formatResourceResult(command.server, result);
+          current(owner);
+          ensureSelectedResourceCurrent();
+          ctx.signal?.throwIfAborted();
+          if (editBeforeSending) {
+            const draft = await formatEditableContent(formatted.content);
+            try {
+              current(owner);
+              ensureSelectedResourceCurrent();
+              ctx.signal?.throwIfAborted();
+              ctx.ui.pasteToEditor(draft.text);
+              owner.draftCleanups.add(draft.cleanup);
+              if (draft.guard) owner.draftGuards.add(draft.guard);
+            } catch (error) {
+              await draft.cleanup();
+              throw error;
+            }
+          } else {
+            pi.sendUserMessage(
+              formatted.content,
+              ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+            );
+          }
+        } finally {
+          if (ctx.mode === "tui") ctx.ui.setStatus("mcp-resource", undefined);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "MCP resource failed.";
+        if (!ctx.hasUI) throw new Error(message);
+        ctx.ui.notify(message, "error");
+      }
+    },
+  });
+
+  async function chooseResource(
+    owner: State,
+    ctx: ExtensionCommandContext,
+  ): Promise<ResourceSelection | undefined> {
+    const entries = [...owner.resources.values()].sort(
+      (a, b) =>
+        a.server.localeCompare(b.server, "en") ||
+        resourceEntryKey(a).localeCompare(resourceEntryKey(b), "en"),
+    );
+    if (entries.length === 0) {
+      ctx.ui.notify("No MCP resources are available.", "warning");
+      return;
+    }
+
+    const item = await pickResource(entries, ctx);
+    if (!item) return;
+    ctx.signal?.throwIfAborted();
+
+    const key = resourceEntryKey(item);
+    const ensureCurrent = () => {
+      current(owner);
+      if (owner.resources.get(key) !== item)
+        throw new Error("MCP resource catalog changed. Open the picker again.");
+    };
+    ensureCurrent();
+
+    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
+    const argumentTokens: ResourceArgumentToken[] = [];
+    if (item.kind === "template") {
+      for (const variable of item.variables) {
+        const value = await ctx.ui.input(
+          `${variable} (optional)`,
+          "Leave empty to omit",
+          dialogOptions,
+        );
+        if (value === undefined) return;
+        ctx.signal?.throwIfAborted();
+        ensureCurrent();
+        if (value !== "")
+          argumentTokens.push({
+            value: `${variable}=${value}`,
+            separator: variable.length,
+          });
+      }
+    }
+
+    return {
+      command: {
+        action: "read",
+        server: item.server,
+        target:
+          item.kind === "resource"
+            ? item.resource.uri
+            : item.template.uriTemplate,
+        argumentTokens,
+      },
+      item,
+    };
+  }
 
   async function choosePrompt(
     owner: State,
@@ -441,6 +658,35 @@ export default function mcp(pi: ExtensionAPI) {
     }
   }
 
+  function synchronizeResources(
+    owner: State,
+    config: ServerConfig,
+    resources: Resource[],
+    templates: ResourceTemplate[],
+  ) {
+    if (!owner.alive || state !== owner) return;
+    for (const [key, item] of owner.resources) {
+      if (item.server === config.name) owner.resources.delete(key);
+    }
+    for (const resource of resources) {
+      const item: ResourceEntry = {
+        kind: "resource",
+        server: config.name,
+        resource,
+      };
+      owner.resources.set(resourceEntryKey(item), item);
+    }
+    for (const template of templates) {
+      const item: TemplateResourceEntry = {
+        kind: "template",
+        server: config.name,
+        template,
+        variables: resourceTemplateVariables(template.uriTemplate),
+      };
+      owner.resources.set(resourceEntryKey(item), item);
+    }
+  }
+
   function synchronize(owner: State, config: ServerConfig, tools: Tool[]) {
     if (!owner.alive || state !== owner) return;
     const previous = new Map(
@@ -551,14 +797,14 @@ export default function mcp(pi: ExtensionAPI) {
     owner.alive = false;
     state = undefined;
     deactivate(owned);
-    const promptDraftCleanups = [...owner.promptDraftCleanups];
-    owner.promptDraftCleanups.clear();
-    owner.promptDraftGuards.clear();
+    const draftCleanups = [...owner.draftCleanups];
+    owner.draftCleanups.clear();
+    owner.draftGuards.clear();
     await Promise.all([
       ...[...owner.connections.values()].map((connection) =>
         connection.close(),
       ),
-      ...promptDraftCleanups.map((cleanup) => cleanup()),
+      ...draftCleanups.map((cleanup) => cleanup()),
     ]);
   }
 
@@ -569,12 +815,13 @@ export default function mcp(pi: ExtensionAPI) {
       status: "No MCP servers configured.",
       entries: new Map(),
       prompts: new Map(),
+      resources: new Map(),
       loaded: new Map(),
       connections: new Map(),
       rejected: new Map(),
       configIssues: [],
-      promptDraftCleanups: new Set(),
-      promptDraftGuards: new Set(),
+      draftCleanups: new Set(),
+      draftGuards: new Set(),
     };
     state = owner;
     try {
@@ -606,6 +853,8 @@ export default function mcp(pi: ExtensionAPI) {
             server,
             (tools) => synchronize(owner, server, tools),
             (prompts) => synchronizePrompts(owner, server, prompts),
+            (resources, templates) =>
+              synchronizeResources(owner, server, resources, templates),
           ),
         );
       }
@@ -637,7 +886,7 @@ export default function mcp(pi: ExtensionAPI) {
     const consumed = new Set<string>();
     const removeKnownGuards = (text: string) => {
       let next = text;
-      for (const guard of owner.promptDraftGuards) {
+      for (const guard of owner.draftGuards) {
         if (!next.includes(guard)) continue;
         next = removeEditablePromptGuard(next, guard);
         consumed.add(guard);
@@ -654,7 +903,7 @@ export default function mcp(pi: ExtensionAPI) {
           : block,
       );
     }
-    for (const guard of consumed) owner.promptDraftGuards.delete(guard);
+    for (const guard of consumed) owner.draftGuards.delete(guard);
     if (consumed.size > 0) return { message: { ...event.message, content } };
   });
 

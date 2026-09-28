@@ -27,6 +27,7 @@ import { eagleSchema, tinyPng } from "./fixtures/server.ts";
 import { toolName } from "./catalog.ts";
 import { promptKey } from "./prompts.ts";
 import type { RejectionCode } from "./rejection.ts";
+import { resourceKey } from "./resources.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -216,18 +217,31 @@ async function setup(
       }[];
     };
   }
-  async function prompt(
+  async function runCommand(
+    name: "mcp-prompt" | "mcp-resource",
     input: string,
-    signal: AbortSignal = new AbortController().signal,
+    signal: AbortSignal,
   ) {
     const command = session.extensionRunner
       .getRegisteredCommands()
-      .find((item) => item.name === "mcp-prompt");
-    if (!command) throw new Error("Missing /mcp-prompt command");
+      .find((item) => item.name === name);
+    if (!command) throw new Error(`Missing /${name} command`);
     if (!commandContext) throw new Error("Missing command context");
     const context = Object.create(commandContext) as ExtensionCommandContext;
     Object.defineProperty(context, "signal", { value: signal });
     await command.handler(input, context);
+  }
+  async function prompt(
+    input: string,
+    signal: AbortSignal = new AbortController().signal,
+  ) {
+    await runCommand("mcp-prompt", input, signal);
+  }
+  async function resource(
+    input: string,
+    signal: AbortSignal = new AbortController().signal,
+  ) {
+    await runCommand("mcp-resource", input, signal);
   }
   function registerUnrelated() {
     if (!unrelatedApi) throw new Error("Missing test extension");
@@ -295,6 +309,7 @@ async function setup(
     call,
     discover,
     prompt,
+    resource,
     sendUserMessage,
     registerUnrelated,
     requestTools,
@@ -540,6 +555,188 @@ test("prompt cancellation after formatting prevents message injection", async ()
   await expect(prompt('run fixture review "the API"', signal)).rejects.toThrow(
     "cancelled after formatting",
   );
+  expect(sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("lists and reads MCP resources through one stable command", async () => {
+  const { resource, sendUserMessage, notify } = await setup({ mode: "tui" });
+
+  await resource("list fixture");
+  expect(notify).toHaveBeenLastCalledWith(
+    expect.stringContaining("fixture resource fixture://notes"),
+    "info",
+  );
+  expect(notify).toHaveBeenLastCalledWith(
+    expect.stringContaining(
+      'fixture template "fixture://dynamic/text/{id}" [id]',
+    ),
+    "info",
+  );
+
+  await resource("read fixture fixture://notes");
+  expect(sendUserMessage).toHaveBeenLastCalledWith(
+    [
+      {
+        type: "text",
+        text: '[MCP resource {"server":"fixture","uri":"fixture://notes","mimeType":"text/plain"}]\n\nFixture notes',
+      },
+    ],
+    undefined,
+  );
+
+  await resource('read fixture "fixture://dynamic/text/{id}" id="a value"');
+  expect(sendUserMessage).toHaveBeenLastCalledWith(
+    [
+      {
+        type: "text",
+        text: expect.stringContaining(
+          '"uri":"fixture://dynamic/text/a%20value","mimeType":"text/plain"',
+        ),
+      },
+    ],
+    undefined,
+  );
+});
+
+test("opens the native resource picker and stages direct and template reads", async () => {
+  const { resource, custom, inputDialog, pasteToEditor, sendUserMessage } =
+    await setup({ mode: "tui" });
+
+  custom.mockResolvedValueOnce(
+    resourceKey("fixture", "resource", "fixture://notes"),
+  );
+  await resource("");
+  expect(inputDialog).not.toHaveBeenCalled();
+  expect(pasteToEditor).toHaveBeenLastCalledWith(
+    '[MCP resource {"server":"fixture","uri":"fixture://notes","mimeType":"text/plain"}]\n\nFixture notes',
+  );
+
+  custom.mockResolvedValueOnce(
+    resourceKey("fixture", "template", "fixture://dynamic/text/{id}"),
+  );
+  inputDialog.mockResolvedValueOnce("7");
+  await resource("");
+  expect(inputDialog).toHaveBeenLastCalledWith(
+    "id (optional)",
+    "Leave empty to omit",
+    expect.any(Object),
+  );
+  expect(pasteToEditor).toHaveBeenLastCalledWith(
+    expect.stringContaining(
+      '"uri":"fixture://dynamic/text/7","mimeType":"text/plain"',
+    ),
+  );
+
+  custom.mockResolvedValueOnce(
+    resourceKey("fixture", "template", "fixture://dynamic/text/{id}"),
+  );
+  inputDialog.mockResolvedValueOnce("");
+  await resource("");
+  expect(pasteToEditor).toHaveBeenLastCalledWith(
+    expect.stringContaining(
+      '"uri":"fixture://dynamic/text/","mimeType":"text/plain"',
+    ),
+  );
+  expect(sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("keeps staged resource images private until session shutdown", async () => {
+  const { session, resource, custom, pasteToEditor } = await setup({
+    mode: "tui",
+  });
+  custom.mockResolvedValue(
+    resourceKey("fixture", "resource", "fixture://image"),
+  );
+
+  await resource("");
+
+  const draft = pasteToEditor.mock.calls[0]?.[0];
+  const path = draft?.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing editable resource image reference");
+  expect((await stat(path)).mode & 0o777).toBe(0o600);
+
+  await session.extensionRunner.emit({
+    type: "session_shutdown",
+    reason: "quit",
+  });
+  await expect(stat(path)).rejects.toThrow();
+});
+
+test.each([
+  ["picker", undefined, []],
+  [
+    "template input",
+    resourceKey("fixture", "template", "fixture://dynamic/text/{id}"),
+    [undefined],
+  ],
+] as const)(
+  "cancelling the native resource %s does not submit content",
+  async (_stage, selection, values) => {
+    const { resource, custom, inputDialog, pasteToEditor, sendUserMessage } =
+      await setup({ mode: "tui" });
+    custom.mockResolvedValue(selection);
+    inputDialog.mockResolvedValueOnce(values[0]);
+
+    await resource("");
+
+    expect(inputDialog).toHaveBeenCalledTimes(values.length);
+    expect(pasteToEditor).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  },
+);
+
+test("rejects a picker selection when the resource catalog changes during its read", async () => {
+  const { resource, custom, notify, pasteToEditor, sendUserMessage } =
+    await setup({ mode: "tui" });
+  custom.mockResolvedValue(
+    resourceKey("fixture", "resource", "fixture://change"),
+  );
+
+  await resource("");
+
+  expect(notify).toHaveBeenLastCalledWith(
+    "MCP resource catalog changed. Open the picker again.",
+    "error",
+  );
+  expect(pasteToEditor).not.toHaveBeenCalled();
+  expect(sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("the native picker reports an empty resource catalog", async () => {
+  const { resource, custom, notify } = await setup({
+    mode: "tui",
+    configValue: { mcpServers: {} },
+  });
+
+  await resource("");
+
+  expect(custom).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenLastCalledWith(
+    "No MCP resources are available.",
+    "warning",
+  );
+});
+
+test("resource commands fail safely in headless mode", async () => {
+  const { resource, sendUserMessage } = await setup();
+  await expect(resource("")).rejects.toThrow("Usage: /mcp-resource");
+  await expect(resource("list missing")).rejects.toThrow("Unknown MCP server");
+  await expect(
+    resource("read fixture fixture://arbitrary unexpected"),
+  ).rejects.toThrow("exact URI template");
+  expect(sendUserMessage).not.toHaveBeenCalled();
+});
+
+test("resource cancellation after formatting prevents message injection", async () => {
+  const { resource, sendUserMessage } = await setup();
+  const signal = new AbortController().signal;
+  vi.spyOn(signal, "throwIfAborted").mockImplementation(() => {
+    throw new Error("cancelled after formatting");
+  });
+  await expect(
+    resource("read fixture fixture://notes", signal),
+  ).rejects.toThrow("cancelled after formatting");
   expect(sendUserMessage).not.toHaveBeenCalled();
 });
 

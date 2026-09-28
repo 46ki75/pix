@@ -1,11 +1,11 @@
 {
   "name": "@ikuma.cloud/pix-mcp",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
-  "description": "MCP prompts and lazily activated native tools for Pi Coding Agent",
+  "description": "MCP resources, prompts, and lazily activated native tools for Pi Coding Agent",
   "keywords": [
     "pi-package"
   ],
@@ -22,7 +22,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@std-uritemplate/std-uritemplate": "2.0.12",
     "ajv": "8.20.0",
+    "fast-uri": "3.1.8",
     "undici": "8.10.2"
   },
   "peerDependencies": {

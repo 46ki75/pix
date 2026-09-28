@@ -130,7 +130,7 @@ function parseServer(
   if (Object.hasOwn(server, "timeoutMs"))
     invalid(
       "timeoutMs",
-      "Removed; use timeout for tool calls, startupTimeoutMs for initialization, and catalogTimeoutMs for discovery (milliseconds).",
+      "Removed; use timeout for tool calls, prompt retrievals, and resource reads; startupTimeoutMs for initialization; and catalogTimeoutMs for discovery (milliseconds).",
     );
   if (Object.hasOwn(server, "approve"))
     invalid(

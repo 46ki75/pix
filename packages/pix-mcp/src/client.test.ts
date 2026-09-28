@@ -11,8 +11,13 @@ import {
   EmptyResultSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
   type Prompt,
+  type Resource,
+  type ResourceTemplate,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, expect, test } from "vitest";
@@ -41,15 +46,22 @@ async function httpFixture(
     jsonResponse?: boolean;
     initializeDelay?: number;
     catalogDelay?: number;
+    resourceCatalogDelay?: number;
     stalledBody?: "application/json" | "text/event-stream";
+    oversizedReadResponse?: boolean;
     notificationContentType?: string;
     legacyOutput?: boolean;
     draft07Output?: boolean;
     onToolsChanged?: (tools: Tool[], connection: Connection) => void;
     onPromptsChanged?: (prompts: Prompt[], connection: Connection) => void;
+    onResourcesChanged?: (
+      resources: Resource[],
+      templates: ResourceTemplate[],
+      connection: Connection,
+    ) => void;
   } = {},
 ) {
-  const { server, calls, promptCalls } = fixtureServer();
+  const { server, calls, promptCalls, resourceCalls } = fixtureServer();
   if (options.badSchema || options.paginatedSchema)
     server.setRequestHandler(ListToolsRequestSchema, (request) => {
       if (request.params?.cursor === "second") return { tools: [] };
@@ -142,6 +154,8 @@ async function httpFixture(
           await setTimeout(options.initializeDelay);
         if (message.method === "tools/list" && options.catalogDelay)
           await setTimeout(options.catalogDelay);
+        if (message.method === "resources/list" && options.resourceCatalogDelay)
+          await setTimeout(options.resourceCatalogDelay);
         if (message.method === "tools/call") {
           response.on("close", () => closedCalls++);
           if (options.stalledBody) {
@@ -153,6 +167,19 @@ async function httpFixture(
             );
             return;
           }
+        }
+        if (
+          message.method === "resources/read" &&
+          options.oversizedReadResponse
+        ) {
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.write(
+            `{"jsonrpc":"2.0","id":${JSON.stringify((body as { id: unknown }).id)},"result":{"contents":[{"uri":"fixture://large","text":"`,
+          );
+          const chunk = "x".repeat(1024 * 1024);
+          for (let index = 0; index < 17; index++) response.write(chunk);
+          response.end('"}]}}');
+          return;
         }
         if (
           options.hangInitialized &&
@@ -186,6 +213,10 @@ async function httpFixture(
   };
   const catalogs: Tool[][] = [];
   const promptCatalogs: Prompt[][] = [];
+  const resourceCatalogs: {
+    resources: Resource[];
+    templates: ResourceTemplate[];
+  }[] = [];
   let connection: Connection;
   connection = new Connection(
     config,
@@ -197,6 +228,10 @@ async function httpFixture(
       promptCatalogs.push(prompts);
       options.onPromptsChanged?.(prompts, connection);
     },
+    (resources, templates) => {
+      resourceCatalogs.push({ resources, templates });
+      options.onResourcesChanged?.(resources, templates, connection);
+    },
   );
   cleanups.push(() => connection.close());
   return {
@@ -206,8 +241,10 @@ async function httpFixture(
     authorizations,
     catalogs,
     promptCatalogs,
+    resourceCatalogs,
     calls,
     promptCalls,
+    resourceCalls,
     cancelled,
     closedCalls: () => closedCalls,
     server,
@@ -226,8 +263,18 @@ test("HTTP shares initialization, follows pagination, propagates headers and ter
   expect(methods.filter((method) => method === "initialize")).toHaveLength(1);
   expect(methods.filter((method) => method === "tools/list")).toHaveLength(2);
   expect(methods.filter((method) => method === "prompts/list")).toHaveLength(2);
+  expect(methods.filter((method) => method === "resources/list")).toHaveLength(
+    2,
+  );
+  expect(
+    methods.filter((method) => method === "resources/templates/list"),
+  ).toHaveLength(2);
   expect(catalogs.at(-1)).toHaveLength(5);
   expect(fixture.promptCatalogs.at(-1)).toHaveLength(2);
+  expect(fixture.resourceCatalogs.at(-1)).toMatchObject({
+    resources: { length: 5 },
+    templates: { length: 2 },
+  });
   expect(
     authorizations.every((value) => value === "Bearer fixture-token"),
   ).toBe(true);
@@ -265,6 +312,10 @@ test.each([false, true])(
       .poll(() => fixture.catalogs.at(-1), { timeout: 500 })
       .toEqual([]);
     expect(fixture.promptCatalogs.at(-1)).toEqual([]);
+    expect(fixture.resourceCatalogs.at(-1)).toEqual({
+      resources: [],
+      templates: [],
+    });
     expect(fixture.connection.status).not.toBe("Connected");
     await expect(
       fixture.connection.call("echo", { message: "must not execute" }),
@@ -356,12 +407,15 @@ test("HTTP notifications refresh the catalog", async () => {
   await expect.poll(() => catalogs.at(-1)?.[0]?.name).toBe("echo_v2");
 });
 
-test.each(["tools", "prompts"] as const)(
+test.each(["tools", "prompts", "resources"] as const)(
   "%s refreshes do not lose dirty state while their promise settles",
   async (feature) => {
     let armed = false;
     let queued = false;
-    const onChanged = (_items: Tool[] | Prompt[], connection: Connection) => {
+    const onChanged = (
+      _items: Tool[] | Prompt[] | Resource[],
+      connection: Connection,
+    ) => {
       if (!armed || queued) return;
       queued = true;
       // Reach the gap after the refresh loop settles but before the public
@@ -372,7 +426,9 @@ test.each(["tools", "prompts"] as const)(
             const refresh =
               feature === "tools"
                 ? connection.refresh()
-                : connection.refreshPrompts();
+                : feature === "prompts"
+                  ? connection.refreshPrompts()
+                  : connection.refreshResources();
             void refresh.catch(() => {});
           }),
         ),
@@ -381,15 +437,27 @@ test.each(["tools", "prompts"] as const)(
     const fixture = await httpFixture(
       feature === "tools"
         ? { onToolsChanged: onChanged }
-        : { onPromptsChanged: onChanged },
+        : feature === "prompts"
+          ? { onPromptsChanged: onChanged }
+          : {
+              onResourcesChanged: (resources, _templates, connection) =>
+                onChanged(resources, connection),
+            },
     );
     await fixture.connection.start();
-    const method = feature === "tools" ? "tools/list" : "prompts/list";
+    const method =
+      feature === "tools"
+        ? "tools/list"
+        : feature === "prompts"
+          ? "prompts/list"
+          : "resources/list";
     const before = fixture.methods.filter((item) => item === method).length;
     armed = true;
     await (feature === "tools"
       ? fixture.connection.refresh()
-      : fixture.connection.refreshPrompts());
+      : feature === "prompts"
+        ? fixture.connection.refreshPrompts()
+        : fixture.connection.refreshResources());
     expect(fixture.methods.filter((item) => item === method)).toHaveLength(
       before + 4,
     );
@@ -423,6 +491,345 @@ test("discovers paginated prompts and gets one with string arguments", async () 
   expect(fixture.promptCalls).toEqual(["review"]);
 });
 
+test("discovers paginated resources and templates and reads a resource", async () => {
+  const fixture = await httpFixture();
+  await fixture.connection.start();
+  expect(
+    fixture.resourceCatalogs.at(-1)?.resources.map((resource) => resource.uri),
+  ).toEqual([
+    "fixture://notes",
+    "fixture://image",
+    "fixture://binary",
+    "fixture://collection",
+    "fixture://change",
+  ]);
+  expect(
+    fixture.resourceCatalogs
+      .at(-1)
+      ?.templates.map((template) => template.uriTemplate),
+  ).toEqual(["fixture://dynamic/text/{id}", "fixture://dynamic/blob/{id}"]);
+  await expect(
+    fixture.connection.readResource("fixture://notes"),
+  ).resolves.toMatchObject({
+    contents: [{ uri: "fixture://notes", text: "Fixture notes" }],
+  });
+  expect(fixture.resourceCalls).toEqual(["fixture://notes"]);
+  await expect(
+    fixture.connection.readResource("fixture://unsafe\nuri"),
+  ).rejects.toThrow("Invalid MCP resource URI");
+  expect(fixture.resourceCalls).toEqual(["fixture://notes"]);
+});
+
+test("resource catalogs discard private metadata and untrusted icons", async () => {
+  const fixture = await httpFixture();
+  fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [
+      {
+        uri: "fixture://safe",
+        name: "safe",
+        icons: [{ src: "https://user:secret@example.test/icon.png" }],
+        _meta: { secret: "resource metadata" },
+      },
+    ],
+  }));
+  fixture.server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: [
+      {
+        uriTemplate: "fixture://safe/{id}",
+        name: "safe template",
+        icons: [{ src: "https://user:secret@example.test/icon.png" }],
+        _meta: { secret: "template metadata" },
+      },
+    ],
+  }));
+
+  await fixture.connection.start();
+
+  expect(fixture.resourceCatalogs.at(-1)).toEqual({
+    resources: [{ uri: "fixture://safe", name: "safe" }],
+    templates: [{ uriTemplate: "fixture://safe/{id}", name: "safe template" }],
+  });
+});
+
+test("resource list-change notifications atomically replace resources and templates", async () => {
+  const fixture = await httpFixture();
+  let revision = "first";
+  fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [{ uri: `fixture://${revision}`, name: revision }],
+  }));
+  fixture.server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: [
+      { uriTemplate: `fixture://${revision}/{id}`, name: revision },
+    ],
+  }));
+  await fixture.connection.start();
+  expect(fixture.resourceCatalogs.at(-1)).toMatchObject({
+    resources: [{ uri: "fixture://first" }],
+    templates: [{ uriTemplate: "fixture://first/{id}" }],
+  });
+  revision = "second";
+  await fixture.server.notification({
+    method: "notifications/resources/list_changed",
+  });
+  await expect
+    .poll(() => fixture.resourceCatalogs.at(-1)?.resources[0]?.uri)
+    .toBe("fixture://second");
+  expect(fixture.resourceCatalogs.at(-1)?.templates[0]?.uriTemplate).toBe(
+    "fixture://second/{id}",
+  );
+});
+
+test("resource refreshes invalidate the previous snapshot before awaiting the server", async () => {
+  const fixture = await httpFixture({ resourceCatalogDelay: 50 });
+  await fixture.connection.start();
+  expect(fixture.resourceCatalogs.at(-1)?.resources.length).toBeGreaterThan(0);
+
+  const refresh = fixture.connection.refreshResources();
+  expect(fixture.connection.resourceStatus).toBe("Loading");
+  expect(fixture.resourceCatalogs.at(-1)).toEqual({
+    resources: [],
+    templates: [],
+  });
+  await refresh;
+  expect(fixture.connection.resourceStatus).toBe("Available");
+  expect(fixture.resourceCatalogs.at(-1)?.resources.length).toBeGreaterThan(0);
+});
+
+test("a list-change between resource endpoints never publishes a mixed snapshot", async () => {
+  const fixture = await httpFixture();
+  let revision = "first";
+  let notified = false;
+  fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: [{ uri: `fixture://${revision}`, name: revision }],
+  }));
+  fixture.server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async () => {
+      if (!notified) {
+        notified = true;
+        revision = "second";
+        await fixture.server.notification({
+          method: "notifications/resources/list_changed",
+        });
+        await setTimeout(20);
+      }
+      return {
+        resourceTemplates: [
+          { uriTemplate: `fixture://${revision}/{id}`, name: revision },
+        ],
+      };
+    },
+  );
+
+  await fixture.connection.start();
+
+  expect(fixture.resourceCatalogs).not.toContainEqual({
+    resources: [{ uri: "fixture://first", name: "first" }],
+    templates: [{ uriTemplate: "fixture://second/{id}", name: "second" }],
+  });
+  expect(fixture.resourceCatalogs.at(-1)).toEqual({
+    resources: [{ uri: "fixture://second", name: "second" }],
+    templates: [{ uriTemplate: "fixture://second/{id}", name: "second" }],
+  });
+});
+
+test.each([
+  ["request", undefined],
+  ["unsafe URI", "fixture://unsafe\u202Ename"],
+] as const)(
+  "resource discovery %s failures leave tools and prompts usable",
+  async (_failure, invalidUri) => {
+    const fixture = await httpFixture();
+    fixture.server.setRequestHandler(ListResourcesRequestSchema, () => {
+      if (invalidUri === undefined)
+        throw new Error("SECRET resource discovery error");
+      return { resources: [{ uri: invalidUri, name: "unsafe" }] };
+    });
+    await expect(fixture.connection.start()).rejects.toThrow(
+      "discovery failed",
+    );
+    expect(fixture.connection.resourceStatus).toContain("failed");
+    expect(fixture.resourceCatalogs.at(-1)).toEqual({
+      resources: [],
+      templates: [],
+    });
+    expect(
+      (await fixture.connection.call("echo", { message: "still usable" }))
+        .content[0],
+    ).toMatchObject({ text: "still usable" });
+    await expect(
+      fixture.connection.getPrompt("review", { topic: "healthy prompt" }),
+    ).resolves.toMatchObject({
+      messages: [{ content: { text: "Review healthy prompt." } }],
+    });
+  },
+);
+
+test.each(["resources", "templates"] as const)(
+  "repeated %s pagination cursors fail only resource discovery",
+  async (endpoint) => {
+    const fixture = await httpFixture();
+    if (endpoint === "resources")
+      fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+        resources: [],
+        nextCursor: "repeat",
+      }));
+    else
+      fixture.server.setRequestHandler(
+        ListResourceTemplatesRequestSchema,
+        () => ({ resourceTemplates: [], nextCursor: "repeat" }),
+      );
+
+    await expect(fixture.connection.start()).rejects.toThrow(
+      "discovery failed",
+    );
+    const method =
+      endpoint === "resources" ? "resources/list" : "resources/templates/list";
+    expect(fixture.methods.filter((value) => value === method)).toHaveLength(2);
+    expect(fixture.resourceCatalogs.at(-1)).toEqual({
+      resources: [],
+      templates: [],
+    });
+    expect(
+      (await fixture.connection.call("echo", { message: "still usable" }))
+        .content[0],
+    ).toMatchObject({ text: "still usable" });
+  },
+);
+
+test.each(["resources", "templates"] as const)(
+  "duplicate %s identities fail resource discovery",
+  async (endpoint) => {
+    const fixture = await httpFixture();
+    if (endpoint === "resources")
+      fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+        resources: [
+          { uri: "fixture://duplicate", name: "one" },
+          { uri: "fixture://duplicate", name: "two" },
+        ],
+      }));
+    else
+      fixture.server.setRequestHandler(
+        ListResourceTemplatesRequestSchema,
+        () => ({
+          resourceTemplates: [
+            { uriTemplate: "fixture://duplicate/{id}", name: "one" },
+            { uriTemplate: "fixture://duplicate/{id}", name: "two" },
+          ],
+        }),
+      );
+
+    await expect(fixture.connection.start()).rejects.toThrow(
+      "discovery failed",
+    );
+    expect(fixture.resourceCatalogs.at(-1)).toEqual({
+      resources: [],
+      templates: [],
+    });
+  },
+);
+
+test("direct resources and templates share one catalog entry limit", async () => {
+  const fixture = await httpFixture();
+  fixture.server.setRequestHandler(ListResourcesRequestSchema, () => ({
+    resources: Array.from({ length: 600 }, (_, index) => ({
+      uri: `fixture://resource/${index}`,
+      name: `resource-${index}`,
+    })),
+  }));
+  fixture.server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: Array.from({ length: 401 }, (_, index) => ({
+      uriTemplate: `fixture://template/${index}/{id}`,
+      name: `template-${index}`,
+    })),
+  }));
+
+  await expect(fixture.connection.start()).rejects.toThrow("discovery failed");
+  expect(fixture.resourceCatalogs.at(-1)).toEqual({
+    resources: [],
+    templates: [],
+  });
+});
+
+test("resource template failures withdraw the entire resource snapshot", async () => {
+  const fixture = await httpFixture();
+  fixture.server.setRequestHandler(ListResourceTemplatesRequestSchema, () => ({
+    resourceTemplates: [
+      { uriTemplate: "fixture:///{bad-name}", name: "invalid" },
+    ],
+  }));
+  await expect(fixture.connection.start()).rejects.toThrow("discovery failed");
+  expect(fixture.resourceCatalogs.at(-1)).toEqual({
+    resources: [],
+    templates: [],
+  });
+  await expect(
+    fixture.connection.readResource("fixture://notes"),
+  ).rejects.toThrow("unavailable");
+  expect(fixture.resourceCalls).toEqual([]);
+});
+
+test("rejects oversized HTTP resource responses while streaming", async () => {
+  const fixture = await httpFixture({ oversizedReadResponse: true });
+  await fixture.connection.start();
+  await expect(
+    fixture.connection.readResource("fixture://large"),
+  ).rejects.toThrow("failed or timed out");
+  await expect(
+    fixture.connection.call("echo", { message: "still usable" }),
+  ).resolves.toMatchObject({ content: [{ text: "still usable" }] });
+});
+
+test("cancelling a resource read leaves concurrent requests usable", async () => {
+  const fixture = await httpFixture({ timeout: 2000 });
+  fixture.server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async (request, extra) => {
+      fixture.resourceCalls.push(request.params.uri);
+      await setTimeout(1000, undefined, { signal: extra.signal });
+      return { contents: [{ uri: request.params.uri, text: "late" }] };
+    },
+  );
+  await fixture.connection.start();
+  const controller = new AbortController();
+  const read = fixture.connection.readResource(
+    "fixture://notes",
+    controller.signal,
+  );
+  const sibling = fixture.connection.call("echo", { message: "usable" });
+  await expect.poll(() => fixture.resourceCalls.length).toBe(1);
+  controller.abort();
+  await expect(read).rejects.toThrow();
+  await expect(sibling).resolves.toMatchObject({
+    content: [{ text: "usable" }],
+  });
+  await expect.poll(() => fixture.cancelled.length).toBe(1);
+  await expect(
+    fixture.connection.call("echo", { message: "still usable" }),
+  ).resolves.toMatchObject({ content: [{ text: "still usable" }] });
+});
+
+test("resource reads use the invocation deadline without disabling other features", async () => {
+  const fixture = await httpFixture({ timeout: 100 });
+  fixture.server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async (request, extra) => {
+      fixture.resourceCalls.push(request.params.uri);
+      await setTimeout(1000, undefined, { signal: extra.signal });
+      return { contents: [{ uri: request.params.uri, text: "late" }] };
+    },
+  );
+  await fixture.connection.start();
+  await expect(
+    fixture.connection.readResource("fixture://notes"),
+  ).rejects.toThrow("failed or timed out");
+  expect(fixture.resourceCalls).toEqual(["fixture://notes"]);
+  expect(
+    (await fixture.connection.call("echo", { message: "still usable" }))
+      .content[0],
+  ).toMatchObject({ text: "still usable" });
+});
+
 test("prompt list-change notifications replace the prompt catalog", async () => {
   const fixture = await httpFixture();
   let name = "first";
@@ -445,7 +852,7 @@ test.each([
   ["line-separator metadata", "SECRET\u2028invalid"],
   ["bidi metadata", "safe\u202Espoofed"],
 ] as const)(
-  "prompt discovery %s failures leave tools usable",
+  "prompt discovery %s failures leave tools and resources usable",
   async (_failure, invalidName) => {
     const fixture = await httpFixture();
     fixture.server.setRequestHandler(ListPromptsRequestSchema, () => {
@@ -462,10 +869,13 @@ test.each([
       (await fixture.connection.call("echo", { message: "still usable" }))
         .content[0],
     ).toMatchObject({ text: "still usable" });
+    await expect(
+      fixture.connection.readResource("fixture://notes"),
+    ).resolves.toMatchObject({ contents: [{ text: "Fixture notes" }] });
   },
 );
 
-test("tool discovery failures leave prompts usable", async () => {
+test("tool discovery failures leave prompts and resources usable", async () => {
   const fixture = await httpFixture({ badPagination: true });
   await expect(fixture.connection.start()).rejects.toThrow("discovery failed");
   expect(fixture.connection.toolStatus).toContain("failed");
@@ -473,6 +883,11 @@ test("tool discovery failures leave prompts usable", async () => {
     fixture.connection.getPrompt("review", { topic: "healthy prompt" }),
   ).resolves.toMatchObject({
     messages: [{ content: { text: "Review healthy prompt." }, role: "user" }],
+  });
+  await expect(
+    fixture.connection.readResource("fixture://notes"),
+  ).resolves.toMatchObject({
+    contents: [{ text: "Fixture notes" }],
   });
 });
 
