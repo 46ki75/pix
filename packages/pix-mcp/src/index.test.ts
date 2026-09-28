@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
   createAssistantMessageEventStream,
@@ -22,6 +23,8 @@ import {
 import {
   createAgentSession,
   DefaultResourceLoader,
+  ExtensionInputComponent,
+  initTheme,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -429,9 +432,29 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
 
   expect(custom).toHaveBeenCalledOnce();
   expect(inputDialog.mock.calls.map(([title]) => title)).toEqual([
-    "topic (required)",
-    "tone (optional)",
+    "topic (required)\nTopic to review\nEnter a value",
+    "tone (optional)\nOptional response tone\nLeave empty to omit",
   ]);
+  expect(inputDialog.mock.calls.map(([, placeholder]) => placeholder)).toEqual([
+    undefined,
+    undefined,
+  ]);
+  initTheme("dark", false);
+  const renderedDialogs = inputDialog.mock.calls.map(([title, placeholder]) => {
+    const dialog = new ExtensionInputComponent(
+      title,
+      placeholder,
+      () => {},
+      () => {},
+    );
+    const rendered = stripVTControlCharacters(dialog.render(80).join("\n"));
+    dialog.dispose();
+    return rendered;
+  });
+  expect(renderedDialogs[0]).toContain("Topic to review");
+  expect(renderedDialogs[0]).toContain("Enter a value");
+  expect(renderedDialogs[1]).toContain("Optional response tone");
+  expect(renderedDialogs[1]).toContain("Leave empty to omit");
   expect(pasteToEditor).toHaveBeenCalledExactlyOnceWith(
     "Review the API in a concise tone.",
   );

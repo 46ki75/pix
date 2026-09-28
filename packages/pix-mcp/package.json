@@ -1,6 +1,6 @@
 {
   "name": "@ikuma.cloud/pix-mcp",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "publishConfig": {
     "access": "public"
   },

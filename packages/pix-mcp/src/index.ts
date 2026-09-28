@@ -460,9 +460,14 @@ export default function mcp(pi: ExtensionAPI) {
     const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
     const argumentTokens: PromptArgumentToken[] = [];
     for (const argument of item.prompt.arguments ?? []) {
+      const description = compact(argument.description ?? "", 160);
+      const label = `${argument.name} (${argument.required ? "required" : "optional"})`;
+      const guidance = argument.required
+        ? "Enter a value"
+        : "Leave empty to omit";
       const value = await ctx.ui.input(
-        `${argument.name} (${argument.required ? "required" : "optional"})`,
-        argument.required ? "Enter a value" : "Leave empty to omit",
+        [label, description, guidance].filter(Boolean).join("\n"),
+        undefined,
         dialogOptions,
       );
       if (value === undefined) return;
