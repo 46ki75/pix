@@ -25,6 +25,7 @@ import {
   formatResult,
   removeEditablePromptGuard,
 } from "./output.ts";
+import { inputPromptArgument } from "./prompt-argument-input.ts";
 import { pickPrompt } from "./prompt-picker.ts";
 import { pickResource } from "./resource-picker.ts";
 import {
@@ -457,19 +458,14 @@ export default function mcp(pi: ExtensionAPI) {
     };
     ensureCurrent();
 
-    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
     const argumentTokens: PromptArgumentToken[] = [];
     for (const argument of item.prompt.arguments ?? []) {
       const description = compact(argument.description ?? "", 160);
-      const label = `${argument.name} (${argument.required ? "required" : "optional"})`;
-      const guidance = argument.required
-        ? "Enter a value"
-        : "Leave empty to omit";
-      const value = await ctx.ui.input(
-        [label, description, guidance].filter(Boolean).join("\n"),
-        undefined,
-        dialogOptions,
-      );
+      const value = await inputPromptArgument(ctx, {
+        label: `${argument.name} (${argument.required ? "required" : "optional"})`,
+        ...(description ? { description } : {}),
+        guidance: argument.required ? "Enter a value" : "Leave empty to omit",
+      });
       if (value === undefined) return;
       ctx.signal?.throwIfAborted();
       ensureCurrent();

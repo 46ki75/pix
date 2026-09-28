@@ -8,7 +8,6 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
   createAssistantMessageEventStream,
@@ -23,8 +22,6 @@ import {
 import {
   createAgentSession,
   DefaultResourceLoader,
-  ExtensionInputComponent,
-  initTheme,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -425,36 +422,15 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
     setStatus,
     sendUserMessage,
   } = await setup({ mode: "tui" });
-  custom.mockResolvedValue(promptKey("fixture", "review"));
-  inputDialog.mockResolvedValueOnce("the API").mockResolvedValueOnce("concise");
+  custom
+    .mockResolvedValueOnce(promptKey("fixture", "review"))
+    .mockResolvedValueOnce("the API")
+    .mockResolvedValueOnce("concise");
 
   await prompt("");
 
-  expect(custom).toHaveBeenCalledOnce();
-  expect(inputDialog.mock.calls.map(([title]) => title)).toEqual([
-    "topic (required)\nTopic to review\nEnter a value",
-    "tone (optional)\nOptional response tone\nLeave empty to omit",
-  ]);
-  expect(inputDialog.mock.calls.map(([, placeholder]) => placeholder)).toEqual([
-    undefined,
-    undefined,
-  ]);
-  initTheme("dark", false);
-  const renderedDialogs = inputDialog.mock.calls.map(([title, placeholder]) => {
-    const dialog = new ExtensionInputComponent(
-      title,
-      placeholder,
-      () => {},
-      () => {},
-    );
-    const rendered = stripVTControlCharacters(dialog.render(80).join("\n"));
-    dialog.dispose();
-    return rendered;
-  });
-  expect(renderedDialogs[0]).toContain("Topic to review");
-  expect(renderedDialogs[0]).toContain("Enter a value");
-  expect(renderedDialogs[1]).toContain("Optional response tone");
-  expect(renderedDialogs[1]).toContain("Leave empty to omit");
+  expect(custom).toHaveBeenCalledTimes(3);
+  expect(inputDialog).not.toHaveBeenCalled();
   expect(pasteToEditor).toHaveBeenCalledExactlyOnceWith(
     "Review the API in a concise tone.",
   );
@@ -468,11 +444,13 @@ test("opens a native TUI picker and stages the selected prompt for editing", asy
 });
 
 test("guards command-like drafts through dispatch and removes only their guard", async () => {
-  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
+  const { session, prompt, custom, pasteToEditor } = await setup({
     mode: "tui",
   });
-  custom.mockResolvedValue(promptKey("fixture", "review"));
-  inputDialog.mockResolvedValueOnce("command").mockResolvedValueOnce("");
+  custom
+    .mockResolvedValueOnce(promptKey("fixture", "review"))
+    .mockResolvedValueOnce("command")
+    .mockResolvedValueOnce("");
   await prompt("");
   const draft = pasteToEditor.mock.calls[0]?.[0];
   expect(draft).toBeDefined();
@@ -505,11 +483,13 @@ test("guards command-like drafts through dispatch and removes only their guard",
 });
 
 test("keeps editable prompt images private until session shutdown", async () => {
-  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
+  const { session, prompt, custom, pasteToEditor } = await setup({
     mode: "tui",
   });
-  custom.mockResolvedValue(promptKey("fixture", "review"));
-  inputDialog.mockResolvedValueOnce("image").mockResolvedValueOnce("");
+  custom
+    .mockResolvedValueOnce(promptKey("fixture", "review"))
+    .mockResolvedValueOnce("image")
+    .mockResolvedValueOnce("");
 
   await prompt("");
 
@@ -532,18 +512,15 @@ test.each([
 ] as const)(
   "cancelling the native prompt %s does not retrieve a prompt",
   async (_stage, selection, values) => {
-    const { prompt, custom, inputDialog, sendUserMessage } = await setup({
-      mode: "tui",
-    });
-    custom.mockResolvedValue(
+    const { prompt, custom, sendUserMessage } = await setup({ mode: "tui" });
+    custom.mockResolvedValueOnce(
       selection === undefined ? undefined : promptKey("fixture", "review"),
     );
-    inputDialog.mockResolvedValueOnce(values[0]);
+    for (const value of values) custom.mockResolvedValueOnce(value);
 
     await prompt("");
 
-    expect(custom).toHaveBeenCalledOnce();
-    expect(inputDialog).toHaveBeenCalledTimes(values.length);
+    expect(custom).toHaveBeenCalledTimes(1 + values.length);
     expect(sendUserMessage).not.toHaveBeenCalled();
   },
 );
@@ -551,10 +528,9 @@ test.each([
 test.each(["picker", "argument input"])(
   "aborting the native prompt %s closes it silently",
   async (stage) => {
-    const { prompt, custom, inputDialog, notify, sendUserMessage } =
-      await setup({
-        mode: "tui",
-      });
+    const { prompt, custom, notify, sendUserMessage } = await setup({
+      mode: "tui",
+    });
     const controller = new AbortController();
     if (stage === "picker") {
       custom.mockImplementation(async () => {
@@ -562,11 +538,12 @@ test.each(["picker", "argument input"])(
         return undefined;
       });
     } else {
-      custom.mockResolvedValue(promptKey("fixture", "review"));
-      inputDialog.mockImplementationOnce(async () => {
-        controller.abort();
-        return undefined;
-      });
+      custom
+        .mockResolvedValueOnce(promptKey("fixture", "review"))
+        .mockImplementationOnce(async () => {
+          controller.abort();
+          return undefined;
+        });
     }
 
     await prompt("", controller.signal);
