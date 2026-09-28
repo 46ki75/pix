@@ -6,7 +6,10 @@ type ResolveAuth = ExtensionContext["modelRegistry"]["getProviderAuth"];
 const signal = () => new AbortController().signal;
 const jwt = `header.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "test-account" } })).toString("base64url")}.signature`;
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 test.each([
   ["claude", "anthropic", "access-token", { five_hour: { utilization: 0 } }],
@@ -78,6 +81,70 @@ test("sanitizes Pi auth errors instead of leaking refresh tokens", async () => {
     message: "Could not resolve Pi credentials; try /login openai-codex.",
   });
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test("retries one transient usage timeout without resolving credentials again", async () => {
+  const getProviderAuth = vi.fn<ResolveAuth>().mockResolvedValue({
+    source: "OAuth",
+    auth: { apiKey: "access-token" },
+  });
+  const firstTimeout = new AbortController();
+  vi.spyOn(AbortSignal, "timeout")
+    .mockReturnValueOnce(firstTimeout.signal)
+    .mockReturnValueOnce(new AbortController().signal);
+  let started!: () => void;
+  const firstRequest = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          started();
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(init.signal?.reason),
+            {
+              once: true,
+            },
+          );
+        }),
+    )
+    .mockResolvedValueOnce(Response.json({ five_hour: { utilization: 25 } }));
+  vi.stubGlobal("fetch", fetch);
+
+  const result = resolveUsage({ getProviderAuth }, "claude", signal());
+  await firstRequest;
+  firstTimeout.abort();
+
+  await expect(result).resolves.toMatchObject({
+    status: "ok",
+    usage: { windows: [{ usedPercent: 25 }] },
+  });
+  expect(getProviderAuth).toHaveBeenCalledOnce();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+test("does not retry an unclassified network failure", async () => {
+  const getProviderAuth = vi.fn<ResolveAuth>().mockResolvedValue({
+    source: "OAuth",
+    auth: { apiKey: "access-token" },
+  });
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockRejectedValue(new Error("private network details"));
+  vi.stubGlobal("fetch", fetch);
+
+  await expect(
+    resolveUsage({ getProviderAuth }, "claude", signal()),
+  ).resolves.toEqual({
+    provider: "claude",
+    status: "error",
+    message: "Usage network request failed.",
+  });
+  expect(getProviderAuth).toHaveBeenCalledOnce();
+  expect(fetch).toHaveBeenCalledOnce();
 });
 
 test("resolves auth again for each invocation, leaving refresh ownership with Pi", async () => {

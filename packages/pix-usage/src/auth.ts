@@ -1,9 +1,38 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { abortable } from "./http.ts";
 import { fetchClaudeUsage, fetchCodexUsage } from "./providers.ts";
-import { UsageError, type UsageProvider, type UsageResult } from "./types.ts";
+import {
+  UsageError,
+  type UsageProvider,
+  type UsageResult,
+  type UsageSnapshot,
+} from "./types.ts";
 
 const PROVIDER_IDS = { claude: "anthropic", codex: "openai-codex" } as const;
+const FETCH_ATTEMPTS = 2;
+
+async function fetchUsageWithRetry(
+  provider: UsageProvider,
+  accessToken: string,
+  signal: AbortSignal,
+): Promise<UsageSnapshot> {
+  const fetchUsage = provider === "claude" ? fetchClaudeUsage : fetchCodexUsage;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetchUsage(accessToken, { signal });
+    } catch (error) {
+      signal.throwIfAborted();
+      // A generic fetch rejection may be a blocked redirect or permanent TLS
+      // failure, so only an explicitly classified timeout is safe to retry.
+      if (
+        attempt >= FETCH_ATTEMPTS ||
+        !(error instanceof UsageError) ||
+        error.code !== "timeout"
+      )
+        throw error;
+    }
+  }
+}
 
 export async function resolveUsage(
   registry: Pick<ExtensionContext["modelRegistry"], "getProviderAuth">,
@@ -32,9 +61,11 @@ export async function resolveUsage(
         message: `No Pi subscription login; use /login ${providerId} with OAuth (not an API key).`,
       };
     }
-    const fetchUsage =
-      provider === "claude" ? fetchClaudeUsage : fetchCodexUsage;
-    const usage = await fetchUsage(resolved.auth.apiKey, { signal });
+    const usage = await fetchUsageWithRetry(
+      provider,
+      resolved.auth.apiKey,
+      signal,
+    );
     return { provider, status: "ok", usage };
   } catch (error) {
     return {
