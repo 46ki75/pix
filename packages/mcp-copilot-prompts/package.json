@@ -1,0 +1,35 @@
+{
+  "name": "@ikuma.cloud/mcp-copilot-prompts",
+  "version": "0.0.1",
+  "description": "Expose GitHub Copilot prompt files as MCP prompts",
+  "type": "module",
+  "bin": {
+    "mcp-copilot-prompts": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CONTRIBUTING.md"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "prepack": "pnpm run build"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "github-copilot",
+    "prompt-files"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "chokidar": "5.0.0",
+    "marked": "18.0.11",
+    "yaml": "2.9.1"
+  }
+}

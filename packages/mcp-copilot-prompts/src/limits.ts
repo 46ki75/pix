@@ -1,0 +1,13 @@
+export const MAX_ROOTS = 32;
+export const MAX_PROMPTS = 1_000;
+export const PROMPT_PAGE_SIZE = 100;
+export const MAX_PROMPT_FILE_BYTES = 256 * 1024;
+export const MAX_NAME_BYTES = 256;
+export const MAX_DESCRIPTION_BYTES = 16 * 1024;
+export const MAX_INPUTS = 100;
+export const MAX_ARGUMENT_BYTES = 256 * 1024;
+export const MAX_RENDERED_PROMPT_BYTES = 1024 * 1024;
+export const MAX_REFERENCES = 32;
+export const MAX_REFERENCE_BYTES = 4 * 1024 * 1024;
+export const MAX_TOTAL_REFERENCE_BYTES = 8 * 1024 * 1024;
+export const MAX_DIAGNOSTICS = 100;
