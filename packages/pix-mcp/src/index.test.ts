@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,9 +45,10 @@ afterEach(async () => {
 
 async function setup(
   options: {
-    explicitConfig?: "relative" | "absolute";
+    explicitConfig?: "relative" | "absolute" | "empty";
     missingConfig?: boolean;
     mode?: ExtensionContext["mode"];
+    headlessUI?: boolean;
     extension?: (pi: ExtensionAPI) => void;
     broken?: boolean;
     invalidSchema?: boolean;
@@ -54,6 +62,8 @@ async function setup(
     extraServers?: Record<string, unknown>;
     configValue?: unknown;
     source?: string;
+    globalServers?: string[];
+    globalSource?: string;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "pix-mcp-test-"));
@@ -107,6 +117,20 @@ async function setup(
   );
   if (options.missingConfig) await rm(configPath);
   const agentDir = join(directory, "agent");
+  const globalConfigPath = join(agentDir, "mcp.json");
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+  if (options.globalServers || options.globalSource !== undefined) {
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      globalConfigPath,
+      options.globalSource ??
+        JSON.stringify({
+          mcpServers: Object.fromEntries(
+            (options.globalServers ?? []).map((name) => [name, definition]),
+          ),
+        }),
+    );
+  }
   const settingsManager = SettingsManager.inMemory();
   let unrelatedApi: ExtensionAPI | undefined;
   let commandContext: ExtensionCommandContext | undefined;
@@ -137,7 +161,11 @@ async function setup(
       .getExtensions()
       .runtime.flagValues.set(
         "mcp-config",
-        options.explicitConfig === "absolute" ? configPath : configName,
+        options.explicitConfig === "absolute"
+          ? configPath
+          : options.explicitConfig === "relative"
+            ? configName
+            : "",
       );
   const modelRuntime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
@@ -171,7 +199,10 @@ async function setup(
   const setEditorText = vi.spyOn(ui, "setEditorText");
   const setStatus = vi.spyOn(ui, "setStatus");
   const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
-  const hasUI = options.mode === "tui" || options.mode === "rpc";
+  const hasUI =
+    options.headlessUI === true ||
+    options.mode === "tui" ||
+    options.mode === "rpc";
   await session.bindExtensions({
     mode: options.mode ?? "print",
     // Supplying a UI context makes Pi's hasUI true regardless of mode.
@@ -314,6 +345,7 @@ async function setup(
     registerUnrelated,
     requestTools,
     configPath,
+    globalConfigPath,
     notify,
     custom,
     inputDialog,
@@ -790,12 +822,12 @@ test.each([false, true])(
 );
 
 test.each(["tui", "rpc"] as const)(
-  "startup loads and announces the default config once without prompting (%s)",
+  "startup loads and announces the project config once without prompting (%s)",
   async (mode) => {
     const { configPath, notify, confirm, discover } = await setup({ mode });
     expect(confirm).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
-      `MCP config: ${configPath}`,
+      `MCP config (project): ${configPath}`,
       "info",
     );
     expect((await discover({ action: "list" })).total).toBe(5);
@@ -804,20 +836,95 @@ test.each(["tui", "rpc"] as const)(
   },
 );
 
+test("startup merges and announces global then project configs", async () => {
+  const { configPath, globalConfigPath, notify, confirm, discover } =
+    await setup({ mode: "tui", globalServers: ["global"] });
+  expect(confirm).not.toHaveBeenCalled();
+  expect(notify.mock.calls).toEqual([
+    [`MCP config (global): ${globalConfigPath}`, "info"],
+    [`MCP config (project): ${configPath}`, "info"],
+  ]);
+  const result = await discover({ action: "list" });
+  expect(result.total).toBe(10);
+  expect(result.servers.map((server) => server.name)).toEqual([
+    "global",
+    "fixture",
+  ]);
+});
+
+test("startup loads and announces a global config without a project config", async () => {
+  const { globalConfigPath, notify, discover } = await setup({
+    mode: "tui",
+    missingConfig: true,
+    globalServers: ["global"],
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    `MCP config (global): ${globalConfigPath}`,
+    "info",
+  );
+  expect((await discover({ action: "list" })).total).toBe(5);
+});
+
+test.each([
+  ["disabled", { disabled: true }],
+  ["invalid", { command: "node", timeout: 0 }],
+] as const)(
+  "a project %s declaration masks a global server",
+  async (_case, value) => {
+    const { discover } = await setup({
+      globalServers: ["fixture"],
+      configValue: { mcpServers: { fixture: value } },
+    });
+    const result = await discover({ action: "list" });
+    expect(result.total).toBe(0);
+    expect(result.servers).toHaveLength(_case === "invalid" ? 1 : 0);
+  },
+);
+
+test("a valid project server replaces a global validation issue", async () => {
+  const { discover } = await setup({
+    globalSource: JSON.stringify({
+      mcpServers: { fixture: { command: "node", timeout: 0 } },
+    }),
+  });
+  const result = await discover({ action: "list" });
+  expect(result.total).toBe(5);
+  expect(result.status).not.toContain("invalid");
+  expect(result.servers.map((server) => server.name)).toEqual(["fixture"]);
+});
+
 test.each(["relative", "absolute"] as const)(
-  "startup announces the resolved explicit config without prompting (%s)",
+  "startup announces only the resolved explicit config without prompting (%s)",
   async (explicitConfig) => {
-    const { configPath, notify, confirm } = await setup({
+    const { configPath, notify, confirm, discover } = await setup({
       mode: "tui",
       explicitConfig,
+      globalServers: ["global"],
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
-      `MCP config: ${configPath}`,
+      `MCP config (explicit): ${configPath}`,
       "info",
     );
+    expect((await discover({ action: "list" })).total).toBe(5);
   },
 );
+
+test("an empty explicit config path fails without loading ambient configs", async () => {
+  const { notify, discover } = await setup({
+    mode: "tui",
+    explicitConfig: "empty",
+    globalServers: ["global"],
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    "MCP config (explicit) failed: no path provided",
+    "error",
+  );
+  expect(await discover({ action: "list" })).toMatchObject({
+    status: "The explicitly selected MCP configuration path is empty.",
+    total: 0,
+  });
+});
 
 test("only the config-selection flag is registered", async () => {
   const { flags } = await setup({ configValue: { mcpServers: {} } });
@@ -833,7 +940,7 @@ test.each([{}, { fixture: { disabled: true } }])(
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledExactlyOnceWith(
-      `MCP config: ${configPath}`,
+      `MCP config (project): ${configPath}`,
       "info",
     );
     expect(await discover({ action: "list" })).toMatchObject({
@@ -846,30 +953,88 @@ test.each([{}, { fixture: { disabled: true } }])(
 );
 
 test.each([undefined, "relative"] as const)(
-  "startup does not announce a missing config (explicit=%s)",
+  "startup announces that no config was found without falling back (%s)",
   async (explicitConfig) => {
     const { notify, confirm, discover } = await setup({
       mode: "tui",
-      ...(explicitConfig ? { explicitConfig } : {}),
+      ...(explicitConfig ? { explicitConfig, globalServers: ["global"] } : {}),
       missingConfig: true,
     });
     expect(confirm).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      "MCP config: none found",
+      "info",
+    );
     expect((await discover({ action: "list" })).total).toBe(0);
   },
 );
 
 test.each(['{"SECRET":', JSON.stringify({ mcpServers: [] })])(
-  "startup does not announce an invalid config (%s)",
+  "startup reports an invalid project config as a failed load (%s)",
   async (source) => {
-    const { notify, confirm, discover } = await setup({ mode: "tui", source });
+    const { configPath, notify, confirm, discover } = await setup({
+      mode: "tui",
+      source,
+    });
     expect(confirm).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      `MCP config (project) failed: ${configPath}`,
+      "error",
+    );
     expect((await discover({ action: "list" })).status).toContain(
       "Invalid MCP configuration",
     );
   },
 );
+
+test("a fatal project config prevents a valid global config from starting", async () => {
+  const { configPath, globalConfigPath, notify, discover } = await setup({
+    mode: "tui",
+    source: '{"mcpServers":',
+    globalServers: ["global"],
+  });
+  expect(notify.mock.calls).toEqual([
+    [`MCP config (global): ${globalConfigPath}`, "info"],
+    [`MCP config (project) failed: ${configPath}`, "error"],
+  ]);
+  expect((await discover({ action: "list" })).total).toBe(0);
+});
+
+test("a fatal global config prevents a valid project config from starting", async () => {
+  const { globalConfigPath, notify, discover } = await setup({
+    mode: "tui",
+    globalSource: '{"mcpServers":',
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    `MCP config (global) failed: ${globalConfigPath}`,
+    "error",
+  );
+  expect((await discover({ action: "list" })).total).toBe(0);
+});
+
+test("a merged server-limit failure is announced before anything starts", async () => {
+  const globalServers = Array.from(
+    { length: 16 },
+    (_, index) => `global${index}`,
+  );
+  const projectServers = Object.fromEntries(
+    Array.from({ length: 17 }, (_, index) => [
+      `project${index}`,
+      { command: "node" },
+    ]),
+  );
+  const { configPath, globalConfigPath, notify, discover } = await setup({
+    mode: "tui",
+    globalServers,
+    configValue: { mcpServers: projectServers },
+  });
+  expect(notify.mock.calls).toEqual([
+    [`MCP config (global): ${globalConfigPath}`, "info"],
+    [`MCP config (project): ${configPath}`, "info"],
+    ["MCP configuration merge failed.", "error"],
+  ]);
+  expect((await discover({ action: "list" })).total).toBe(0);
+});
 
 test.each(["print", "json"] as const)(
   "startup loads the default config silently without a UI (%s)",
@@ -881,13 +1046,22 @@ test.each(["print", "json"] as const)(
   },
 );
 
+test.each(["print", "json"] as const)(
+  "startup remains silent when headless mode has an injected UI (%s)",
+  async (mode) => {
+    const { notify, discover } = await setup({ mode, headlessUI: true });
+    expect(notify).not.toHaveBeenCalled();
+    expect((await discover({ action: "list" })).total).toBe(5);
+  },
+);
+
 test("startup reports only the config path even when some servers are invalid", async () => {
   const { configPath, notify, discover } = await setup({
     mode: "tui",
     extraServers: { broken: { command: "SECRET-command", timeout: 0 } },
   });
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    `MCP config: ${configPath}`,
+    `MCP config (project): ${configPath}`,
     "info",
   );
   expect((await discover({ action: "list" })).status).toContain("invalid");

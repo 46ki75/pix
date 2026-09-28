@@ -1,9 +1,10 @@
 import { resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
+import {
+  getAgentDir,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type {
   Prompt,
@@ -13,7 +14,12 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
-import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
+import {
+  mergeConfigs,
+  readConfig,
+  type ConfigIssue,
+  type ServerConfig,
+} from "./config.ts";
 import {
   formatEditableContent,
   formatResult,
@@ -69,6 +75,12 @@ interface ResourceSelection {
   item: ResourceEntry;
 }
 
+type ConfigScope = "explicit" | "global" | "project";
+interface ConfigSource {
+  scope: ConfigScope;
+  path: string;
+}
+
 interface State {
   alive: boolean;
   status: string;
@@ -111,7 +123,7 @@ export default function mcp(pi: ExtensionAPI) {
   pi.registerFlag("mcp-config", {
     type: "string",
     description:
-      "Read this MCP config file for this session (default: .mcp.json).",
+      "Read only this MCP config file for this session (otherwise merge the global and project configs).",
   });
   pi.registerCommand("mcp-prompt", {
     description: "Select, list, or run a user-controlled MCP prompt",
@@ -810,6 +822,8 @@ export default function mcp(pi: ExtensionAPI) {
 
   async function start(ctx: ExtensionContext) {
     await stop();
+    const showConfigNotices =
+      ctx.hasUI && (ctx.mode === "tui" || ctx.mode === "rpc");
     const owner: State = {
       alive: true,
       status: "No MCP servers configured.",
@@ -824,19 +838,51 @@ export default function mcp(pi: ExtensionAPI) {
       draftGuards: new Set(),
     };
     state = owner;
+    let failureNotice: string | undefined;
     try {
       const flag = pi.getFlag("mcp-config");
-      const explicit = typeof flag === "string" && flag.length > 0;
-      const path = resolve(ctx.cwd, explicit ? flag : ".mcp.json");
-      const config = await readConfig(path);
+      if (flag === "") {
+        failureNotice = "MCP config (explicit) failed: no path provided";
+        throw new Error(
+          "The explicitly selected MCP configuration path is empty.",
+        );
+      }
+      const explicit = typeof flag === "string";
+      const sources: ConfigSource[] = explicit
+        ? [{ scope: "explicit", path: resolve(ctx.cwd, flag) }]
+        : [
+            {
+              scope: "global",
+              path: resolve(getAgentDir(), "mcp.json"),
+            },
+            { scope: "project", path: resolve(ctx.cwd, ".mcp.json") },
+          ];
+      const loaded = [];
+      for (const source of sources) {
+        failureNotice = `MCP config (${source.scope}) failed: ${source.path}`;
+        const config = await readConfig(source.path);
+        current(owner);
+        failureNotice = undefined;
+        if (config) {
+          loaded.push({ ...source, config });
+          if (showConfigNotices)
+            ctx.ui.notify(
+              `MCP config (${source.scope}): ${source.path}`,
+              "info",
+            );
+        }
+      }
       current(owner);
-      if (!config) {
+      if (loaded.length === 0) {
         if (explicit)
           owner.status =
             "The explicitly selected MCP configuration does not exist.";
+        if (showConfigNotices) ctx.ui.notify("MCP config: none found", "info");
         return;
       }
-      if (ctx.hasUI) ctx.ui.notify(`MCP config: ${path}`, "info");
+      failureNotice = "MCP configuration merge failed.";
+      const config = mergeConfigs(loaded.map((source) => source.config));
+      failureNotice = undefined;
       owner.configIssues = config.issues;
       owner.status =
         config.issues.length > 0
@@ -870,9 +916,12 @@ export default function mcp(pi: ExtensionAPI) {
         }),
       );
     } catch (error) {
-      if (owner.alive)
+      if (owner.alive) {
         owner.status =
           error instanceof Error ? error.message : "MCP initialization failed.";
+        if (showConfigNotices)
+          ctx.ui.notify(failureNotice ?? "MCP initialization failed.", "error");
+      }
     } finally {
       if (owner.alive && state === owner) registerDiscovery();
     }
