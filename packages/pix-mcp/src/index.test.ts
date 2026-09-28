@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 import { eagleSchema, tinyPng } from "./fixtures/server.ts";
 import { toolName } from "./catalog.ts";
+import { promptKey } from "./prompts.ts";
 import type { RejectionCode } from "./rejection.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -163,6 +164,11 @@ async function setup(
   const errors: string[] = [];
   const ui = session.extensionRunner.getUIContext();
   const notify = vi.spyOn(ui, "notify");
+  const custom = vi.spyOn(ui, "custom");
+  const inputDialog = vi.spyOn(ui, "input");
+  const pasteToEditor = vi.spyOn(ui, "pasteToEditor");
+  const setEditorText = vi.spyOn(ui, "setEditorText");
+  const setStatus = vi.spyOn(ui, "setStatus");
   const confirm = vi.spyOn(ui, "confirm").mockResolvedValue(false);
   const hasUI = options.mode === "tui" || options.mode === "rpc";
   await session.bindExtensions({
@@ -294,6 +300,11 @@ async function setup(
     requestTools,
     configPath,
     notify,
+    custom,
+    inputDialog,
+    pasteToEditor,
+    setEditorText,
+    setStatus,
     confirm,
     flags: resourceLoader
       .getExtensions()
@@ -343,14 +354,7 @@ test("lists and runs user-selected MCP prompts through one stable command", asyn
   await prompt('run fixture review "the API" tone=concise');
   expect(sendUserMessage).toHaveBeenCalledOnce();
   expect(sendUserMessage).toHaveBeenCalledWith(
-    [
-      {
-        type: "text",
-        text: expect.stringContaining(
-          "[MCP prompt from fixture/review]\n\nReview the API in a concise tone.",
-        ),
-      },
-    ],
+    [{ type: "text", text: "Review the API in a concise tone." }],
     undefined,
   );
   await prompt("run fixture review");
@@ -361,8 +365,165 @@ test("lists and runs user-selected MCP prompts through one stable command", asyn
   expect(sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
+test("opens a native TUI picker and stages the selected prompt for editing", async () => {
+  const {
+    prompt,
+    custom,
+    inputDialog,
+    pasteToEditor,
+    setEditorText,
+    setStatus,
+    sendUserMessage,
+  } = await setup({ mode: "tui" });
+  custom.mockResolvedValue(promptKey("fixture", "review"));
+  inputDialog.mockResolvedValueOnce("the API").mockResolvedValueOnce("concise");
+
+  await prompt("");
+
+  expect(custom).toHaveBeenCalledOnce();
+  expect(inputDialog.mock.calls.map(([title]) => title)).toEqual([
+    "topic (required)",
+    "tone (optional)",
+  ]);
+  expect(pasteToEditor).toHaveBeenCalledExactlyOnceWith(
+    "Review the API in a concise tone.",
+  );
+  expect(setEditorText).not.toHaveBeenCalled();
+  expect(sendUserMessage).not.toHaveBeenCalled();
+  expect(setStatus).toHaveBeenCalledWith(
+    "mcp-prompt",
+    "Loading fixture / review…",
+  );
+  expect(setStatus).toHaveBeenLastCalledWith("mcp-prompt", undefined);
+});
+
+test("guards command-like drafts through dispatch and removes only their guard", async () => {
+  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
+    mode: "tui",
+  });
+  custom.mockResolvedValue(promptKey("fixture", "review"));
+  inputDialog.mockResolvedValueOnce("command").mockResolvedValueOnce("");
+  await prompt("");
+  const draft = pasteToEditor.mock.calls[0]?.[0];
+  expect(draft).toBeDefined();
+  if (!draft) throw new Error("Missing guarded editor draft");
+  expect(draft).not.toMatch(/^[!]/u);
+  expect(draft).toContain("!echo unsafe");
+
+  const replacement = await session.extensionRunner.emitMessageEnd({
+    type: "message_end",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: `concurrent${draft}` }],
+      timestamp: Date.now(),
+    },
+  });
+  expect(replacement).toMatchObject({
+    role: "user",
+    content: [{ type: "text", text: "concurrent!echo unsafe" }],
+  });
+
+  const unrelated = await session.extensionRunner.emitMessageEnd({
+    type: "message_end",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "\u2060\u2063unchanged" }],
+      timestamp: Date.now(),
+    },
+  });
+  expect(unrelated).toBeUndefined();
+});
+
+test("keeps editable prompt images private until session shutdown", async () => {
+  const { session, prompt, custom, inputDialog, pasteToEditor } = await setup({
+    mode: "tui",
+  });
+  custom.mockResolvedValue(promptKey("fixture", "review"));
+  inputDialog.mockResolvedValueOnce("image").mockResolvedValueOnce("");
+
+  await prompt("");
+
+  const draft = pasteToEditor.mock.calls[0]?.[0];
+  const path = draft?.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing editable image reference");
+  expect((await stat(path)).mode & 0o777).toBe(0o600);
+
+  await session.extensionRunner.emit({
+    type: "session_shutdown",
+    reason: "quit",
+  });
+  await expect(stat(path)).rejects.toThrow();
+});
+
+test.each([
+  ["picker", undefined, []],
+  ["argument input", "fixture / review", [undefined]],
+] as const)(
+  "cancelling the native prompt %s does not retrieve a prompt",
+  async (_stage, selection, values) => {
+    const { prompt, custom, inputDialog, sendUserMessage } = await setup({
+      mode: "tui",
+    });
+    custom.mockResolvedValue(
+      selection === undefined ? undefined : promptKey("fixture", "review"),
+    );
+    inputDialog.mockResolvedValueOnce(values[0]);
+
+    await prompt("");
+
+    expect(custom).toHaveBeenCalledOnce();
+    expect(inputDialog).toHaveBeenCalledTimes(values.length);
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["picker", "argument input"])(
+  "aborting the native prompt %s closes it silently",
+  async (stage) => {
+    const { prompt, custom, inputDialog, notify, sendUserMessage } =
+      await setup({
+        mode: "tui",
+      });
+    const controller = new AbortController();
+    if (stage === "picker") {
+      custom.mockImplementation(async () => {
+        controller.abort();
+        return undefined;
+      });
+    } else {
+      custom.mockResolvedValue(promptKey("fixture", "review"));
+      inputDialog.mockImplementationOnce(async () => {
+        controller.abort();
+        return undefined;
+      });
+    }
+
+    await prompt("", controller.signal);
+
+    expect(notify).not.toHaveBeenCalledWith(expect.any(String), "error");
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  },
+);
+
+test("the native picker reports an empty prompt catalog", async () => {
+  const { prompt, custom, notify } = await setup({
+    mode: "tui",
+    configValue: { mcpServers: {} },
+  });
+
+  await prompt("");
+
+  expect(custom).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenLastCalledWith(
+    "No MCP prompts are available.",
+    "warning",
+  );
+});
+
 test("prompt commands fail safely in headless mode", async () => {
   const { prompt, sendUserMessage } = await setup();
+  await expect(prompt("")).rejects.toThrow("Usage: /mcp-prompt");
   await expect(prompt("list missing")).rejects.toThrow("Unknown MCP server");
   await expect(prompt("run fixture missing")).rejects.toThrow(
     "Unknown or unavailable MCP prompt",

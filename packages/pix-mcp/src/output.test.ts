@@ -1,7 +1,13 @@
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { expect, test } from "vitest";
-import { formatContent, formatResult, MAX_TEXT_BYTES } from "./output.ts";
+import {
+  formatContent,
+  formatEditableContent,
+  formatResult,
+  MAX_TEXT_BYTES,
+  removeEditablePromptGuard,
+} from "./output.ts";
 
 test("keeps text, supported images and small structured results", async () => {
   const response = await formatResult({
@@ -52,7 +58,7 @@ test.each([0, 1, 2])(
   },
 );
 
-test("ordered content reuses the byte-bounded preview around images", async () => {
+test("ordered content omits images beyond the byte-bounded preview", async () => {
   const source = "日本語".repeat(10_000);
   const response = await formatContent(
     [
@@ -71,11 +77,56 @@ test("ordered content reuses the byte-bounded preview around images", async () =
       .toString("utf8")
       .replace(/\uFFFD$/, "");
     expect(response.content[0]).toEqual({ type: "text", text: expected });
-    expect(response.content[1]).toMatchObject({ type: "image" });
+    expect(response.content.some((block) => block.type === "image")).toBe(
+      false,
+    );
     expect(Buffer.byteLength(expected)).toBeLessThanOrEqual(MAX_TEXT_BYTES);
   } finally {
     await rm(dirname(path), { recursive: true, force: true });
   }
+});
+
+test.each(["/new", "!rm -rf example", " \r\n!echo safe\u001b[31m"])(
+  "guards command-like editable content and strips terminal controls: %j",
+  async (source) => {
+    const editable = await formatEditableContent([
+      { type: "text", text: source },
+    ]);
+    expect(editable.guard).toBeDefined();
+    if (!editable.guard) throw new Error("Missing editor command guard");
+    expect(editable.text.startsWith(editable.guard)).toBe(true);
+    const unguarded = removeEditablePromptGuard(editable.text, editable.guard);
+    expect(
+      removeEditablePromptGuard(
+        `concurrent${editable.text}input`,
+        editable.guard,
+      ),
+    ).toBe(`concurrent${unguarded}input`);
+    expect(unguarded).not.toContain("\r");
+    expect(unguarded).not.toContain("\u001b");
+    expect(unguarded.trimStart()).toMatch(/^[!/]/u);
+    await editable.cleanup();
+  },
+);
+
+test("materializes prompt images as private references in editable content", async () => {
+  const editable = await formatEditableContent([
+    { type: "text", text: "Before" },
+    { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+    { type: "text", text: "\n\nAfter" },
+  ]);
+  const path = editable.text.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing image reference");
+  try {
+    expect(editable.text).toBe(`Before\n\n@"${path}"\n\nAfter`);
+    expect(await readFile(path, "utf8")).toBe("hello");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
+  } finally {
+    await editable.cleanup();
+  }
+  await expect(stat(dirname(path))).rejects.toThrow();
 });
 
 test("spills oversized output, large details and unsupported content without silently dropping it", async () => {

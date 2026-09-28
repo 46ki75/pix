@@ -1,4 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
@@ -70,14 +71,16 @@ export async function formatContent(
       `Structured content:\n${JSON.stringify(options.structuredContent)}`,
     );
   }
-  const fullText = text.join("\n\n") || "(No text output)";
+  const fullText =
+    text.join("\n\n") || (options.preserveOrder ? "" : "(No text output)");
   const bounded = preview(fullText);
   const structured = options.structuredContent;
   const largeDetails =
     structured !== undefined &&
     Buffer.byteLength(JSON.stringify(structured)) > MAX_DETAILS_BYTES;
+  const textTruncated = bounded !== fullText;
   const truncated =
-    bounded !== fullText ||
+    textTruncated ||
     omitted ||
     largeDetails ||
     (options.preserveErrorImages === true && images.length > 0);
@@ -99,7 +102,7 @@ export async function formatContent(
     let textIndex = 0;
     for (const block of ordered) {
       if (block.type === "image") {
-        content.push(block);
+        if (!textTruncated || offset < bounded.length) content.push(block);
         continue;
       }
       const value = `${textIndex++ > 0 ? "\n\n" : ""}${block.text}`;
@@ -112,7 +115,8 @@ export async function formatContent(
       if (previous?.type === "text") previous.text += visible;
       else content.push({ type: "text", text: visible });
     }
-    if (textIndex === 0) content.unshift({ type: "text", text: bounded });
+    if (textIndex === 0 && bounded)
+      content.unshift({ type: "text", text: bounded });
     if (artifactNotice)
       content.push({ type: "text", text: `\n\n${artifactNotice}` });
   } else {
@@ -133,6 +137,83 @@ export async function formatContent(
         ? { structuredContent: structured }
         : {}),
       ...(largeDetails ? { structuredContentOmitted: true } : {}),
+    },
+  };
+}
+
+function createEditablePromptGuard(): string {
+  const bytes = randomBytes(8);
+  let guard = "\u2060\u2063";
+  for (const byte of bytes)
+    for (let bit = 7; bit >= 0; bit--)
+      guard += byte & (1 << bit) ? "\u2063" : "\u2060";
+  return guard;
+}
+
+export function removeEditablePromptGuard(text: string, guard: string): string {
+  return text.replaceAll(guard, "");
+}
+
+function prepareEditablePrompt(text: string): {
+  text: string;
+  guard?: string;
+} {
+  // The TUI interprets leading / and ! as commands. An invisible guard keeps
+  // untrusted prompt text inert in the editor and is removed at message_end.
+  const sanitized = text
+    .replace(/\r\n?/gu, "\n")
+    .replace(/\p{Cc}/gu, (character) =>
+      character === "\n" || character === "\t" ? character : "",
+    )
+    .replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu, "");
+  if (!/^[!/]/u.test(sanitized.trimStart())) return { text: sanitized };
+  const guard = createEditablePromptGuard();
+  return { text: `${guard}${sanitized}`, guard };
+}
+
+const imageExtensions: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+export async function formatEditableContent(
+  content: (TextContent | ImageContent)[],
+): Promise<{ text: string; guard?: string; cleanup: () => Promise<void> }> {
+  let text = "";
+  let imageDirectory: string | undefined;
+  let imageIndex = 0;
+  try {
+    for (const block of content) {
+      if (block.type === "text") {
+        text += block.text;
+        continue;
+      }
+      imageDirectory ??= await mkdtemp(join(tmpdir(), "pix-mcp-prompt-"));
+      const extension = imageExtensions[block.mimeType] ?? "img";
+      const path = join(
+        imageDirectory,
+        `prompt-image-${++imageIndex}.${extension}`,
+      );
+      await writeFile(path, Buffer.from(block.data, "base64"), { mode: 0o600 });
+      const separator = text.endsWith("\n\n")
+        ? ""
+        : text.endsWith("\n")
+          ? "\n"
+          : "\n\n";
+      text += `${separator}@${JSON.stringify(path.replaceAll("\\", "/"))}`;
+    }
+  } catch (error) {
+    if (imageDirectory)
+      await rm(imageDirectory, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    ...prepareEditablePrompt(text),
+    cleanup: async () => {
+      if (imageDirectory)
+        await rm(imageDirectory, { recursive: true, force: true });
     },
   };
 }

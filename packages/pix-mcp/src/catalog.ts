@@ -78,7 +78,7 @@ export function summary(item: Entry) {
 
 export function compact(value: string, limit: number): string {
   const text = value
-    .replace(/\p{Cc}/gu, " ")
+    .replace(/[\p{C}\p{Zl}\p{Zp}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   return text.length <= limit ? text : `${text.slice(0, limit)}…`;

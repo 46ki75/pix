@@ -2,13 +2,19 @@ import { resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Prompt, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { compact, entry, search, summary, type Entry } from "./catalog.ts";
 import { Connection } from "./client.ts";
 import { readConfig, type ConfigIssue, type ServerConfig } from "./config.ts";
-import { formatResult } from "./output.ts";
+import {
+  formatEditableContent,
+  formatResult,
+  removeEditablePromptGuard,
+} from "./output.ts";
+import { pickPrompt } from "./prompt-picker.ts";
 import {
   formatPromptList,
   formatPromptResult,
@@ -16,6 +22,8 @@ import {
   promptCompletions,
   promptKey,
   resolvePromptArguments,
+  type PromptArgumentToken,
+  type PromptCommand,
   type PromptEntry,
 } from "./prompts.ts";
 import { prepareSchema } from "./schema.ts";
@@ -31,6 +39,11 @@ interface Rejections {
   }[];
 }
 
+interface PromptSelection {
+  command: PromptCommand;
+  item: PromptEntry;
+}
+
 interface State {
   alive: boolean;
   status: string;
@@ -40,6 +53,8 @@ interface State {
   connections: Map<string, Connection>;
   rejected: Map<string, Rejections>;
   configIssues: ConfigIssue[];
+  promptDraftCleanups: Set<() => Promise<void>>;
+  promptDraftGuards: Set<string>;
 }
 
 const discoveryParameters = Type.Object(
@@ -73,7 +88,7 @@ export default function mcp(pi: ExtensionAPI) {
       "Read this MCP config file for this session (default: .mcp.json).",
   });
   pi.registerCommand("mcp-prompt", {
-    description: "List or run a user-selected MCP prompt",
+    description: "Select, list, or run a user-controlled MCP prompt",
     getArgumentCompletions: (prefix) =>
       promptCompletions(prefix, [...(state?.prompts.values() ?? [])]),
     async handler(input, ctx) {
@@ -81,7 +96,14 @@ export default function mcp(pi: ExtensionAPI) {
         const owner = state;
         if (!owner) throw new Error("MCP session has not started.");
         current(owner);
-        const command = parsePromptCommand(input);
+        const editBeforeSending = ctx.mode === "tui" && input.trim() === "";
+        const selection = editBeforeSending
+          ? await choosePrompt(owner, ctx)
+          : undefined;
+        const command =
+          selection?.command ??
+          (editBeforeSending ? undefined : parsePromptCommand(input));
+        if (!command) return;
         if (command.action === "list") {
           if (
             command.server &&
@@ -113,34 +135,64 @@ export default function mcp(pi: ExtensionAPI) {
           ctx.ui.notify(text, "info");
           return;
         }
-        const item = owner.prompts.get(promptKey(command.server, command.name));
+        const key = promptKey(command.server, command.name);
+        const item = selection?.item ?? owner.prompts.get(key);
         if (!item)
           throw new Error(
             "Unknown or unavailable MCP prompt. List prompts again.",
           );
+        const ensureSelectedPromptCurrent = () => {
+          if (selection && owner.prompts.get(key) !== item)
+            throw new Error(
+              "MCP prompt catalog changed. Open the picker again.",
+            );
+        };
+        ensureSelectedPromptCurrent();
         const connection = owner.connections.get(command.server);
         if (!connection) throw new Error("MCP connection unavailable.");
         const args = resolvePromptArguments(
           item.prompt,
           command.argumentTokens,
         );
-        const result = await connection.getPrompt(
-          item.prompt.name,
-          args,
-          ctx.signal,
-        );
-        current(owner);
-        const formatted = await formatPromptResult(
-          result,
-          item.server,
-          item.prompt.name,
-        );
-        current(owner);
-        ctx.signal?.throwIfAborted();
-        pi.sendUserMessage(
-          formatted.content,
-          ctx.isIdle() ? undefined : { deliverAs: "followUp" },
-        );
+        if (ctx.mode === "tui")
+          ctx.ui.setStatus(
+            "mcp-prompt",
+            `Loading ${item.server} / ${item.prompt.name}…`,
+          );
+        try {
+          const result = await connection.getPrompt(
+            item.prompt.name,
+            args,
+            ctx.signal,
+          );
+          current(owner);
+          ensureSelectedPromptCurrent();
+          const formatted = await formatPromptResult(result);
+          current(owner);
+          ensureSelectedPromptCurrent();
+          ctx.signal?.throwIfAborted();
+          if (editBeforeSending) {
+            const draft = await formatEditableContent(formatted.content);
+            try {
+              current(owner);
+              ensureSelectedPromptCurrent();
+              ctx.signal?.throwIfAborted();
+              ctx.ui.pasteToEditor(draft.text);
+              owner.promptDraftCleanups.add(draft.cleanup);
+              if (draft.guard) owner.promptDraftGuards.add(draft.guard);
+            } catch (error) {
+              await draft.cleanup();
+              throw error;
+            }
+          } else {
+            pi.sendUserMessage(
+              formatted.content,
+              ctx.isIdle() ? undefined : { deliverAs: "followUp" },
+            );
+          }
+        } finally {
+          if (ctx.mode === "tui") ctx.ui.setStatus("mcp-prompt", undefined);
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "MCP prompt failed.";
@@ -149,6 +201,61 @@ export default function mcp(pi: ExtensionAPI) {
       }
     },
   });
+
+  async function choosePrompt(
+    owner: State,
+    ctx: ExtensionCommandContext,
+  ): Promise<PromptSelection | undefined> {
+    const entries = [...owner.prompts.values()].sort(
+      (a, b) =>
+        a.server.localeCompare(b.server, "en") ||
+        a.prompt.name.localeCompare(b.prompt.name, "en"),
+    );
+    if (entries.length === 0) {
+      ctx.ui.notify("No MCP prompts are available.", "warning");
+      return;
+    }
+
+    const item = await pickPrompt(entries, ctx);
+    if (!item) return;
+    ctx.signal?.throwIfAborted();
+
+    const key = promptKey(item.server, item.prompt.name);
+    const ensureCurrent = () => {
+      current(owner);
+      if (owner.prompts.get(key) !== item)
+        throw new Error("MCP prompt catalog changed. Open the picker again.");
+    };
+    ensureCurrent();
+
+    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined;
+    const argumentTokens: PromptArgumentToken[] = [];
+    for (const argument of item.prompt.arguments ?? []) {
+      const value = await ctx.ui.input(
+        `${argument.name} (${argument.required ? "required" : "optional"})`,
+        argument.required ? "Enter a value" : "Leave empty to omit",
+        dialogOptions,
+      );
+      if (value === undefined) return;
+      ctx.signal?.throwIfAborted();
+      ensureCurrent();
+      if (argument.required || value !== "")
+        argumentTokens.push({
+          value: `${argument.name}=${value}`,
+          separator: argument.name.length,
+        });
+    }
+
+    return {
+      command: {
+        action: "run",
+        server: item.server,
+        name: item.prompt.name,
+        argumentTokens,
+      },
+      item,
+    };
+  }
 
   function deactivate(names: Iterable<string>) {
     const removed = new Set(names);
@@ -444,9 +551,15 @@ export default function mcp(pi: ExtensionAPI) {
     owner.alive = false;
     state = undefined;
     deactivate(owned);
-    await Promise.all(
-      [...owner.connections.values()].map((connection) => connection.close()),
-    );
+    const promptDraftCleanups = [...owner.promptDraftCleanups];
+    owner.promptDraftCleanups.clear();
+    owner.promptDraftGuards.clear();
+    await Promise.all([
+      ...[...owner.connections.values()].map((connection) =>
+        connection.close(),
+      ),
+      ...promptDraftCleanups.map((cleanup) => cleanup()),
+    ]);
   }
 
   async function start(ctx: ExtensionContext) {
@@ -460,6 +573,8 @@ export default function mcp(pi: ExtensionAPI) {
       connections: new Map(),
       rejected: new Map(),
       configIssues: [],
+      promptDraftCleanups: new Set(),
+      promptDraftGuards: new Set(),
     };
     state = owner;
     try {
@@ -513,6 +628,35 @@ export default function mcp(pi: ExtensionAPI) {
       if (owner.alive && state === owner) registerDiscovery();
     }
   }
+
+  // Keep each invisible editor guard through Pi's command/template dispatch,
+  // then remove only guards created by this session before model context.
+  pi.on("message_end", (event) => {
+    const owner = state;
+    if (!owner || event.message.role !== "user") return;
+    const consumed = new Set<string>();
+    const removeKnownGuards = (text: string) => {
+      let next = text;
+      for (const guard of owner.promptDraftGuards) {
+        if (!next.includes(guard)) continue;
+        next = removeEditablePromptGuard(next, guard);
+        consumed.add(guard);
+      }
+      return next;
+    };
+    let content: typeof event.message.content;
+    if (typeof event.message.content === "string") {
+      content = removeKnownGuards(event.message.content);
+    } else {
+      content = event.message.content.map((block) =>
+        block.type === "text"
+          ? { ...block, text: removeKnownGuards(block.text) }
+          : block,
+      );
+    }
+    for (const guard of consumed) owner.promptDraftGuards.delete(guard);
+    if (consumed.size > 0) return { message: { ...event.message, content } };
+  });
 
   // Any extension's registerTool can reactivate allowlisted tools in Pi 0.87.
   // Independently track loaded fingerprints, enforce them in execute, and scrub
