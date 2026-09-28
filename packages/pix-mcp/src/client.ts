@@ -9,14 +9,25 @@ import {
   CallToolResultSchema,
   GetPromptResultSchema,
   ListPromptsResultSchema,
+  ListResourcesResultSchema,
+  ListResourceTemplatesResultSchema,
   ListToolsResultSchema,
   PromptListChangedNotificationSchema,
+  ReadResourceResultSchema,
+  ResourceListChangedNotificationSchema,
   ToolSchema,
   ToolListChangedNotificationSchema,
   type Prompt,
+  type Resource,
+  type ResourceTemplate,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerConfig } from "./config.ts";
+import {
+  validateResource,
+  validateResourceTemplate,
+  validateResourceUri,
+} from "./resources.ts";
 import { compileSchema, schemaValidator } from "./schema.ts";
 
 // SDK 1.30's property decoder incorrectly requires every property schema to be
@@ -39,27 +50,97 @@ const promptIdentifier = (value: string) =>
   Buffer.byteLength(value) <= 256 &&
   !/[\p{C}\p{Zl}\p{Zp}]/u.test(value);
 
+// Leave bounded room for the JSON-RPC envelope around a maximum-size result.
+const MAX_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024 + 64 * 1024;
+
+function responseLimitTransform(sse: boolean) {
+  let responseBytes = 0;
+  let eventBytes = 0;
+  let lineBytes = 0;
+  let previousCarriageReturn = false;
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (!sse) {
+        responseBytes += chunk.byteLength;
+        if (responseBytes > MAX_HTTP_RESPONSE_BYTES)
+          throw new Error("MCP HTTP response exceeded the size limit.");
+      } else {
+        for (const byte of chunk) {
+          eventBytes++;
+          if (eventBytes > MAX_HTTP_RESPONSE_BYTES)
+            throw new Error("MCP HTTP event exceeded the size limit.");
+          if (byte === 0x0d) {
+            if (lineBytes === 0) eventBytes = 0;
+            lineBytes = 0;
+            previousCarriageReturn = true;
+          } else if (byte === 0x0a) {
+            if (!previousCarriageReturn) {
+              if (lineBytes === 0) eventBytes = 0;
+              lineBytes = 0;
+            }
+            previousCarriageReturn = false;
+          } else {
+            previousCarriageReturn = false;
+            lineBytes++;
+          }
+        }
+      }
+      controller.enqueue(chunk);
+    },
+  });
+}
+
+function boundedHttpResponse(response: Response): Response {
+  if (!response.body) return response;
+  const sse =
+    mediaTypeEssence(response.headers.get("content-type")) ===
+    "text/event-stream";
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (
+    !sse &&
+    Number.isFinite(declaredLength) &&
+    declaredLength > MAX_HTTP_RESPONSE_BYTES
+  ) {
+    void response.body.cancel();
+    throw new Error("MCP HTTP response exceeded the size limit.");
+  }
+  return new Response(response.body.pipeThrough(responseLimitTransform(sse)), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 export class Connection {
   readonly client: Client;
   readonly config: ServerConfig;
   status = "Not connected";
   toolStatus = "Not discovered";
   promptStatus = "Not discovered";
+  resourceStatus = "Not discovered";
   instructions = "";
   #transport: StdioClientTransport | StreamableHTTPClientTransport;
   #lifetime = new AbortController();
   #initializing: Promise<void> | undefined;
   #refreshing: Promise<void> | undefined;
   #promptRefreshing: Promise<void> | undefined;
+  #resourceRefreshing: Promise<void> | undefined;
   #closing: Promise<void> | undefined;
   #dirty = false;
   #promptDirty = false;
+  #resourceDirty = false;
   #stopped = false;
   #connected = false;
   #toolsReady = false;
   #promptsReady = false;
+  #resourcesReady = false;
+  #resourcesSupported = false;
   #changed: (tools: Tool[]) => void;
   #promptsChanged: (prompts: Prompt[]) => void;
+  #resourcesChanged: (
+    resources: Resource[],
+    templates: ResourceTemplate[],
+  ) => void;
   #promptNames = new Set<string>();
   #outputValidators = new Map<string, ReturnType<typeof compileSchema>>();
   #operation = new AsyncLocalStorage<AbortSignal>();
@@ -68,10 +149,15 @@ export class Connection {
     config: ServerConfig,
     changed: (tools: Tool[]) => void,
     promptsChanged: (prompts: Prompt[]) => void = () => {},
+    resourcesChanged: (
+      resources: Resource[],
+      templates: ResourceTemplate[],
+    ) => void = () => {},
   ) {
     this.config = config;
     this.#changed = changed;
     this.#promptsChanged = promptsChanged;
+    this.#resourcesChanged = resourcesChanged;
     this.client = new Client(
       { name: "pix-mcp", version: "0.0.0" },
       { capabilities: {}, jsonSchemaValidator: schemaValidator },
@@ -122,6 +208,17 @@ export class Connection {
         }
       },
     );
+    this.client.setNotificationHandler(
+      ResourceListChangedNotificationSchema,
+      async () => {
+        if (this.#stopped) return;
+        try {
+          await this.refreshResources();
+        } catch {
+          /* refresh already clears the stale catalog */
+        }
+      },
+    );
   }
 
   #disconnect() {
@@ -129,9 +226,12 @@ export class Connection {
     this.status = "Disconnected; reload Pi to reconnect";
     this.toolStatus = "Unavailable";
     this.promptStatus = "Unavailable";
+    this.resourceStatus = "Unavailable";
     this.#connected = false;
     this.#toolsReady = false;
     this.#promptsReady = false;
+    this.#resourcesReady = false;
+    this.#resourcesSupported = false;
     this.#lifetime.abort(
       new Error("MCP connection is unavailable; reload Pi to reconnect."),
     );
@@ -139,16 +239,20 @@ export class Connection {
     this.#promptNames.clear();
     this.#changed([]);
     this.#promptsChanged([]);
+    this.#resourcesChanged([], []);
     void this.client.close().catch(() => {});
   }
 
   #updateStatus() {
     if (!this.#connected || this.#stopped) return;
-    if (this.#toolsReady && this.#promptsReady) this.status = "Connected";
-    else if (this.#toolsReady)
-      this.status = "Connected; prompt discovery failed";
-    else if (this.#promptsReady)
-      this.status = "Connected; tool discovery failed";
+    const failures = [
+      ...(!this.#toolsReady ? ["tool"] : []),
+      ...(!this.#promptsReady ? ["prompt"] : []),
+      ...(!this.#resourcesReady ? ["resource"] : []),
+    ];
+    if (failures.length === 0) this.status = "Connected";
+    else if (failures.length < 3)
+      this.status = `Connected; ${failures.join(" and ")} discovery failed`;
     else this.status = "Discovery failed; reload Pi to retry";
   }
 
@@ -211,7 +315,8 @@ export class Connection {
       ) as unknown as Promise<Response>;
     };
     // Teardown must still send DELETE after the connection lifetime is aborted.
-    if (init?.method === "DELETE") return fetch(AbortSignal.timeout(2000));
+    if (init?.method === "DELETE")
+      return boundedHttpResponse(await fetch(AbortSignal.timeout(2000)));
     const signals = [
       this.#lifetime.signal,
       ...(init?.signal ? [init.signal] : []),
@@ -229,8 +334,10 @@ export class Connection {
         (("method" in message && "id" in message) ||
           message.method === "notifications/initialized");
       const operation = scoped ? this.#operation.getStore() : undefined;
-      return fetch(
-        AbortSignal.any([...signals, operation ?? AbortSignal.timeout(2000)]),
+      return boundedHttpResponse(
+        await fetch(
+          AbortSignal.any([...signals, operation ?? AbortSignal.timeout(2000)]),
+        ),
       );
     }
     // GET is optional (405 is valid), but an established notification stream
@@ -254,7 +361,7 @@ export class Connection {
         await response.body?.cancel();
         throw new Error("MCP notification stream unavailable.");
       }
-      const stream = new TransformStream<Uint8Array, Uint8Array>();
+      const stream = responseLimitTransform(true);
       void response.body.pipeTo(stream.writable).then(
         () => this.#disconnect(),
         () => this.#disconnect(),
@@ -312,8 +419,10 @@ export class Connection {
           "Connection failed; check configuration/authentication and reload Pi";
         this.toolStatus = "Unavailable";
         this.promptStatus = "Unavailable";
+        this.resourceStatus = "Unavailable";
         this.#changed([]);
         this.#promptsChanged([]);
+        this.#resourcesChanged([], []);
       }
       await this.client.close().catch(() => {});
       throw new Error(`MCP server ${this.config.name}: connection failed.`);
@@ -321,6 +430,7 @@ export class Connection {
     const results = await Promise.allSettled([
       this.refresh(),
       this.refreshPrompts(),
+      this.refreshResources(),
     ]);
     if (results.some((result) => result.status === "rejected"))
       throw new Error(`MCP server ${this.config.name}: discovery failed.`);
@@ -551,6 +661,217 @@ export class Connection {
     }
   }
 
+  refreshResources(): Promise<void> {
+    this.#resourceDirty = true;
+    // Do not let picker selections remain current while either half of the
+    // atomic resource/template snapshot is being refreshed.
+    if (this.#resourcesReady) {
+      this.#resourcesReady = false;
+      this.resourceStatus = "Loading";
+      this.#resourcesChanged([], []);
+    }
+    this.#resourceRefreshing ??= this.#drainResourceRefreshes();
+    return this.#resourceRefreshing;
+  }
+
+  async #drainResourceRefreshes(): Promise<void> {
+    let failed = false;
+    let failure: unknown;
+    try {
+      await this.#refreshResources();
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    this.#resourceRefreshing = undefined;
+    if (this.#resourceDirty && !this.#stopped) return this.refreshResources();
+    if (failed) throw failure;
+  }
+
+  async #refreshResources(): Promise<void> {
+    try {
+      while (this.#resourceDirty && !this.#stopped) {
+        this.#resourceDirty = false;
+        const resources: Resource[] = [];
+        const templates: ResourceTemplate[] = [];
+        const resourceCursors = new Set<string>();
+        const templateCursors = new Set<string>();
+        const uris = new Set<string>();
+        const uriTemplates = new Set<string>();
+        const supportsResources = Boolean(
+          this.client.getServerCapabilities()?.resources,
+        );
+        let bytes = 0;
+        await this.#deadline(
+          this.config.catalogTimeoutMs,
+          undefined,
+          async (signal) => {
+            if (supportsResources) {
+              let cursor: string | undefined;
+              do {
+                const page = await this.#deadline(
+                  this.config.catalogTimeoutMs,
+                  signal,
+                  (requestSignal) =>
+                    this.client.request(
+                      {
+                        method: "resources/list",
+                        params: cursor === undefined ? {} : { cursor },
+                      },
+                      ListResourcesResultSchema,
+                      {
+                        signal: requestSignal,
+                        timeout: this.config.catalogTimeoutMs,
+                      },
+                    ),
+                );
+                bytes += Buffer.byteLength(JSON.stringify(page));
+                if (
+                  bytes > 2 * 1024 * 1024 ||
+                  resources.length + templates.length + page.resources.length >
+                    1000
+                )
+                  throw new Error("Catalog limit");
+                for (const resource of page.resources) {
+                  validateResource(resource);
+                  if (uris.has(resource.uri))
+                    throw new Error("Duplicate resource URI");
+                  uris.add(resource.uri);
+                  const catalogResource = { ...resource };
+                  delete catalogResource._meta;
+                  delete catalogResource.icons;
+                  resources.push(catalogResource);
+                }
+                cursor = page.nextCursor;
+                if (cursor !== undefined) {
+                  if (
+                    resourceCursors.has(cursor) ||
+                    resourceCursors.size >= 100
+                  )
+                    throw new Error("Invalid pagination");
+                  resourceCursors.add(cursor);
+                }
+              } while (cursor !== undefined);
+
+              cursor = undefined;
+              do {
+                const page = await this.#deadline(
+                  this.config.catalogTimeoutMs,
+                  signal,
+                  (requestSignal) =>
+                    this.client.request(
+                      {
+                        method: "resources/templates/list",
+                        params: cursor === undefined ? {} : { cursor },
+                      },
+                      ListResourceTemplatesResultSchema,
+                      {
+                        signal: requestSignal,
+                        timeout: this.config.catalogTimeoutMs,
+                      },
+                    ),
+                );
+                bytes += Buffer.byteLength(JSON.stringify(page));
+                if (
+                  bytes > 2 * 1024 * 1024 ||
+                  resources.length +
+                    templates.length +
+                    page.resourceTemplates.length >
+                    1000
+                )
+                  throw new Error("Catalog limit");
+                for (const template of page.resourceTemplates) {
+                  validateResourceTemplate(template);
+                  if (uriTemplates.has(template.uriTemplate))
+                    throw new Error("Duplicate resource URI template");
+                  uriTemplates.add(template.uriTemplate);
+                  const catalogTemplate = { ...template };
+                  delete catalogTemplate._meta;
+                  delete catalogTemplate.icons;
+                  templates.push(catalogTemplate);
+                }
+                cursor = page.nextCursor;
+                if (cursor !== undefined) {
+                  if (
+                    templateCursors.has(cursor) ||
+                    templateCursors.size >= 100
+                  )
+                    throw new Error("Invalid pagination");
+                  templateCursors.add(cursor);
+                }
+              } while (cursor !== undefined);
+            }
+            signal.throwIfAborted();
+            // One notification covers both list endpoints. Never publish a
+            // cross-revision pair when it arrives between those requests.
+            if (!this.#stopped && !this.#resourceDirty) {
+              this.#resourcesReady = true;
+              this.#resourcesSupported = supportsResources;
+              this.resourceStatus = supportsResources
+                ? "Available"
+                : "Not supported";
+              this.#resourcesChanged(resources, templates);
+              this.#updateStatus();
+            }
+          },
+        );
+      }
+    } catch {
+      if (!this.#stopped) {
+        this.#resourcesReady = false;
+        this.#resourcesSupported = false;
+        this.resourceStatus = "Discovery failed; reload Pi to retry";
+        this.#resourcesChanged([], []);
+        this.#updateStatus();
+      }
+      throw new Error(
+        `MCP server ${this.config.name}: resource discovery failed.`,
+      );
+    }
+  }
+
+  async readResource(uri: string, signal?: AbortSignal) {
+    await this.start().catch(() => {});
+    const combined = signal
+      ? AbortSignal.any([signal, this.#lifetime.signal])
+      : this.#lifetime.signal;
+    combined.throwIfAborted();
+    if (!this.#resourcesReady)
+      throw new Error(
+        "MCP resource catalog is unavailable; reload Pi to retry.",
+      );
+    if (!this.#resourcesSupported)
+      throw new Error("MCP server does not support resources.");
+    validateResourceUri(uri);
+    try {
+      const result = await this.#deadline(
+        this.config.timeout,
+        combined,
+        (requestSignal) =>
+          this.client.request(
+            { method: "resources/read", params: { uri } },
+            ReadResourceResultSchema,
+            {
+              signal: requestSignal,
+              timeout: this.config.timeout,
+              resetTimeoutOnProgress: false,
+            },
+          ),
+      );
+      if (
+        result.contents.length > 100 ||
+        Buffer.byteLength(JSON.stringify(result)) > 16 * 1024 * 1024
+      )
+        throw new Error("Resource result limit");
+      return result;
+    } catch {
+      combined.throwIfAborted();
+      throw new Error(
+        `MCP server ${this.config.name}: resource request failed or timed out.`,
+      );
+    }
+  }
+
   async getPrompt(
     name: string,
     args: Record<string, string> | undefined,
@@ -656,12 +977,16 @@ export class Connection {
     this.status = "Closed";
     this.toolStatus = "Closed";
     this.promptStatus = "Closed";
+    this.resourceStatus = "Closed";
     this.#toolsReady = false;
     this.#promptsReady = false;
+    this.#resourcesReady = false;
+    this.#resourcesSupported = false;
     this.#outputValidators.clear();
     this.#promptNames.clear();
     this.#changed([]);
     this.#promptsChanged([]);
+    this.#resourcesChanged([], []);
     if (
       this.#transport instanceof StreamableHTTPClientTransport &&
       this.#transport.sessionId
@@ -672,5 +997,6 @@ export class Connection {
     await this.#initializing?.catch(() => {});
     await this.#refreshing?.catch(() => {});
     await this.#promptRefreshing?.catch(() => {});
+    await this.#resourceRefreshing?.catch(() => {});
   }
 }

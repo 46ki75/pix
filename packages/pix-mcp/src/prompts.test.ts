@@ -105,6 +105,16 @@ test("lists prompts compactly and completes actions, servers, and names", () => 
       label: "tone=",
     },
   ]);
+  expect(
+    promptCompletions('run fixture "code review" code="sample value" t', [
+      review,
+    ]),
+  ).toEqual([
+    {
+      value: 'run fixture "code review" code="sample value" tone=',
+      label: "tone=",
+    },
+  ]);
   const equalsArgument: PromptEntry = {
     server: "fixture",
     prompt: {

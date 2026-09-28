@@ -33,7 +33,7 @@
         "description": { "$ref": "#/$defs/text" },
         "timeout": {
           "$ref": "#/$defs/timeout",
-          "description": "Hard deadline for one tool invocation or prompt retrieval."
+          "description": "Hard deadline for one tool invocation, prompt retrieval, or resource read."
         },
         "startupTimeoutMs": {
           "$ref": "#/$defs/timeout",

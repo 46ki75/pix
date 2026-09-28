@@ -6,8 +6,13 @@ import {
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
   type Prompt,
+  type Resource,
+  type ResourceTemplate,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 
@@ -37,16 +42,20 @@ export const eagleSchema = {
 export function fixtureServer() {
   let changed = false;
   let revised = false;
+  let resourcesChanged = false;
   const calls: string[] = [];
   const promptCalls: string[] = [];
+  const resourceCalls: string[] = [];
   const server = new Server(
     { name: "fixture", version: "1" },
     {
       capabilities: {
         tools: { listChanged: true },
         prompts: { listChanged: true },
+        resources: { listChanged: true },
       },
-      instructions: "Fixture tools for testing echo and lifecycle behavior.",
+      instructions:
+        "Fixture MCP features for testing content and lifecycle behavior.",
     },
   );
   const tool = (name: string): Tool => ({
@@ -199,6 +208,97 @@ export function fixtureServer() {
       ? { prompts: [prompt("conversation")] }
       : { prompts: [prompt("review")], nextCursor: "prompt-page2" },
   );
+  const resource = (uri: string, name: string): Resource => ({
+    uri,
+    name,
+    description: `${name} fixture resource`,
+  });
+  server.setRequestHandler(ListResourcesRequestSchema, (request) =>
+    request.params?.cursor === "resource-page2"
+      ? {
+          resources: [
+            resource("fixture://image", "Image"),
+            resource("fixture://binary", "Binary"),
+            resource("fixture://collection", "Collection"),
+            resource("fixture://change", "Changing resource"),
+          ],
+        }
+      : {
+          resources: [
+            resource(
+              resourcesChanged ? "fixture://notes-v2" : "fixture://notes",
+              "Notes",
+            ),
+          ],
+          nextCursor: "resource-page2",
+        },
+  );
+  const resourceTemplate = (
+    uriTemplate: string,
+    name: string,
+  ): ResourceTemplate => ({
+    uriTemplate,
+    name,
+    description: `${name} fixture resource template`,
+  });
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, (request) =>
+    request.params?.cursor === "resource-template-page2"
+      ? {
+          resourceTemplates: [
+            resourceTemplate("fixture://dynamic/blob/{id}", "Dynamic blob"),
+          ],
+        }
+      : {
+          resourceTemplates: [
+            resourceTemplate("fixture://dynamic/text/{id}", "Dynamic text"),
+          ],
+          nextCursor: "resource-template-page2",
+        },
+  );
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    resourceCalls.push(uri);
+    if (uri === "fixture://notes")
+      return {
+        contents: [{ uri, mimeType: "text/plain", text: "Fixture notes" }],
+      };
+    if (uri === "fixture://image")
+      return {
+        contents: [{ uri, mimeType: "image/png", blob: tinyPng }],
+      };
+    if (uri === "fixture://binary")
+      return {
+        contents: [
+          { uri, mimeType: "application/octet-stream", blob: "aGVsbG8=" },
+        ],
+      };
+    if (uri === "fixture://collection")
+      return {
+        contents: [
+          { uri: `${uri}/one`, text: "First" },
+          { uri: `${uri}/two`, text: "Second" },
+        ],
+      };
+    if (uri === "fixture://change") {
+      resourcesChanged = true;
+      await server.notification({
+        method: "notifications/resources/list_changed",
+      });
+      await setTimeout(20);
+      return { contents: [{ uri, text: "Changed resource" }] };
+    }
+    if (uri.startsWith("fixture://dynamic/text/"))
+      return {
+        contents: [{ uri, mimeType: "text/plain", text: `Text ${uri}` }],
+      };
+    if (uri.startsWith("fixture://dynamic/blob/"))
+      return {
+        contents: [
+          { uri, mimeType: "application/octet-stream", blob: "aGVsbG8=" },
+        ],
+      };
+    throw new Error("Resource not found");
+  });
   server.setRequestHandler(GetPromptRequestSchema, (request) => {
     promptCalls.push(request.params.name);
     if (request.params.name === "conversation")
@@ -284,7 +384,7 @@ export function fixtureServer() {
       structuredContent: { message: args.message },
     };
   });
-  return { server, calls, promptCalls };
+  return { server, calls, promptCalls, resourceCalls };
 }
 
 if (

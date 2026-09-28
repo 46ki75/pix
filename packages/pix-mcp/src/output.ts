@@ -29,6 +29,7 @@ interface ContentOptions {
   structuredContent?: unknown;
   preserveErrorImages?: boolean;
   preserveOrder?: boolean;
+  artifactRequired?: boolean;
 }
 
 export async function formatContent(
@@ -83,6 +84,7 @@ export async function formatContent(
     textTruncated ||
     omitted ||
     largeDetails ||
+    options.artifactRequired === true ||
     (options.preserveErrorImages === true && images.length > 0);
   let fullOutputPath: string | undefined;
   if (truncated) {
@@ -141,7 +143,7 @@ export async function formatContent(
   };
 }
 
-function createEditablePromptGuard(): string {
+function createEditableContentGuard(): string {
   const bytes = randomBytes(8);
   let guard = "\u2060\u2063";
   for (const byte of bytes)
@@ -154,12 +156,12 @@ export function removeEditablePromptGuard(text: string, guard: string): string {
   return text.replaceAll(guard, "");
 }
 
-function prepareEditablePrompt(text: string): {
+function prepareEditableContent(text: string): {
   text: string;
   guard?: string;
 } {
   // The TUI interprets leading / and ! as commands. An invisible guard keeps
-  // untrusted prompt text inert in the editor and is removed at message_end.
+  // untrusted staged text inert in the editor and is removed at message_end.
   const sanitized = text
     .replace(/\r\n?/gu, "\n")
     .replace(/\p{Cc}/gu, (character) =>
@@ -167,7 +169,7 @@ function prepareEditablePrompt(text: string): {
     )
     .replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu, "");
   if (!/^[!/]/u.test(sanitized.trimStart())) return { text: sanitized };
-  const guard = createEditablePromptGuard();
+  const guard = createEditableContentGuard();
   return { text: `${guard}${sanitized}`, guard };
 }
 
@@ -190,12 +192,9 @@ export async function formatEditableContent(
         text += block.text;
         continue;
       }
-      imageDirectory ??= await mkdtemp(join(tmpdir(), "pix-mcp-prompt-"));
+      imageDirectory ??= await mkdtemp(join(tmpdir(), "pix-mcp-draft-"));
       const extension = imageExtensions[block.mimeType] ?? "img";
-      const path = join(
-        imageDirectory,
-        `prompt-image-${++imageIndex}.${extension}`,
-      );
+      const path = join(imageDirectory, `image-${++imageIndex}.${extension}`);
       await writeFile(path, Buffer.from(block.data, "base64"), { mode: 0o600 });
       const separator = text.endsWith("\n\n")
         ? ""
@@ -210,7 +209,7 @@ export async function formatEditableContent(
     throw error;
   }
   return {
-    ...prepareEditablePrompt(text),
+    ...prepareEditableContent(text),
     cleanup: async () => {
       if (imageDirectory)
         await rm(imageDirectory, { recursive: true, force: true });

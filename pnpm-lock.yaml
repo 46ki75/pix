@@ -205,9 +205,15 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.30.0
         version: 1.30.0(zod@4.6.5)
+      '@std-uritemplate/std-uritemplate':
+        specifier: 2.0.12
+        version: 2.0.12
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      fast-uri:
+        specifier: 3.1.8
+        version: 3.1.8
       undici:
         specifier: 8.10.2
         version: 8.10.2
@@ -1008,6 +1014,9 @@ packages:
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
+  '@std-uritemplate/std-uritemplate@2.0.12':
+    resolution: {integrity: sha512-s/R828vYTrFPgAOFAUiHuP4i1eSZHCO9PKVfzVR+2DFERJ/G71BpZJVObM2yy3xeMjMW3wB61gvanb6/pV1lJw==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -2771,6 +2780,8 @@ snapshots:
       tslib: 2.8.1
 
   '@stablelib/base64@1.0.1': {}
+
+  '@std-uritemplate/std-uritemplate@2.0.12': {}
 
   '@types/chai@5.2.3':
     dependencies:

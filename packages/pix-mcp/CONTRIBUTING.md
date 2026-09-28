@@ -13,8 +13,8 @@ mise run mcp:dev
 ```
 
 The development task runs from `packages/pix-mcp` and disables other extensions so
-another MCP adapter cannot collide with the `mcp` tool, `/mcp-prompt` command, or
-flags. Pass arguments through the task, for example:
+another MCP adapter cannot collide with the `mcp` tool, `/mcp-prompt` or
+`/mcp-resource` commands, or flags. Pass arguments through the task, for example:
 
 ```sh
 mise run mcp:dev --mcp-config /absolute/path/to/mcp.json
