@@ -1,6 +1,7 @@
 # pix
 
-A TypeScript monorepo for small [Pi Coding Agent](https://pi.dev/) extensions and themes.
+A TypeScript monorepo for small [Pi Coding Agent](https://pi.dev/) extensions,
+themes, and related MCP servers.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -44,7 +45,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run fmt` | Format tracked TypeScript, JavaScript, and JSON files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run dev` | Launch Pi with all seven local extensions and Elmethis themes |
+| `mise run dev` | Launch Pi with all local extensions and Elmethis themes |
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
@@ -79,6 +80,12 @@ schemas on demand, and uses user-selected MCP prompts and resources. Run
 `mise run test --project pix-mcp` for its tests. Review its configuration and
 automatic startup behavior before connecting servers. Tool-call permissions are
 left to Pi extensions rather than enforced by the adapter.
+
+[`@ikuma.cloud/mcp-copilot-prompts`](packages/mcp-copilot-prompts/README.md) is a
+local stdio MCP server that exposes repository `.github/prompts/*.prompt.md`
+files as user-selected MCP prompts. It works with `pix-mcp` and other clients
+that implement MCP prompts. Run `mise run test --project mcp-copilot-prompts`
+for its tests.
 
 [`@ikuma.cloud/pix-bg`](packages/pix-bg/README.md) runs background shell tasks with
 completion wake-ups, capped log files, and a `/bg` task viewer. Run
@@ -117,6 +124,8 @@ Each package lives in `packages/<unscoped-package-name>/`. Extensions, such as
 configuration. Shared tooling lives at the repository root. Pi loads the
 TypeScript entry point declared by `package.json` directly. Theme-only packages
 instead declare JSON resources through `pi.themes` and need no runtime code.
+Standalone servers such as `packages/mcp-copilot-prompts/` compile a standard
+Node.js CLI for use by Pi or other MCP clients.
 
 Update local path-based installations if your checkout previously used shorter
 directory names. Published npm package names and mise task names are unchanged.

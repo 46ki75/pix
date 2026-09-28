@@ -93,6 +93,17 @@ Use `packages/pix-websearch` as a reference for package layout and Pi tool regis
 Use strict TypeScript and explicit type-only imports. Add comments for rationale
 or constraints that would be costly to rediscover.
 
+## Adding a standalone MCP server
+
+Use `packages/mcp-copilot-prompts` as the reference for a server distributed as
+a standard Node.js CLI rather than a Pi extension. Give the package a scoped npm
+name matching its directory, a `bin` entry targeting compiled JavaScript, a
+build-only TypeScript configuration, protocol integration tests, and package
+README and contribution guides. Keep runtime dependencies package-local and
+shared development tools at the repository root. Reserve stdout for protocol
+traffic. Test the built CLI and inspect the packed artifact in addition to the
+repository's normal checks.
+
 ## Adding a theme package
 
 Use `packages/pix-theme-elmethis` as the reference. Follow the package naming,
