@@ -165,10 +165,13 @@ never reads credential files, refresh tokens, browser cookies, or the Keychain.
 It does not forward custom model headers or use model endpoint overrides.
 
 HTTP requests have a 15-second timeout covering the response body and a 256 KiB
-response limit. Each provider check has a 20-second total deadline, including
-credential resolution. Shutdown, reload, and session replacement cancel HTTP work
-and suppress late UI updates. Pi-managed credential refresh may finish after the
-extension stops waiting; the extension does not interfere with Pi's refresh lock.
+response limit. A timeout is retried once without resolving credentials again.
+Each provider check has a 35-second total deadline, including credential resolution
+and both request attempts. Network, authentication, rate-limit, HTTP, and response
+errors are not retried. Shutdown, reload, and session replacement cancel HTTP work
+and suppress late UI updates. Pi-managed credential
+refresh may finish after the extension stops waiting; the extension does not
+interfere with Pi's refresh lock.
 
 ## Limitations
 

@@ -147,7 +147,7 @@ test("the shared request has a total deadline including credential resolution", 
     return cancelled;
   });
   const result = requests.get(registry, "claude", new AbortController().signal);
-  expect(deadline).toHaveBeenCalledExactlyOnceWith(20_000);
+  expect(deadline).toHaveBeenCalledExactlyOnceWith(35_000);
   timeout.abort();
   expect(await result).toEqual(cancelled);
 });

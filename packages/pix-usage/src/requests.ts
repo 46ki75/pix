@@ -2,7 +2,7 @@ import { resolveUsage } from "./auth.ts";
 import { abortable } from "./http.ts";
 import type { UsageProvider, UsageResult } from "./types.ts";
 
-const USAGE_TIMEOUT_MS = 20_000;
+const USAGE_TIMEOUT_MS = 35_000;
 
 type Registry = Parameters<typeof resolveUsage>[0];
 interface PendingUsage {

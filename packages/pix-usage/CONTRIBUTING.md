@@ -46,7 +46,9 @@ separate manual checks.
 - `src/providers.ts` validates and normalizes provider payloads without Pi imports.
   Missing quota windows or reset times are unknown, not zero usage or guessed resets.
 - `src/http.ts` bounds requests and bodies, refuses redirects, and sanitizes errors.
-  Never surface raw response bodies, tokens, JWT claims, or network errors.
+  `src/auth.ts` retries safe quota reads once only for timeouts, reusing the
+  already-resolved token. Never surface raw response
+  bodies, tokens, JWT claims, or network errors.
 - `src/report.ts` formats only normalized quota data and safe error messages. Keep
   account identity and arbitrary provider strings out of terminal output.
 
