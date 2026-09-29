@@ -3,13 +3,16 @@ import {
   CLAUDE_USAGE_URL,
   CODEX_USAGE_URL,
   MUSE_USAGE_URL,
+  OPENCODE_USAGE_URL,
   codexAccountId,
   fetchClaudeUsage,
   fetchCodexUsage,
   fetchMuseUsage,
+  fetchOpenCodeUsage,
   parseClaudeUsage,
   parseCodexUsage,
   parseMuseUsage,
+  parseOpenCodeUsage,
 } from "./providers.ts";
 
 const NOW = Date.parse("2026-09-25T00:00:00Z");
@@ -19,6 +22,11 @@ const token = (payload: unknown) =>
 const CODEX_TOKEN = token({
   "https://api.openai.com/auth": { chatgpt_account_id: "account-test" },
 });
+const OPENCODE_USAGE = {
+  rolling: { status: "ok", percent: 1, resetsAt: RESET },
+  weekly: { status: "ok", percent: 2, resetsAt: RESET },
+  monthly: { status: "ok", percent: 3, resetsAt: RESET },
+};
 
 afterEach(() => vi.useRealTimers());
 
@@ -264,6 +272,137 @@ describe("Codex payloads", () => {
   });
 });
 
+describe("OpenCode Go payloads", () => {
+  test("normalizes rolling, weekly, and monthly windows", () => {
+    expect(
+      parseOpenCodeUsage({
+        usage: {
+          rolling: { status: "ok", percent: 12.5, resetsAt: RESET },
+          weekly: {
+            status: "rate-limited",
+            percent: 100,
+            resetsAt: "2026-10-02T00:00:00Z",
+          },
+          monthly: {
+            status: "ok",
+            percent: 33,
+            resetsAt: "2026-10-25T00:00:00+00:00",
+          },
+        },
+        ignored_account_metadata: "discarded",
+      }),
+    ).toEqual([
+      {
+        id: "rolling",
+        label: "5-hour",
+        usedPercent: 12.5,
+        resetsAt: RESET,
+        windowSeconds: 18000,
+      },
+      {
+        id: "weekly",
+        label: "Weekly",
+        usedPercent: 100,
+        resetsAt: "2026-10-02T00:00:00.000Z",
+        windowSeconds: 604800,
+      },
+      {
+        id: "monthly",
+        label: "Monthly",
+        usedPercent: 33,
+        resetsAt: "2026-10-25T00:00:00.000Z",
+        windowSeconds: null,
+      },
+    ]);
+  });
+
+  test.each([
+    null,
+    [],
+    {},
+    { usage: null },
+    { usage: [] },
+    { usage: {} },
+    {
+      usage: {
+        rolling: OPENCODE_USAGE.rolling,
+        weekly: OPENCODE_USAGE.weekly,
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, status: "limited" },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, percent: "1" },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, percent: Number.NaN },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, percent: -1 },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, percent: 101 },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, percent: 100 },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: {
+          ...OPENCODE_USAGE.rolling,
+          status: "rate-limited",
+          percent: 99,
+        },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, resetsAt: null },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: { ...OPENCODE_USAGE.rolling, resetsAt: undefined },
+      },
+    },
+    {
+      usage: {
+        ...OPENCODE_USAGE,
+        rolling: {
+          ...OPENCODE_USAGE.rolling,
+          resetsAt: "2026-09-25T05:00:00",
+        },
+      },
+    },
+  ])("rejects malformed quota data: %j", (payload) => {
+    expect(() => parseOpenCodeUsage(payload)).toThrow(
+      "Unrecognized usage response.",
+    );
+  });
+});
+
 describe("Muse payloads", () => {
   test("normalizes the reported rolling and weekly subscription windows", () => {
     expect(
@@ -431,10 +570,20 @@ test("fetchers accept tokens without Pi and make the documented requests", async
           weekly: { used_percent: 4 },
         },
       }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        usage: {
+          rolling: { status: "ok", percent: 5, resetsAt: RESET },
+          weekly: { status: "ok", percent: 6, resetsAt: RESET },
+          monthly: { status: "ok", percent: 7, resetsAt: RESET },
+        },
+      }),
     );
   const claude = await fetchClaudeUsage("claude-test-token", { fetch });
   const codex = await fetchCodexUsage(CODEX_TOKEN, { fetch });
   const muse = await fetchMuseUsage("dca:muse-test-token", { fetch });
+  const opencode = await fetchOpenCodeUsage("opencode-test-key", { fetch });
   expect(claude).toMatchObject({
     provider: "claude",
     fetchedAt: "2026-09-25T00:00:00.000Z",
@@ -449,6 +598,11 @@ test("fetchers accept tokens without Pi and make the documented requests", async
     provider: "muse",
     fetchedAt: claude.fetchedAt,
     windows: [{ usedPercent: 3 }, { usedPercent: 4 }],
+  });
+  expect(opencode).toMatchObject({
+    provider: "opencode",
+    fetchedAt: claude.fetchedAt,
+    windows: [{ usedPercent: 5 }, { usedPercent: 6 }, { usedPercent: 7 }],
   });
   expect(fetch).toHaveBeenNthCalledWith(
     1,
@@ -491,7 +645,35 @@ test("fetchers accept tokens without Pi and make the documented requests", async
       },
     }),
   );
+  expect(fetch).toHaveBeenNthCalledWith(
+    4,
+    OPENCODE_USAGE_URL,
+    expect.objectContaining({
+      method: "GET",
+      redirect: "error",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer opencode-test-key",
+      },
+    }),
+  );
 });
+
+test.each([
+  [401, "check your credentials"],
+  [403, "check your subscription access"],
+] as const)(
+  "maps OpenCode HTTP %s without exposing the response body",
+  async (status, message) => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("private account details", { status }));
+    const result = fetchOpenCodeUsage("opencode-test-key", { fetch });
+    await expect(result).rejects.toThrow(message);
+    await expect(result).rejects.not.toThrow("private account details");
+    expect(fetch).toHaveBeenCalledOnce();
+  },
+);
 
 test("invalid tokens never reach the network", async () => {
   const fetch = vi.fn<typeof globalThis.fetch>();
@@ -512,6 +694,12 @@ test("invalid tokens never reach the network", async () => {
   );
   await expect(fetchMuseUsage("dca:bad token", { fetch })).rejects.toThrow(
     "device-code OAuth login",
+  );
+  await expect(fetchOpenCodeUsage("", { fetch })).rejects.toThrow(
+    "Invalid subscription access token",
+  );
+  await expect(fetchOpenCodeUsage("bad key", { fetch })).rejects.toThrow(
+    "Invalid subscription access token",
   );
   expect(fetch).not.toHaveBeenCalled();
 });

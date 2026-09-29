@@ -98,8 +98,8 @@ Git-aware directory segments. Run `mise run statusline:dev` to try it or
 `mise run test --project pix-statusline` for its tests.
 
 [`@ikuma.cloud/pix-usage`](packages/pix-usage/README.md) adds on-demand `/usage`
-reports for Claude, Codex, and Meta Muse subscription quotas using Pi-managed
-OAuth.
+reports for Claude, Codex, Meta Muse, and OpenCode Go subscription quotas using
+Pi-managed credentials.
 A current-provider widget appears by default in terminal sessions and refreshes
 while visible, without replacing the footer. `/usage toggle` hides or shows it.
 Run `mise run usage:dev` to try it or `mise run test --project pix-usage` for its

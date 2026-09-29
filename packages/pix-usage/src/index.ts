@@ -5,7 +5,14 @@ import { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
 import { UsageWidgetController } from "./widget-controller.ts";
 
-const CHOICES = ["all", "claude", "codex", "muse", "toggle"] as const;
+const CHOICES = [
+  "all",
+  "claude",
+  "codex",
+  "muse",
+  "opencode",
+  "toggle",
+] as const;
 
 interface SubscriptionUsageOptions {
   readCredential?: StoredCredentialReader;
@@ -21,7 +28,7 @@ export default function subscriptionUsage(
 
   pi.registerCommand("usage", {
     description:
-      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|muse|all|toggle]",
+      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|muse|opencode|all|toggle]",
     getArgumentCompletions(prefix) {
       const items = CHOICES.filter((value) => value.startsWith(prefix)).map(
         (value) => ({ value, label: value }),
@@ -52,10 +59,11 @@ export default function subscriptionUsage(
         selection !== "all" &&
         selection !== "claude" &&
         selection !== "codex" &&
-        selection !== "muse"
+        selection !== "muse" &&
+        selection !== "opencode"
       ) {
         ctx.ui.notify(
-          "Usage: /usage [claude|codex|muse|all|toggle]",
+          "Usage: /usage [claude|codex|muse|opencode|all|toggle]",
           "warning",
         );
         return;
@@ -67,7 +75,9 @@ export default function subscriptionUsage(
       const controller = new AbortController();
       active = controller;
       const providers: UsageProvider[] =
-        selection === "all" ? ["claude", "codex", "muse"] : [selection];
+        selection === "all"
+          ? ["claude", "codex", "muse", "opencode"]
+          : [selection];
       try {
         const results = await Promise.all(
           providers.map((provider) =>

@@ -43,11 +43,11 @@ test.each(
   },
 );
 
-test.each(["claude", "codex", "muse"] as const)(
+test.each(["claude", "codex", "muse", "opencode"] as const)(
   "sizes the shared frame to the longest provider section (%s)",
   (longest) => {
     const report = formatUsageReport(
-      (["claude", "codex", "muse"] as const).map((provider) => ({
+      (["claude", "codex", "muse", "opencode"] as const).map((provider) => ({
         provider,
         status: "error" as const,
         message: provider === longest ? "x".repeat(30) : "Short.",
@@ -94,8 +94,62 @@ test("formats normalized usage and unknown resets without guessing remaining quo
       Date.parse("2026-09-25T06:28:18.527Z"),
     ),
   ).toBe(
-    `── 󱘖 Usage ${"─".repeat(47)}\n\n Claude\n\n   5-hour 󰓅   0%  -d --h --m\n  󱛡 Weekly 󰓅 101.2%  5d 16h 31m 2026-09-30 23:00:00 (UTC)\n\n${"─".repeat(58)}`,
+    `── 󱘖 Usage ${"─".repeat(47)}\n\n Claude\n\n   5-hour 󰓅     0%  -d --h --m\n  󱛡 Weekly 󰓅 101.2%  5d 16h 31m 2026-09-30 23:00:00 (UTC)\n\n${"─".repeat(58)}`,
   );
+});
+
+test("aligns OpenCode report columns to their widest values", () => {
+  const now = Date.parse("2026-09-29T14:00:01.000Z");
+  const rows = reportBody(
+    [
+      {
+        provider: "opencode",
+        status: "ok",
+        usage: {
+          provider: "opencode",
+          fetchedAt: new Date(now).toISOString(),
+          windows: [
+            {
+              id: "rolling",
+              label: "5-hour",
+              usedPercent: 1,
+              resetsAt: "2026-09-29T18:16:36.000Z",
+              windowSeconds: 18000,
+            },
+            {
+              id: "weekly",
+              label: "Weekly",
+              usedPercent: 0,
+              resetsAt: "2026-10-05T00:00:00.000Z",
+              windowSeconds: 604800,
+            },
+            {
+              id: "monthly",
+              label: "Monthly",
+              usedPercent: 0,
+              resetsAt: "2026-10-29T12:59:19.000Z",
+              windowSeconds: null,
+            },
+          ],
+        },
+      },
+    ],
+    undefined,
+    now,
+  )
+    .split("\n")
+    .slice(2);
+  expect(rows).toEqual([
+    "   5-hour  󰓅   1%       4h 16m 2026-09-29 18:16:36 (UTC)",
+    "  󱛡 Weekly  󰓅   0%   5d  9h 59m 2026-10-05 00:00:00 (UTC)",
+    "  󰸗 Monthly 󰓅   0%  29d 22h 59m 2026-10-29 12:59:19 (UTC)",
+  ]);
+  for (const marker of ["󰓅", "", "2026-"]) {
+    const columns = rows.map((row) =>
+      visibleWidth(row.slice(0, row.indexOf(marker))),
+    );
+    expect(new Set(columns).size).toBe(1);
+  }
 });
 
 test.each([false, true])(
@@ -422,3 +476,27 @@ test.each([
     ).toBe(` Codex\n\n  ${icon}${label} 󰓅  10%  -d --h --m`);
   },
 );
+
+test("uses the monthly icon for OpenCode's variable-duration window", () => {
+  expect(
+    reportBody([
+      {
+        provider: "opencode",
+        status: "ok",
+        usage: {
+          provider: "opencode",
+          fetchedAt: "2026-09-25T00:00:00.000Z",
+          windows: [
+            {
+              id: "monthly",
+              label: "Monthly",
+              usedPercent: 36,
+              resetsAt: null,
+              windowSeconds: null,
+            },
+          ],
+        },
+      },
+    ]),
+  ).toBe("󰅩 OpenCode Go\n\n  󰸗 Monthly 󰓅  36%  -d --h --m");
+});

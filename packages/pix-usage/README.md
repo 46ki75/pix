@@ -1,8 +1,8 @@
 # @ikuma.cloud/pix-usage
 
-Claude, Codex, and Meta Muse subscription quota reports and a current-provider
-widget for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing OAuth logins,
-not a separate credential store or usage SDK.
+Claude, Codex, Meta Muse, and OpenCode Go subscription quota reports and a
+current-provider widget for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing
+OAuth logins and an OpenCode API key, not a separate credential store or usage SDK.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -29,13 +29,15 @@ pi install ./packages/pix-usage
 ## Usage
 
 Sign in through `/login anthropic`, `/login openai-codex`, or `/login meta`,
-choosing the subscription/OAuth flow rather than an API key. Then run:
+choosing the subscription/OAuth flow rather than an API key. For OpenCode Go, use
+`/login opencode-go` to save its API key. Then run:
 
 ```text
 /usage          Check all providers
 /usage claude   Check Claude only
 /usage codex    Check Codex only
 /usage muse     Check Meta Muse only
+/usage opencode Check OpenCode Go only
 /usage all      Check all providers
 /usage toggle   Hide or show the current-provider widget (terminal only)
 ```
@@ -66,25 +68,29 @@ heading, like quota rows. In terminal mode, missing logins use `warning` and fai
 requests or credential resolution use `error`; other providers keep their normal
 colors.
 
-Percentage values are right-aligned to a minimum width of three characters,
-without truncating longer values. In terminal mode, percentages above 75% use the
-active theme's `error` color; those above 50% through 75% use `warning`. Thresholds
-use unrounded usage; values at or below 50% keep their existing color.
+Quota labels, percentages, relative resets, and UTC timestamps are column-aligned
+across successful rows in a report. Percentage values are right-aligned to the
+widest value, with a minimum width of three characters and no truncation. In
+terminal mode, percentages above 75% use the active theme's `error` color; those
+above 50% through 75% use `warning`. Thresholds use unrounded usage; values at or
+below 50% keep their existing color.
 
 Relative times are calculated when the notification is created, not updated live.
 Durations use days, hours, and whole minutes. Hours and minutes are right-aligned
 to two characters (for example, `4d 14h  8m`); zero-valued units remain omitted.
-The relative-time column is right-aligned to a minimum width of ten characters,
-so shorter countdowns such as `4h 59m` do not shift the UTC timestamp left.
+The relative-time column is right-aligned to the widest countdown in the report,
+with a minimum width of ten characters, so shorter countdowns such as `4h 59m` do
+not shift the UTC timestamp left.
 Sub-minute intervals show `<1m`. Past timestamps show `ago`, and an exact match
 shows `now`; neither confirms that the provider has refreshed the quota. Unknown
 resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (UTC)`;
 fractional seconds and checked timestamps are omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
-`󰛤` for Meta Muse, `` for five-hour windows, `󱛡` for weekly windows
-(including model-specific weekly limits), `󰓅` for usage, `` for resets, and
-`󱘖` for the report title.
+`󰛤` for Meta Muse, `󰅩` for OpenCode Go, `` for five-hour windows, `󱛡` for
+weekly windows (including model-specific weekly limits), `󰸗` for OpenCode's
+monthly window, `󰓅` for usage, `` for
+resets, and `󱘖` for the report title.
 Other or unknown durations have no window icon. In terminal mode, provider icons
 use the active theme's `accent` color, and window, usage, and reset icons use `text`.
 The dividers enclose all provider sections and use `border`; other text keeps Pi's
@@ -106,9 +112,9 @@ the current session; reload or session replacement shows the widget again.
 Other extensions' widget order is not controlled.
 
 It follows the selected model's provider: `anthropic` selects Claude,
-`openai-codex` selects Codex, and `meta` selects Muse. It shows one row per
-reported quota window, including model-specific buckets; it does not filter those
-buckets to the selected model.
+`openai-codex` selects Codex, `meta` selects Muse, and `opencode-go` selects
+OpenCode Go. It shows one row per reported quota window, including model-specific
+buckets; it does not filter those buckets to the selected model.
 Other providers and an absent model show an explanatory message without resolving
 credentials or making requests.
 
@@ -162,6 +168,18 @@ the resolved OAuth access token. Pi owns token refresh and persistence. API keys
 and missing logins produce a per-provider message; externally supplied tokens
 classified as API keys are intentionally not used.
 
+OpenCode Go accepts only a literal API key saved through `/login opencode-go`.
+The extension uses Pi's side-effect-free auth-status API and reads that stored
+value directly. Saved command values are rejected. OpenCode checks deliberately
+do not call Pi's model-auth resolver, so configured model headers and their
+commands are not resolved. Before the request, the extension reads the source and
+key twice and verifies twice that no extension has replaced `opencode-go` and
+every effective provider and model URL is a known first-party OpenCode Go URL.
+Environment, runtime, `models.json`, and extension fallback keys are refused. The
+extension does not read OpenCode's own files or forward custom model headers.
+OpenCode Zen (`opencode`) remains a separate pay-as-you-go provider and does not
+activate the widget.
+
 Meta's quota-bearing key-mint endpoint rejects the derived `LLM|` inference key
 exposed by Pi's model registry. Muse first uses the side-effect-free
 `getProviderAuthStatus("meta")` check to require a stored login, then uses Pi's
@@ -175,9 +193,10 @@ credential itself. Muse CLI files, browser cookies, and the Keychain are not rea
 A custom Pi API key, Meta dashboard key, Muse inference key, or separate Muse CLI
 login is not used.
 
-Credentials are sent only to matching first-party HTTPS endpoints, and redirects
-are refused. Codex's account ID is decoded from the access token for the
-`chatgpt-account-id` routing header, matching Pi's Codex transport. Muse sends the
+Quota requests target only fixed first-party HTTPS endpoints, and redirects are
+refused. Codex's account ID is decoded from the access token for the
+`chatgpt-account-id` routing header, matching Pi's Codex transport. OpenCode sends
+its API key only to `GET https://opencode.ai/zen/go/v1/usage`. Muse sends the
 device token only to `POST https://api.meta.ai/muse-code/key`, with an empty JSON
 body and API version `1.0.0`; the minted inference key, payment metadata, email, and
 plan in the response are discarded. The extension does not forward custom model
@@ -185,10 +204,11 @@ headers or use model endpoint overrides.
 
 HTTP requests have a 15-second timeout covering the response body and a 256 KiB
 response limit. Claude and Codex timeouts are retried once without resolving
-credentials again. Muse's quota-bearing key-mint POST is not retried, and a Pi
-credential refresh is never followed by another mint in the same check. Each
-provider check has a 35-second total deadline, including credential lookup and
-request attempts.
+credentials again. Before retrying an OpenCode timeout, the extension rechecks its
+routing, credential source, and key, then reuses the unchanged key. Muse's quota-bearing key-mint POST is not retried,
+and a Pi credential refresh is never followed by another mint in the same check.
+Each provider check has a 35-second total deadline, including credential lookup
+and request attempts.
 Network, authentication, rate-limit, HTTP, and response errors are not retried.
 Shutdown, reload, and session replacement cancel HTTP work and suppress late UI
 updates. Pi-managed credential refresh may finish after the extension stops
@@ -209,16 +229,29 @@ waiting; the extension does not interfere with Pi's refresh lock.
   browser session or guess the omitted weekly value.
 - Muse quota lookup calls Meta's key-mint endpoint, which issues an inference key;
   the extension discards that key rather than persisting or using it.
+- OpenCode reports the Go subscription's five-hour, weekly, and monthly windows.
+  It does not report Zen pay-as-you-go balance, monetary usage, local history,
+  model-specific effective allowances, or whether balance fallback is enabled.
+  The API key is read before each check; if it changes while a request is in
+  flight, the prior key's quota may remain visible until the next refresh. Pi
+  stores `/login` credentials by provider ID without recording the endpoint. If
+  `opencode-go` previously targeted a proxy, clear or replace that credential
+  before restoring the built-in provider; the extension cannot identify a stale
+  proxy key after the override is removed. Active endpoint and provider
+  replacements are refused. Only Pi's standard CLI credential store is supported;
+  custom SDK registry stores and auth paths are outside this extension's scope.
 - The extension does not request reset-credit inventory, credit balances, spending,
   or Codex's additional/model-scoped quota buckets. Meta's required key-mint
   response can contain payment and plan metadata; those fields are discarded and
   never displayed. The extension does not reproduce the entire provider billing
   page.
-- Optional Claude and Codex windows are omitted when absent. Muse may omit the
-  entire `subs_usage` object, but when it is present both `window` and `weekly`
-  are required; a missing one is malformed data. Absent, nonpositive, or
-  unrepresentable Muse reset times remain unknown. Other malformed payload data
-  is an error, not zero usage. Each provider succeeds or fails independently.
+- Optional Claude and Codex windows are omitted when absent. OpenCode responses
+  require all three Go windows, valid status and percentage fields, and
+  timezone-bearing reset timestamps. Muse may omit the entire `subs_usage` object,
+  but when it is present both `window` and `weekly` are required; a missing one is
+  malformed data. Absent, nonpositive, or unrepresentable Muse reset times remain
+  unknown. Other malformed payload data is an error, not zero usage. Each provider
+  succeeds or fails independently.
 - These are account-level provider quota measurements, not a count of tokens
   consumed by the current Pi session or a guarantee about how Pi requests are billed.
 - JSON and print modes do not fetch quotas or resolve credentials through this
@@ -230,10 +263,12 @@ waiting; the extension does not interfere with Pi's refresh lock.
 
 [`src/providers.ts`](src/providers.ts) has no Pi dependency. Its
 `fetchClaudeUsage(accessToken, options?)`,
-`fetchCodexUsage(accessToken, options?)`, and
-`fetchMuseUsage(identityToken, options?)` functions accept credentials and return
+`fetchCodexUsage(accessToken, options?)`,
+`fetchMuseUsage(identityToken, options?)`, and
+`fetchOpenCodeUsage(apiKey, options?)` functions accept credentials and return
 normalized `UsageSnapshot` values. Options allow an abort signal, timeout, and
 injected `fetch` for tests. Codex expects the same account-bearing JWT used by Pi;
-Muse requires the `dca:` device identity token, not an `LLM|` inference key. Pure
-parsers and normalized types are separate from credential resolution and UI
-formatting. Keep credential ownership in the calling application.
+Muse requires the `dca:` device identity token, not an `LLM|` inference key.
+OpenCode requires an API key for a workspace with a Go subscription. Pure parsers
+and normalized types are separate from credential resolution and UI formatting.
+Keep credential ownership in the calling application.

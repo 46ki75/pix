@@ -1,4 +1,5 @@
-import type { UsageProvider } from "./types.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import type { UsageProvider, UsageWindow } from "./types.ts";
 
 export type UsageTextFormatter = (
   color: "accent" | "text" | "warning" | "error",
@@ -16,6 +17,8 @@ export function formatProviderName(
       return `${formatText("accent", "")} Codex`;
     case "muse":
       return `${formatText("accent", "󰛤")} Muse`;
+    case "opencode":
+      return `${formatText("accent", "󰅩")} OpenCode Go`;
   }
 }
 
@@ -35,15 +38,64 @@ export function formatUsedPercent(
 }
 
 export function formatWindowIcon(
-  windowSeconds: number | null,
+  window: Pick<UsageWindow, "id" | "windowSeconds">,
   formatText: UsageTextFormatter,
 ): string {
-  // Codex may report a weekly primary window; use duration, not position.
-  return windowSeconds === 5 * 3600
-    ? `${formatText("text", "")} `
-    : windowSeconds === 7 * 86400
-      ? `${formatText("text", "󱛡")} `
-      : "";
+  // Fixed windows use their duration, not position. OpenCode's monthly reset
+  // follows the subscription date, so its semantic ID supplies the icon.
+  return window.id === "monthly"
+    ? `${formatText("text", "󰸗")} `
+    : window.windowSeconds === 5 * 3600
+      ? `${formatText("text", "")} `
+      : window.windowSeconds === 7 * 86400
+        ? `${formatText("text", "󱛡")} `
+        : "";
+}
+
+export interface UsageWindowColumnWidths {
+  label: number;
+  usage: number;
+  reset: number;
+}
+
+const plainText: UsageTextFormatter = (_color, text) => text;
+
+export function usageWindowColumnWidths(
+  windows: readonly UsageWindow[],
+  now: number,
+): UsageWindowColumnWidths {
+  return {
+    label: Math.max(
+      0,
+      ...windows.map((window) =>
+        visibleWidth(`${formatWindowIcon(window, plainText)}${window.label}`),
+      ),
+    ),
+    usage: Math.max(
+      0,
+      ...windows.map((window) =>
+        visibleWidth(formatUsedPercent(window.usedPercent, plainText)),
+      ),
+    ),
+    reset: Math.max(
+      10,
+      ...windows.map((window) =>
+        visibleWidth(
+          window.resetsAt
+            ? relativeResetTime(window.resetsAt, now)
+            : "-d --h --m",
+        ),
+      ),
+    ),
+  };
+}
+
+export function padVisibleEnd(value: string, width: number): string {
+  return value + " ".repeat(Math.max(0, width - visibleWidth(value)));
+}
+
+export function padVisibleStart(value: string, width: number): string {
+  return " ".repeat(Math.max(0, width - visibleWidth(value))) + value;
 }
 
 export function absoluteResetTime(resetsAt: string): string {

@@ -7,6 +7,7 @@ import {
   fetchClaudeUsage,
   fetchCodexUsage,
   fetchMuseUsage,
+  fetchOpenCodeUsage,
 } from "./providers.ts";
 import {
   UsageError,
@@ -19,13 +20,23 @@ const PROVIDER_IDS = {
   claude: "anthropic",
   codex: "openai-codex",
   muse: "meta",
+  opencode: "opencode-go",
 } as const;
 const FETCH_USAGE = {
   claude: fetchClaudeUsage,
   codex: fetchCodexUsage,
   muse: fetchMuseUsage,
+  opencode: fetchOpenCodeUsage,
 } as const;
 const FETCH_ATTEMPTS = 2;
+const OPENCODE_LOGIN_MESSAGE =
+  "No Pi OpenCode Go API key; use /login opencode-go.";
+const OPENCODE_PROVIDER_MESSAGE =
+  "OpenCode Go usage requires Pi's built-in opencode-go provider with its first-party endpoint.";
+const OPENCODE_MODEL_URLS = new Set([
+  "https://opencode.ai/zen/go",
+  "https://opencode.ai/zen/go/v1",
+]);
 
 export type StoredCredentialReader = typeof readStoredCredential;
 type StoredOAuthCredential = Extract<
@@ -36,7 +47,71 @@ type UsageRegistry = Pick<
   ExtensionContext["modelRegistry"],
   "getProviderAuth"
 > &
-  Partial<Pick<ExtensionContext["modelRegistry"], "getProviderAuthStatus">>;
+  Partial<
+    Pick<
+      ExtensionContext["modelRegistry"],
+      "getProviderAuthStatus" | "getProvider" | "getRegisteredProviderIds"
+    >
+  >;
+
+function isOpenCodeModelUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const normalized = `${url.origin}${url.pathname.replace(/\/$/u, "")}`;
+    return (
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      OPENCODE_MODEL_URLS.has(normalized)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readStoredOpenCodeKey(
+  registry: UsageRegistry,
+  readCredential: StoredCredentialReader,
+): string | undefined {
+  try {
+    const status = registry.getProviderAuthStatus?.("opencode-go");
+    if (status?.configured !== true || status.source !== "stored")
+      return undefined;
+    const stored = readCredential("opencode-go");
+    // Pi treats a leading "!" as a credential command. Read the literal value
+    // directly so automatic quota refreshes never execute commands or resolve
+    // configured model headers that are not used by this request.
+    return stored?.type === "api_key" &&
+      typeof stored.key === "string" &&
+      stored.key.length > 0 &&
+      !stored.key.startsWith("!")
+      ? stored.key
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function usesFirstPartyOpenCodeRouting(registry: UsageRegistry): boolean {
+  try {
+    if (
+      !registry.getProvider ||
+      !registry.getRegisteredProviderIds ||
+      registry.getRegisteredProviderIds().includes("opencode-go")
+    )
+      return false;
+    const configured = registry.getProvider("opencode-go");
+    if (!configured) return false;
+    const urls = [
+      ...(configured.baseUrl ? [configured.baseUrl] : []),
+      ...configured.getModels().map((model) => model.baseUrl),
+    ];
+    return urls.length > 0 && urls.every(isOpenCodeModelUrl);
+  } catch {
+    return false;
+  }
+}
 
 function museCredential(
   credential: ReturnType<StoredCredentialReader>,
@@ -69,6 +144,7 @@ async function fetchUsageWithRetry(
   provider: UsageProvider,
   accessToken: string,
   signal: AbortSignal,
+  beforeRetry?: () => void,
 ): Promise<UsageSnapshot> {
   const fetchUsage = FETCH_USAGE[provider];
   for (let attempt = 1; ; attempt++) {
@@ -85,6 +161,8 @@ async function fetchUsageWithRetry(
         error.code !== "timeout"
       )
         throw error;
+      beforeRetry?.();
+      signal.throwIfAborted();
     }
   }
 }
@@ -99,6 +177,7 @@ export async function resolveUsage(
   try {
     signal.throwIfAborted();
     let token: string;
+    let beforeRetry: (() => void) | undefined;
     let museCredentialAtRequest: StoredOAuthCredential | undefined;
     let readCurrentMuseCredential:
       | (() => StoredOAuthCredential | undefined)
@@ -182,6 +261,46 @@ export async function resolveUsage(
       token = current.refresh;
       museCredentialAtRequest = current;
       readCurrentMuseCredential = () => museCredential(readMuseCredential());
+    } else if (provider === "opencode") {
+      if (!usesFirstPartyOpenCodeRouting(registry)) {
+        return {
+          provider,
+          status: "unavailable",
+          message: OPENCODE_PROVIDER_MESSAGE,
+        };
+      }
+      const storedKey = readStoredOpenCodeKey(registry, readCredential);
+      signal.throwIfAborted();
+      if (!storedKey) {
+        return {
+          provider,
+          status: "unavailable",
+          message: OPENCODE_LOGIN_MESSAGE,
+        };
+      }
+      if (!usesFirstPartyOpenCodeRouting(registry)) {
+        return {
+          provider,
+          status: "unavailable",
+          message: OPENCODE_PROVIDER_MESSAGE,
+        };
+      }
+      if (readStoredOpenCodeKey(registry, readCredential) !== storedKey) {
+        return {
+          provider,
+          status: "unavailable",
+          message: OPENCODE_LOGIN_MESSAGE,
+        };
+      }
+      token = storedKey;
+      beforeRetry = () => {
+        if (!usesFirstPartyOpenCodeRouting(registry)) {
+          throw new UsageError("auth", OPENCODE_PROVIDER_MESSAGE);
+        }
+        if (readStoredOpenCodeKey(registry, readCredential) !== storedKey) {
+          throw new UsageError("auth", OPENCODE_LOGIN_MESSAGE);
+        }
+      };
     } else {
       let resolved: Awaited<ReturnType<typeof registry.getProviderAuth>>;
       try {
@@ -207,7 +326,12 @@ export async function resolveUsage(
       }
       token = resolved.auth.apiKey;
     }
-    const usage = await fetchUsageWithRetry(provider, token, signal);
+    const usage = await fetchUsageWithRetry(
+      provider,
+      token,
+      signal,
+      beforeRetry,
+    );
     if (museCredentialAtRequest && readCurrentMuseCredential) {
       const current = readCurrentMuseCredential();
       signal.throwIfAborted();

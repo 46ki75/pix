@@ -61,10 +61,16 @@ async function requestJson(
     });
     if (!response.ok) {
       void response.body?.cancel().catch(() => {});
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         throw new UsageError(
           "auth",
-          `Usage access denied (HTTP ${response.status}); check your subscription login and OAuth scopes.`,
+          "Usage access denied (HTTP 401); check your credentials.",
+        );
+      }
+      if (response.status === 403) {
+        throw new UsageError(
+          "auth",
+          "Usage access denied (HTTP 403); check your subscription access, credentials, and OAuth scopes.",
         );
       }
       if (response.status === 429) {

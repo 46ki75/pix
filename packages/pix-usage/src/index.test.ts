@@ -41,16 +41,37 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
       source: "OAuth",
       auth: {
         apiKey:
-          provider === "meta" ? "LLM|muse-inference-key" : "claude-test-token",
+          provider === "meta"
+            ? "LLM|muse-inference-key"
+            : provider === "opencode-go"
+              ? "opencode-test-key"
+              : "claude-test-token",
       },
     }));
-  const getProviderAuthStatus = vi.fn().mockReturnValue({ configured: false });
-  const readCredential = vi.fn().mockReturnValue({
-    type: "oauth" as const,
-    refresh: "dca:muse-device-token",
-    access: "LLM|muse-inference-key",
-    expires: Date.now() + 60_000,
+  const getProviderAuthStatus = vi.fn().mockImplementation((provider) =>
+    provider === "opencode-go"
+      ? {
+          configured: true,
+          source: "environment",
+          label: "OPENCODE_API_KEY",
+        }
+      : { configured: false },
+  );
+  const getProvider = vi.fn().mockReturnValue({
+    getModels: () => [{ baseUrl: "https://opencode.ai/zen/go/v1" }],
   });
+  const getRegisteredProviderIds = vi.fn().mockReturnValue([]);
+  const credentialExpires = Date.now() + 60_000;
+  const readCredential = vi.fn().mockImplementation((provider) =>
+    provider === "meta"
+      ? {
+          type: "oauth" as const,
+          refresh: "dca:muse-device-token",
+          access: "LLM|muse-inference-key",
+          expires: credentialExpires,
+        }
+      : undefined,
+  );
   const api = {
     registerCommand: (name: string, command: Command) =>
       commands.set(name, command),
@@ -65,7 +86,12 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
   const ctx = {
     mode,
     hasUI: mode === "tui" || mode === "rpc",
-    modelRegistry: { getProviderAuth, getProviderAuthStatus },
+    modelRegistry: {
+      getProviderAuth,
+      getProviderAuthStatus,
+      getProvider,
+      getRegisteredProviderIds,
+    },
     ui: { notify, theme: { fg, getFgAnsi } },
   } as unknown as ExtensionCommandContext;
   return {
@@ -171,6 +197,59 @@ test("reports Meta Muse quota with Pi's device OAuth credential", async () => {
   );
 });
 
+test("reports OpenCode Go quota with its saved API key", async () => {
+  const {
+    command,
+    ctx,
+    notify,
+    getProviderAuth,
+    getProviderAuthStatus,
+    readCredential,
+  } = harness();
+  getProviderAuthStatus.mockReturnValue({
+    configured: true,
+    source: "stored",
+  });
+  readCredential.mockReturnValue({
+    type: "api_key",
+    key: "opencode-test-key",
+  });
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+    Response.json({
+      usage: {
+        rolling: {
+          status: "ok",
+          percent: 18,
+          resetsAt: "2026-09-29T18:00:00Z",
+        },
+        weekly: {
+          status: "ok",
+          percent: 27,
+          resetsAt: "2026-10-05T00:00:00Z",
+        },
+        monthly: {
+          status: "ok",
+          percent: 36,
+          resetsAt: "2026-10-29T00:00:00Z",
+        },
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+
+  await command.handler("opencode", ctx);
+  expect(getProviderAuth).not.toHaveBeenCalled();
+  expect(readCredential).toHaveBeenCalledTimes(2);
+  expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+    Authorization: "Bearer opencode-test-key",
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining("󰅩 OpenCode Go\n\n   5-hour  󰓅  18%"),
+    "info",
+  );
+  expect(notify.mock.calls[0]?.[0]).toContain("󰸗 Monthly 󰓅  36%");
+});
+
 test.each(
   (["tui", "rpc"] as const).flatMap((mode) =>
     [24, 80, 120].flatMap((columns) =>
@@ -212,7 +291,11 @@ test.each([
     const text = "\u001b[38;5;15m";
     const border = "\u001b[38;5;6m";
     const ambient = dim;
-    const width = warning ? 80 : 30;
+    const openCodeWarning =
+      "No Pi OpenCode Go API key; use /login opencode-go.";
+    const width = warning
+      ? Math.max(80, visibleWidth(`  ${openCodeWarning}`))
+      : 30;
     const header = `── 󱘖 Usage ${"─".repeat(width - 11)}`;
     const footer = "─".repeat(width);
     fg.mockImplementation(
@@ -269,6 +352,8 @@ test.each([
                 "warning",
                 "No Pi subscription login; use /login meta with OAuth (not an API key).",
               ],
+              ["accent", "󰅩"],
+              ["warning", openCodeWarning],
             ]
           : []),
         ["border", header],
@@ -358,7 +443,7 @@ test("validates arguments and completes provider names", async () => {
   const { command, ctx, getProviderAuth, notify } = harness();
   await command.handler("claude codex", ctx);
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    "Usage: /usage [claude|codex|muse|all|toggle]",
+    "Usage: /usage [claude|codex|muse|opencode|all|toggle]",
     "warning",
   );
   expect(getProviderAuth).not.toHaveBeenCalled();
@@ -368,6 +453,9 @@ test("validates arguments and completes provider names", async () => {
   ]);
   expect(command.getArgumentCompletions?.("m")).toEqual([
     { value: "muse", label: "muse" },
+  ]);
+  expect(command.getArgumentCompletions?.("o")).toEqual([
+    { value: "opencode", label: "opencode" },
   ]);
   expect(command.getArgumentCompletions?.("bad")).toBeNull();
 });
@@ -399,6 +487,9 @@ test.each(["", "all"])(
     );
     expect(notify.mock.calls[0]?.[0]).toContain(
       "󰛤 Muse\n\n  No Pi subscription login",
+    );
+    expect(notify.mock.calls[0]?.[0]).toContain(
+      "󰅩 OpenCode Go\n\n  No Pi OpenCode Go API key; use /login opencode-go.",
     );
     expect(notify.mock.calls[0]?.[1]).toBe("info");
   },

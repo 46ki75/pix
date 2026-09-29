@@ -54,7 +54,9 @@ export class UsageWidgetController {
           ? "codex"
           : providerId === "meta"
             ? "muse"
-            : undefined;
+            : providerId === "opencode-go"
+              ? "opencode"
+              : undefined;
     if (!provider) {
       this.state = {
         status: providerId === undefined ? "no-model" : "unsupported",
