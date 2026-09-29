@@ -64,6 +64,7 @@ test.each([
   ["claude", " Claude"],
   ["codex", " Codex"],
   ["muse", "󰛤 Muse"],
+  ["opencode", "󰅩 OpenCode Go"],
 ] as const)(
   "renders one compact %s row per reported window",
   (provider, name) => {
@@ -104,6 +105,18 @@ test.each([
     );
   },
 );
+
+test("uses the monthly icon for OpenCode's variable-duration window", () => {
+  expect(
+    plain(
+      success("opencode", [
+        window({ id: "monthly", label: "Monthly", windowSeconds: null }),
+      ]),
+    )[1],
+  ).toBe(
+    " 󰅩 OpenCode Go 󰸗 Monthly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)",
+  );
+});
 
 test.each([
   [null, "-d --h --m"],
@@ -249,13 +262,15 @@ const otherStates: {
     state: { status: "unsupported" },
     text: "Usage is not supported for this model.",
   },
-  ...(["claude", "codex", "muse"] as const).flatMap((provider) => {
+  ...(["claude", "codex", "muse", "opencode"] as const).flatMap((provider) => {
     const name =
       provider === "claude"
         ? " Claude"
         : provider === "codex"
           ? " Codex"
-          : "󰛤 Muse";
+          : provider === "muse"
+            ? "󰛤 Muse"
+            : "󰅩 OpenCode Go";
     return [
       {
         state: { provider, status: "loading" } as const,

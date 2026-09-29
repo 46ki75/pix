@@ -4,7 +4,10 @@ import {
   formatProviderName,
   formatUsedPercent,
   formatWindowIcon,
+  padVisibleEnd,
+  padVisibleStart,
   relativeResetTime,
+  usageWindowColumnWidths,
 } from "./format.ts";
 import type { UsageResult } from "./types.ts";
 
@@ -16,6 +19,12 @@ export function formatUsageReport(
   ) => string = (_color, text) => text,
   now = Date.now(),
 ): string {
+  const columns = usageWindowColumnWidths(
+    results.flatMap((result) =>
+      result.status === "ok" ? result.usage.windows : [],
+    ),
+    now,
+  );
   const body = results
     .map((result) => {
       const name = formatProviderName(result.provider, formatText);
@@ -26,13 +35,24 @@ export function formatUsageReport(
       if (result.usage.windows.length === 0)
         return `${name}\n\n  No quota windows reported.`;
       const rows = result.usage.windows.map((window) => {
-        const usage = formatUsedPercent(window.usedPercent, formatText);
-        // Reserve the width of "0d 00h 00m" even when countdown units are omitted.
+        const label = padVisibleEnd(
+          `${formatWindowIcon(window, formatText)}${window.label}`,
+          columns.label,
+        );
+        const usage = padVisibleStart(
+          formatUsedPercent(window.usedPercent, formatText),
+          columns.usage,
+        );
+        const relative = padVisibleStart(
+          window.resetsAt
+            ? relativeResetTime(window.resetsAt, now)
+            : "-d --h --m",
+          columns.reset,
+        );
         const reset = window.resetsAt
-          ? `${relativeResetTime(window.resetsAt, now).padStart(10)} ${absoluteResetTime(window.resetsAt)}`
-          : "-d --h --m";
-        const icon = formatWindowIcon(window.windowSeconds, formatText);
-        return `  ${icon}${window.label} ${formatText("text", "󰓅")} ${usage} ${formatText("text", "")} ${reset}`;
+          ? `${relative} ${absoluteResetTime(window.resetsAt)}`
+          : relative;
+        return `  ${label} ${formatText("text", "󰓅")} ${usage} ${formatText("text", "")} ${reset}`;
       });
       return [name, "", ...rows].join("\n");
     })

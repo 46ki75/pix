@@ -32,7 +32,9 @@ function providerName(provider: string): string {
     ? "Claude"
     : provider === "openai-codex"
       ? "Codex"
-      : "Muse";
+      : provider === "meta"
+        ? "Muse"
+        : "OpenCode Go";
 }
 
 function harness(
@@ -60,26 +62,36 @@ function harness(
   const getProviderAuth = vi
     .fn<ResolveAuth>()
     .mockImplementation(async (id) => ({
-      source: "OAuth",
+      source: id === "opencode-go" ? "OPENCODE_API_KEY" : "OAuth",
       auth: {
         apiKey:
           id === "anthropic"
             ? "claude-test-token"
             : id === "meta"
               ? "LLM|muse-inference-key"
-              : codexToken,
+              : id === "opencode-go"
+                ? "opencode-test-key"
+                : codexToken,
       },
     }));
   const getProviderAuthStatus = vi.fn().mockReturnValue({
     configured: true,
     source: "stored",
   });
-  const readCredential = vi.fn().mockReturnValue({
-    type: "oauth" as const,
-    refresh: "dca:muse-device-token",
-    access: "LLM|muse-inference-key",
-    expires: NOW + 60_000,
+  const getProvider = vi.fn().mockReturnValue({
+    getModels: () => [{ baseUrl: "https://opencode.ai/zen/go/v1" }],
   });
+  const getRegisteredProviderIds = vi.fn().mockReturnValue([]);
+  const readCredential = vi.fn().mockImplementation((provider) =>
+    provider === "opencode-go"
+      ? { type: "api_key" as const, key: "opencode-test-key" }
+      : {
+          type: "oauth" as const,
+          refresh: "dca:muse-device-token",
+          access: "LLM|muse-inference-key",
+          expires: NOW + 60_000,
+        },
+  );
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockImplementation(async (url) =>
@@ -98,21 +110,50 @@ function harness(
                 weekly: { used_percent: 27 },
               },
             })
-          : Response.json({
-              rate_limit: {
-                primary_window: {
-                  used_percent: 93,
-                  limit_window_seconds: 604800,
+          : String(url).includes("opencode.ai")
+            ? Response.json({
+                usage: {
+                  rolling: {
+                    status: "ok",
+                    percent: 24,
+                    resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+                  },
+                  weekly: {
+                    status: "ok",
+                    percent: 48,
+                    resetsAt: new Date(
+                      NOW + 7 * 24 * 60 * MINUTE,
+                    ).toISOString(),
+                  },
+                  monthly: {
+                    status: "ok",
+                    percent: 72,
+                    resetsAt: new Date(
+                      NOW + 30 * 24 * 60 * MINUTE,
+                    ).toISOString(),
+                  },
                 },
-              },
-            }),
+              })
+            : Response.json({
+                rate_limit: {
+                  primary_window: {
+                    used_percent: 93,
+                    limit_window_seconds: 604800,
+                  },
+                },
+              }),
     );
   vi.stubGlobal("fetch", fetch);
   const ctx = {
     mode,
     hasUI: mode === "tui" || mode === "rpc",
     model: provider ? { provider, id: "test-model" } : undefined,
-    modelRegistry: { getProviderAuth, getProviderAuthStatus },
+    modelRegistry: {
+      getProviderAuth,
+      getProviderAuthStatus,
+      getProvider,
+      getRegisteredProviderIds,
+    },
     ui: {
       setWidget,
       notify,
@@ -160,6 +201,8 @@ function harness(
     shutdown,
     getProviderAuth,
     getProviderAuthStatus,
+    getProvider,
+    getRegisteredProviderIds,
     readCredential,
     fetch,
     requestRender,
@@ -198,7 +241,7 @@ test("does no work at extension load or before session_start; completes toggle",
   ]);
 });
 
-test.each(["anthropic", "openai-codex", "meta"])(
+test.each(["anthropic", "openai-codex", "meta", "opencode-go"])(
   "session_start shows %s by default; toggle hides it until explicitly shown again",
   async (provider) => {
     const h = harness(provider);
@@ -209,11 +252,18 @@ test.each(["anthropic", "openai-codex", "meta"])(
       { placement: "aboveEditor" },
     );
     await flush();
-    expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
+    if (provider === "opencode-go") {
+      expect(h.getProviderAuth).not.toHaveBeenCalled();
+      expect(h.getProviderAuthStatus).toHaveBeenCalledTimes(2);
+    } else {
+      expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
+    }
     if (provider === "meta")
       expect(h.getProviderAuthStatus).toHaveBeenCalledExactlyOnceWith("meta");
     expect(h.text()).toContain(providerName(provider));
-    expect(h.readCredential).toHaveBeenCalledTimes(provider === "meta" ? 3 : 0);
+    expect(h.readCredential).toHaveBeenCalledTimes(
+      provider === "meta" ? 3 : provider === "opencode-go" ? 2 : 0,
+    );
     expect(h.notify).not.toHaveBeenCalled();
 
     await h.toggle();
@@ -222,7 +272,9 @@ test.each(["anthropic", "openai-codex", "meta"])(
     h.select(provider === "anthropic" ? "openai-codex" : "anthropic");
     await vi.advanceTimersByTimeAsync(REFRESH * 2);
     expect(h.widget).toBeUndefined();
-    expect(h.getProviderAuth).toHaveBeenCalledOnce();
+    expect(h.getProviderAuth).toHaveBeenCalledTimes(
+      provider === "opencode-go" ? 0 : 1,
+    );
     await h.toggle();
     await flush();
     expect(h.text()).toContain(provider === "anthropic" ? "Codex" : "Claude");
@@ -234,6 +286,23 @@ test.each(["anthropic", "openai-codex", "meta"])(
     h.shutdown();
   },
 );
+
+test("OpenCode startup refuses a proxy provider before resolving its key", async () => {
+  const h = harness("opencode-go");
+  h.getProvider.mockReturnValue({
+    getModels: () => [{ baseUrl: "https://proxy.example/v1" }],
+  });
+
+  h.start();
+  await flush();
+
+  expect(h.text()).toContain(
+    "built-in opencode-go provider with its first-party endpoint",
+  );
+  expect(h.getProviderAuth).not.toHaveBeenCalled();
+  expect(h.fetch).not.toHaveBeenCalled();
+  h.shutdown();
+});
 
 test("a new session restores default visibility after the user hides the widget", async () => {
   const h = harness();
@@ -268,7 +337,7 @@ test.each(["openai", undefined])(
   },
 );
 
-test.each(["anthropic", "openai-codex", "meta"])(
+test.each(["anthropic", "openai-codex", "meta", "opencode-go"])(
   "toggle fetches only %s and renders above the editor",
   async (provider) => {
     const h = harness(provider);
@@ -279,7 +348,9 @@ test.each(["anthropic", "openai-codex", "meta"])(
       { placement: "aboveEditor" },
     );
     await flush();
-    expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
+    if (provider === "opencode-go")
+      expect(h.getProviderAuth).not.toHaveBeenCalled();
+    else expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
     if (provider === "meta")
       expect(h.getProviderAuthStatus).toHaveBeenCalledExactlyOnceWith("meta");
     expect(h.fetch).toHaveBeenCalledOnce();
@@ -288,14 +359,18 @@ test.each(["anthropic", "openai-codex", "meta"])(
         ? " Claude  5-hour"
         : provider === "openai-codex"
           ? " Codex 󱛡 Weekly"
-          : "󰛤 Muse  5-hour",
+          : provider === "meta"
+            ? "󰛤 Muse  5-hour"
+            : "󰅩 OpenCode Go  5-hour",
     );
     expect(h.text()).toContain(
       provider === "anthropic"
         ? "12%"
         : provider === "openai-codex"
           ? "93%"
-          : "18%",
+          : provider === "meta"
+            ? "18%"
+            : "24%",
     );
     expect(h.notify).toHaveBeenCalledExactlyOnceWith(
       "Usage widget shown.",
@@ -741,6 +816,51 @@ test("switching providers clears old data and discards late credential resolutio
   h.shutdown();
 });
 
+test("switching away discards a late OpenCode response", async () => {
+  const h = harness("opencode-go");
+  let finish!: (response: Response) => void;
+  h.fetch.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finish = done;
+      }),
+  );
+  await h.toggle();
+  expect(h.text()).toContain("OpenCode Go");
+  h.select("anthropic");
+  expect(h.text()).not.toContain("OpenCode Go");
+  expect(h.text()).toContain("Claude");
+  await flush();
+  finish(
+    Response.json({
+      usage: {
+        rolling: {
+          status: "ok",
+          percent: 24,
+          resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+        },
+        weekly: {
+          status: "ok",
+          percent: 48,
+          resetsAt: new Date(NOW + 7 * 24 * 60 * MINUTE).toISOString(),
+        },
+        monthly: {
+          status: "ok",
+          percent: 72,
+          resetsAt: new Date(NOW + 30 * 24 * 60 * MINUTE).toISOString(),
+        },
+      },
+    }),
+  );
+  await flush();
+  expect(h.getProviderAuth.mock.calls.map(([id]) => id)).toEqual(["anthropic"]);
+  expect(h.fetch).toHaveBeenCalledTimes(2);
+  expect(String(h.fetch.mock.calls[1]?.[0])).toContain("anthropic.com");
+  expect(h.text()).toContain("12%");
+  expect(h.text()).not.toContain("OpenCode Go");
+  h.shutdown();
+});
+
 test("unsupported providers do not resolve credentials or poll", async () => {
   const h = harness("openai");
   await h.toggle();
@@ -823,31 +943,61 @@ test("missing OAuth is shown in the widget and can recover on the next refresh",
   h.shutdown();
 });
 
-test.each(["widget", "report"] as const)(
-  "overlapping %s-first requests share work; hiding never cancels the report",
-  async (first) => {
-    const h = harness();
-    let finish!: (auth: Awaited<ReturnType<ResolveAuth>>) => void;
-    h.getProviderAuth.mockImplementationOnce(
+test.each(
+  (["claude", "opencode"] as const).flatMap((provider) =>
+    (["widget", "report"] as const).map((first) => ({ provider, first })),
+  ),
+)(
+  "overlapping $provider $first-first requests share work; hiding never cancels the report",
+  async ({ provider, first }) => {
+    const h = harness(provider === "claude" ? "anthropic" : "opencode-go");
+    let finish!: (response: Response) => void;
+    h.fetch.mockImplementationOnce(
       () =>
         new Promise((done) => {
           finish = done;
         }),
     );
     let report: Promise<void> | undefined;
-    if (first === "report") report = h.command.handler("claude", h.ctx);
+    if (first === "report") report = h.command.handler(provider, h.ctx);
     await h.toggle();
     expect(h.setWidget).toHaveBeenCalledOnce();
     expect(h.text()).toContain("Loading usage");
-    if (first === "widget") report = h.command.handler("claude", h.ctx);
-    expect(h.getProviderAuth).toHaveBeenCalledOnce();
+    if (first === "widget") report = h.command.handler(provider, h.ctx);
+    await flush();
+    expect(h.fetch).toHaveBeenCalledOnce();
+    expect(h.getProviderAuth).toHaveBeenCalledTimes(
+      provider === "claude" ? 1 : 0,
+    );
     await h.toggle();
-    finish({ source: "OAuth", auth: { apiKey: "claude-test-token" } });
+    finish(
+      provider === "claude"
+        ? Response.json({ five_hour: { utilization: 12 } })
+        : Response.json({
+            usage: {
+              rolling: {
+                status: "ok",
+                percent: 24,
+                resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+              },
+              weekly: {
+                status: "ok",
+                percent: 48,
+                resetsAt: new Date(NOW + 7 * 24 * 60 * MINUTE).toISOString(),
+              },
+              monthly: {
+                status: "ok",
+                percent: 72,
+                resetsAt: new Date(NOW + 30 * 24 * 60 * MINUTE).toISOString(),
+              },
+            },
+          }),
+    );
     await report;
     expect(h.fetch).toHaveBeenCalledOnce();
     expect(h.widget).toBeUndefined();
     expect(h.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining("12%"),
+      expect.stringContaining(provider === "claude" ? "12%" : "24%"),
       "info",
     );
     expect(vi.getTimerCount()).toBe(0);

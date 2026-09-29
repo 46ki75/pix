@@ -1,4 +1,4 @@
-export type UsageProvider = "claude" | "codex" | "muse";
+export type UsageProvider = "claude" | "codex" | "muse" | "opencode";
 
 export interface UsageWindow {
   id: string;

@@ -38,13 +38,26 @@ separate manual checks.
   or for unsupported providers. Pi component disposal must also stop work.
 - `src/widget.ts` renders normalized state with a package-local divider, bounded
   terminal widths, and the live theme. Rendering must never start network work.
-  `src/format.ts` keeps report/widget formatting rules consistent; report output
-  remains unchanged.
+  `src/format.ts` keeps report/widget formatting rules consistent. Keep widget
+  rows compact; report rows align labels, percentages, relative resets, and UTC
+  timestamps by visible terminal width.
 - `src/auth.ts` adapts Pi's authentication APIs to the token-accepting fetchers.
-  Pi owns OAuth refresh and persistence. Claude and Codex use `getProviderAuth()`.
+  Pi owns OAuth resolution, refresh, and persistence. Claude and Codex require
+  OAuth from `getProviderAuth()`. OpenCode Go accepts only a literal Pi credential
+  saved through `/login opencode-go`. Require Pi's side-effect-free auth status to
+  identify a stored credential, then read it directly and twice before
+  transmission. Reject saved credential commands and do not call the model-auth
+  resolver for OpenCode: that could execute unused configured-header commands.
+  Also verify twice that no extension replaced `opencode-go` and every effective
+  provider/model URL is a known first-party URL. Reject environment, runtime,
+  `models.json`, and extension fallback keys. Document that Pi does not expose
+  historical endpoint provenance for a saved key after a provider override is
+  removed. This integration supports Pi's standard CLI credential store; custom
+  SDK registry stores and auth paths are outside its scope. Never read OpenCode's
+  own credential files or forward model headers or endpoint overrides.
   Meta is the narrow exception: its quota endpoint rejects Pi's derived inference
-  key, so use the side-effect-free `getProviderAuthStatus()` check and read only
-  the `meta` OAuth device token through Pi's public `readStoredCredential()` API.
+  key, so use the side-effect-free `getProviderAuthStatus()` check and read only the
+  `meta` OAuth device token through Pi's public `readStoredCredential()` API.
   Correlate the stored inference key with `getProviderAuth("meta")` to fail closed
   on credential-store or login races. If resolution refreshes Meta through the
   key-mint endpoint, require a retry rather than minting again. Do not write
@@ -52,13 +65,16 @@ separate manual checks.
   credential-resolution errors.
 - `src/providers.ts` validates and normalizes provider payloads without Pi imports.
   Provider-declared optional quota windows and reset times are unknown, not zero
-  usage or guessed resets. Muse may omit `subs_usage`, but if it is present both
-  `window` and `weekly` are required. Its nonpositive or unrepresentable reset
-  epochs are unknown; retain the otherwise valid window.
+  usage or guessed resets. OpenCode Go requires rolling, weekly, and monthly
+  windows with valid status, percentage, and reset fields. Muse may omit
+  `subs_usage`, but if it is present both `window` and `weekly` are required. Its
+  nonpositive or unrepresentable reset epochs are unknown; retain the otherwise
+  valid window.
 - `src/http.ts` bounds requests and bodies, refuses redirects, and sanitizes errors.
-  `src/auth.ts` retries safe quota reads once only for timeouts, reusing the
-  already-resolved token. Do not retry Meta's key-mint POST. Never surface raw
-  response bodies, tokens, JWT claims, or network errors.
+  `src/auth.ts` retries safe quota reads, including OpenCode's GET, once only for
+  timeouts. Recheck OpenCode routing and credential identity before retrying, then
+  reuse the unchanged token. Do not retry Meta's key-mint POST.
+  Never surface raw response bodies, tokens, JWT claims, or network errors.
 - `src/report.ts` formats only normalized quota data and safe error messages. Keep
   account identity and arbitrary provider strings out of terminal output.
 
@@ -71,6 +87,9 @@ Request and payload references:
 [Claude](https://github.com/steipete/CodexBar/blob/main/docs/claude.md),
 [Codex](https://github.com/steipete/CodexBar/blob/main/docs/codex.md),
 [Muse](https://github.com/steipete/CodexBar/blob/main/docs/muse.md),
+[OpenCode Go endpoint](https://github.com/anomalyco/opencode/blob/7945de208964a49300d7f770d1a71d078db9a4c4/packages/console/app/src/routes/zen/go/v1/usage.ts),
+[OpenCode Go limits](https://opencode.ai/docs/go#usage-limits),
+[Pi's OpenCode Go provider](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/providers/opencode-go.ts),
 [Pi's Codex request implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/api/openai-codex-responses.ts),
 and [Pi's Meta OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/meta.ts).
 Keep these boundaries isolated so endpoint changes do not affect Pi integration.

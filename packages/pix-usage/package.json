@@ -1,11 +1,11 @@
 {
   "name": "@ikuma.cloud/pix-usage",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publishConfig": {
     "access": "public"
   },
   "type": "module",
-  "description": "Claude, Codex, and Meta Muse subscription usage reports and a widget for Pi Coding Agent",
+  "description": "Claude, Codex, Meta Muse, and OpenCode Go subscription usage reports and a widget for Pi Coding Agent",
   "keywords": [
     "pi-package"
   ],

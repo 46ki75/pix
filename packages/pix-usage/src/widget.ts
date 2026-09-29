@@ -34,7 +34,7 @@ function renderRows(
   if (!state.usage.windows.length)
     return [`${name} No quota windows reported.`];
   return state.usage.windows.map((window) => {
-    const icon = formatWindowIcon(window.windowSeconds, formatText);
+    const icon = formatWindowIcon(window, formatText);
     const usage = formatUsedPercent(window.usedPercent, formatText);
     const reset = window.resetsAt
       ? relativeResetTime(window.resetsAt, now).trimStart()

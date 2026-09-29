@@ -4,6 +4,7 @@ import { UsageError, type UsageSnapshot, type UsageWindow } from "./types.ts";
 export const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 export const MUSE_USAGE_URL = "https://api.meta.ai/muse-code/key";
+export const OPENCODE_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 
 function invalid(): never {
   throw new UsageError("response", "Unrecognized usage response.");
@@ -140,6 +141,33 @@ function epochReset(value: unknown): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
+// Go defines fixed five-hour and weekly limits. Its monthly reset follows the
+// subscription date, so the response's reset timestamp is authoritative and no
+// fixed monthly duration is inferred.
+const OPENCODE_WINDOWS = [
+  ["rolling", "5-hour", 5 * 3600],
+  ["weekly", "Weekly", 7 * 86400],
+  ["monthly", "Monthly", null],
+] as const;
+
+export function parseOpenCodeUsage(payload: unknown): UsageWindow[] {
+  const data = record(payload);
+  const usage = record(data.usage);
+  return OPENCODE_WINDOWS.map(([id, label, windowSeconds]) => {
+    const bucket = record(usage[id]);
+    if (bucket.status !== "ok" && bucket.status !== "rate-limited") invalid();
+    const usedPercent = nonnegative(bucket.percent);
+    if (
+      usedPercent > 100 ||
+      (bucket.status === "rate-limited") !== (usedPercent === 100)
+    )
+      invalid();
+    const resetsAt = isoReset(bucket.resetsAt);
+    if (resetsAt === null) invalid();
+    return { id, label, usedPercent, resetsAt, windowSeconds };
+  });
+}
+
 export function parseMuseUsage(payload: unknown): UsageWindow[] {
   const data = record(payload);
   const requiresPayment = optionalBoolean(data, "require_payment");
@@ -264,6 +292,22 @@ export async function fetchCodexUsage(
     provider: "codex",
     fetchedAt: isoDate(now),
     windows: parseCodexUsage(payload, now),
+  };
+}
+
+export async function fetchOpenCodeUsage(
+  apiKey: string,
+  options: FetchOptions = {},
+): Promise<UsageSnapshot> {
+  const payload = await getJson(
+    OPENCODE_USAGE_URL,
+    { Authorization: authorization(apiKey) },
+    options,
+  );
+  return {
+    provider: "opencode",
+    fetchedAt: new Date().toISOString(),
+    windows: parseOpenCodeUsage(payload),
   };
 }
 
