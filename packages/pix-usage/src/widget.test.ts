@@ -64,7 +64,7 @@ test.each([
   ["claude", " Claude"],
   ["codex", " Codex"],
   ["muse", "󰛤 Muse"],
-  ["opencode", "󰅩 OpenCode Go"],
+  ["opencode", "󰨔 OpenCode Go"],
 ] as const)(
   "renders one compact %s row per reported window",
   (provider, name) => {
@@ -114,7 +114,7 @@ test("uses the monthly icon for OpenCode's variable-duration window", () => {
       ]),
     )[1],
   ).toBe(
-    " 󰅩 OpenCode Go 󰸗 Monthly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)",
+    " 󰨔 OpenCode Go 󰸗 Monthly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)",
   );
 });
 
@@ -147,9 +147,9 @@ test("aligns multi-window widget columns to their widest values", () => {
     now,
   ).slice(1);
   expect(rows).toEqual([
-    " 󰅩 OpenCode Go  5-hour  󰓅   0%       4h 59m 2026-09-30 03:28:05 (UTC)",
-    " 󰅩 OpenCode Go 󱛡 Weekly  󰓅   2%   5d  1h 31m 2026-10-05 00:00:00 (UTC)",
-    " 󰅩 OpenCode Go 󰸗 Monthly 󰓅   1%  29d 14h 31m 2026-10-29 12:59:19 (UTC)",
+    " 󰨔 OpenCode Go  5-hour  󰓅   0%       4h 59m 2026-09-30 03:28:05 (UTC)",
+    " 󰨔 OpenCode Go 󱛡 Weekly  󰓅   2%   5d  1h 31m 2026-10-05 00:00:00 (UTC)",
+    " 󰨔 OpenCode Go 󰸗 Monthly 󰓅   1%  29d 14h 31m 2026-10-29 12:59:19 (UTC)",
   ]);
   for (const marker of ["󰓅", "", "2026-"]) {
     const columns = rows.map((row) =>
@@ -318,7 +318,7 @@ const otherStates: {
           ? " Codex"
           : provider === "muse"
             ? "󰛤 Muse"
-            : "󰅩 OpenCode Go";
+            : "󰨔 OpenCode Go";
     return [
       {
         state: { provider, status: "loading" } as const,

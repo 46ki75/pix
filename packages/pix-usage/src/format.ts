@@ -18,7 +18,7 @@ export function formatProviderName(
     case "muse":
       return `${formatText("accent", "󰛤")} Muse`;
     case "opencode":
-      return `${formatText("accent", "󰅩")} OpenCode Go`;
+      return `${formatText("accent", "󰨔")} OpenCode Go`;
   }
 }
 

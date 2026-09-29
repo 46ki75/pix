@@ -498,5 +498,5 @@ test("uses the monthly icon for OpenCode's variable-duration window", () => {
         },
       },
     ]),
-  ).toBe("󰅩 OpenCode Go\n\n  󰸗 Monthly 󰓅  36%  -d --h --m");
+  ).toBe("󰨔 OpenCode Go\n\n  󰸗 Monthly 󰓅  36%  -d --h --m");
 });

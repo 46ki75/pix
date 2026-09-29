@@ -87,7 +87,7 @@ resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (U
 fractional seconds and checked timestamps are omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
-`󰛤` for Meta Muse, `󰅩` for OpenCode Go, `` for five-hour windows, `󱛡` for
+`󰛤` for Meta Muse, `󰨔` for OpenCode Go, `` for five-hour windows, `󱛡` for
 weekly windows (including model-specific weekly limits), `󰸗` for OpenCode's
 monthly window, `󰓅` for usage, `` for
 resets, and `󱘖` for the report title.
