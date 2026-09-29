@@ -43,11 +43,11 @@ test.each(
   },
 );
 
-test.each(["claude", "codex"] as const)(
+test.each(["claude", "codex", "muse"] as const)(
   "sizes the shared frame to the longest provider section (%s)",
   (longest) => {
     const report = formatUsageReport(
-      (["claude", "codex"] as const).map((provider) => ({
+      (["claude", "codex", "muse"] as const).map((provider) => ({
         provider,
         status: "error" as const,
         message: provider === longest ? "x".repeat(30) : "Short.",
@@ -374,16 +374,19 @@ test.each([
   },
 );
 
-test("safe errors are labeled by provider", () => {
+test.each([
+  ["codex", " Codex"],
+  ["muse", "󰛤 Muse"],
+] as const)("safe errors are labeled by provider: %s", (provider, name) => {
   expect(
     reportBody([
       {
-        provider: "codex",
+        provider,
         status: "error",
         message: "Usage request timed out.",
       },
     ]),
-  ).toBe(" Codex\n\n  Usage request timed out.");
+  ).toBe(`${name}\n\n  Usage request timed out.`);
 });
 
 test.each([

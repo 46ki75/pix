@@ -1,8 +1,8 @@
 # @ikuma.cloud/pix-usage
 
-Claude and Codex subscription quota reports and a current-provider widget
-for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing OAuth login, not a
-separate credential store or usage SDK.
+Claude, Codex, and Meta Muse subscription quota reports and a current-provider
+widget for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing OAuth logins,
+not a separate credential store or usage SDK.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -28,14 +28,15 @@ pi install ./packages/pix-usage
 
 ## Usage
 
-Sign in through `/login anthropic` or `/login openai-codex`, choosing the
-subscription/OAuth flow rather than an API key. Then run:
+Sign in through `/login anthropic`, `/login openai-codex`, or `/login meta`,
+choosing the subscription/OAuth flow rather than an API key. Then run:
 
 ```text
-/usage          Check both providers
+/usage          Check all providers
 /usage claude   Check Claude only
 /usage codex    Check Codex only
-/usage all      Check both providers
+/usage muse     Check Meta Muse only
+/usage all      Check all providers
 /usage toggle   Hide or show the current-provider widget (terminal only)
 ```
 
@@ -81,8 +82,9 @@ resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (U
 fractional seconds and checked timestamps are omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
-`` for five-hour windows, `󱛡` for weekly windows (including model-specific
-weekly limits), `󰓅` for usage, `` for resets, and `󱘖` for the report title.
+`󰛤` for Meta Muse, `` for five-hour windows, `󱛡` for weekly windows
+(including model-specific weekly limits), `󰓅` for usage, `` for resets, and
+`󱘖` for the report title.
 Other or unknown durations have no window icon. In terminal mode, provider icons
 use the active theme's `accent` color, and window, usage, and reset icons use `text`.
 The dividers enclose all provider sections and use `border`; other text keeps Pi's
@@ -103,9 +105,10 @@ Run `/usage toggle` to hide it, or again to show it. This choice applies only to
 the current session; reload or session replacement shows the widget again.
 Other extensions' widget order is not controlled.
 
-It follows the selected model's provider: `anthropic` selects Claude and
-`openai-codex` selects Codex. It shows one row per reported quota window, including
-model-specific buckets; it does not filter those buckets to the selected model.
+It follows the selected model's provider: `anthropic` selects Claude,
+`openai-codex` selects Codex, and `meta` selects Muse. It shows one row per
+reported quota window, including model-specific buckets; it does not filter those
+buckets to the selected model.
 Other providers and an absent model show an explanatory message without resolving
 credentials or making requests.
 
@@ -153,25 +156,43 @@ for later reports. Repeat `/usage` for a fresh snapshot.
 
 ## Credentials and requests
 
-The extension calls `ctx.modelRegistry.getProviderAuth()` using `anthropic` and
-`openai-codex`. Pi owns token refresh and persistence. Only resolved OAuth access
-tokens are accepted; API keys and missing logins produce a per-provider message.
-Externally supplied tokens classified as API keys are intentionally not used.
+For Claude and Codex, the extension calls
+`ctx.modelRegistry.getProviderAuth()` with `anthropic` or `openai-codex` and uses
+the resolved OAuth access token. Pi owns token refresh and persistence. API keys
+and missing logins produce a per-provider message; externally supplied tokens
+classified as API keys are intentionally not used.
 
-Tokens are sent only to the matching first-party HTTPS usage endpoint; redirects
+Meta's quota-bearing key-mint endpoint rejects the derived `LLM|` inference key
+exposed by Pi's model registry. Muse first uses the side-effect-free
+`getProviderAuthStatus("meta")` check to require a stored login, then uses Pi's
+public `readStoredCredential()` API to read the `meta` OAuth credential from Pi's
+existing `auth.json` and select its `dca:` device identity token. It correlates the
+stored inference key with `getProviderAuth("meta")` so a custom credential store or
+concurrent login cannot silently query another account. If Pi refreshes that key
+during resolution, the check asks the user to retry instead of making a second
+call to the same key-mint endpoint. The extension does not modify or refresh the
+credential itself. Muse CLI files, browser cookies, and the Keychain are not read.
+A custom Pi API key, Meta dashboard key, Muse inference key, or separate Muse CLI
+login is not used.
+
+Credentials are sent only to matching first-party HTTPS endpoints, and redirects
 are refused. Codex's account ID is decoded from the access token for the
-`chatgpt-account-id` routing header, matching Pi's Codex transport. The extension
-never reads credential files, refresh tokens, browser cookies, or the Keychain.
-It does not forward custom model headers or use model endpoint overrides.
+`chatgpt-account-id` routing header, matching Pi's Codex transport. Muse sends the
+device token only to `POST https://api.meta.ai/muse-code/key`, with an empty JSON
+body and API version `1.0.0`; the minted inference key, payment metadata, email, and
+plan in the response are discarded. The extension does not forward custom model
+headers or use model endpoint overrides.
 
 HTTP requests have a 15-second timeout covering the response body and a 256 KiB
-response limit. A timeout is retried once without resolving credentials again.
-Each provider check has a 35-second total deadline, including credential resolution
-and both request attempts. Network, authentication, rate-limit, HTTP, and response
-errors are not retried. Shutdown, reload, and session replacement cancel HTTP work
-and suppress late UI updates. Pi-managed credential
-refresh may finish after the extension stops waiting; the extension does not
-interfere with Pi's refresh lock.
+response limit. Claude and Codex timeouts are retried once without resolving
+credentials again. Muse's quota-bearing key-mint POST is not retried, and a Pi
+credential refresh is never followed by another mint in the same check. Each
+provider check has a 35-second total deadline, including credential lookup and
+request attempts.
+Network, authentication, rate-limit, HTTP, and response errors are not retried.
+Shutdown, reload, and session replacement cancel HTTP work and suppress late UI
+updates. Pi-managed credential refresh may finish after the extension stops
+waiting; the extension does not interfere with Pi's refresh lock.
 
 ## Limitations
 
@@ -182,11 +203,22 @@ interfere with Pi's refresh lock.
   not guarantee that the provider permits the usage endpoint.
 - Codex displays the primary and secondary windows with their reported durations.
   It does not assume the primary window is always five hours.
-- The extension does not fetch reset-credit inventory, credit balances, spending,
-  or Codex's additional/model-scoped quota buckets. It does not reproduce the
-  entire provider billing page.
-- Missing windows are omitted; absent reset times remain unknown. Malformed
-  payloads are errors, not zero usage. Each provider succeeds or fails independently.
+- Muse displays the subscription window using its reported duration and the weekly
+  window as seven days. Meta can omit `subs_usage` while the five-hour window is
+  idle; this appears as “No quota windows reported.” The extension does not use a
+  browser session or guess the omitted weekly value.
+- Muse quota lookup calls Meta's key-mint endpoint, which issues an inference key;
+  the extension discards that key rather than persisting or using it.
+- The extension does not request reset-credit inventory, credit balances, spending,
+  or Codex's additional/model-scoped quota buckets. Meta's required key-mint
+  response can contain payment and plan metadata; those fields are discarded and
+  never displayed. The extension does not reproduce the entire provider billing
+  page.
+- Optional Claude and Codex windows are omitted when absent. Muse may omit the
+  entire `subs_usage` object, but when it is present both `window` and `weekly`
+  are required; a missing one is malformed data. Absent, nonpositive, or
+  unrepresentable Muse reset times remain unknown. Other malformed payload data
+  is an error, not zero usage. Each provider succeeds or fails independently.
 - These are account-level provider quota measurements, not a count of tokens
   consumed by the current Pi session or a guarantee about how Pi requests are billed.
 - JSON and print modes do not fetch quotas or resolve credentials through this
@@ -197,9 +229,11 @@ interfere with Pi's refresh lock.
 ## Reusable fetchers
 
 [`src/providers.ts`](src/providers.ts) has no Pi dependency. Its
-`fetchClaudeUsage(accessToken, options?)` and
-`fetchCodexUsage(accessToken, options?)` functions accept access tokens and return
+`fetchClaudeUsage(accessToken, options?)`,
+`fetchCodexUsage(accessToken, options?)`, and
+`fetchMuseUsage(identityToken, options?)` functions accept credentials and return
 normalized `UsageSnapshot` values. Options allow an abort signal, timeout, and
-injected `fetch` for tests. Codex expects the same account-bearing JWT used by Pi.
-Pure parsers and the normalized types are separate from credential resolution and
-UI formatting. Keep credential ownership in the calling application.
+injected `fetch` for tests. Codex expects the same account-bearing JWT used by Pi;
+Muse requires the `dca:` device identity token, not an `LLM|` inference key. Pure
+parsers and normalized types are separate from credential resolution and UI
+formatting. Keep credential ownership in the calling application.

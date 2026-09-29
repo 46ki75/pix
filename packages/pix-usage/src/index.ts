@@ -1,19 +1,27 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { StoredCredentialReader } from "./auth.ts";
 import { formatUsageReport } from "./report.ts";
 import { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
 import { UsageWidgetController } from "./widget-controller.ts";
 
-const CHOICES = ["all", "claude", "codex", "toggle"] as const;
+const CHOICES = ["all", "claude", "codex", "muse", "toggle"] as const;
 
-export default function subscriptionUsage(pi: ExtensionAPI): void {
+interface SubscriptionUsageOptions {
+  readCredential?: StoredCredentialReader;
+}
+
+export default function subscriptionUsage(
+  pi: ExtensionAPI,
+  options: SubscriptionUsageOptions = {},
+): void {
   let active: AbortController | undefined;
   let widget: UsageWidgetController | undefined;
-  const requests = new UsageRequests();
+  const requests = new UsageRequests(options.readCredential);
 
   pi.registerCommand("usage", {
     description:
-      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|all|toggle]",
+      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|muse|all|toggle]",
     getArgumentCompletions(prefix) {
       const items = CHOICES.filter((value) => value.startsWith(prefix)).map(
         (value) => ({ value, label: value }),
@@ -43,9 +51,13 @@ export default function subscriptionUsage(pi: ExtensionAPI): void {
       if (
         selection !== "all" &&
         selection !== "claude" &&
-        selection !== "codex"
+        selection !== "codex" &&
+        selection !== "muse"
       ) {
-        ctx.ui.notify("Usage: /usage [claude|codex|all|toggle]", "warning");
+        ctx.ui.notify(
+          "Usage: /usage [claude|codex|muse|all|toggle]",
+          "warning",
+        );
         return;
       }
       if (active) {
@@ -55,7 +67,7 @@ export default function subscriptionUsage(pi: ExtensionAPI): void {
       const controller = new AbortController();
       active = controller;
       const providers: UsageProvider[] =
-        selection === "all" ? ["claude", "codex"] : [selection];
+        selection === "all" ? ["claude", "codex", "muse"] : [selection];
       try {
         const results = await Promise.all(
           providers.map((provider) =>

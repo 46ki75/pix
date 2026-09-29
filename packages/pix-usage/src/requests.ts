@@ -1,4 +1,4 @@
-import { resolveUsage } from "./auth.ts";
+import { resolveUsage, type StoredCredentialReader } from "./auth.ts";
 import { abortable } from "./http.ts";
 import type { UsageProvider, UsageResult } from "./types.ts";
 
@@ -13,6 +13,8 @@ interface PendingUsage {
 
 export class UsageRequests {
   private pending = new Map<UsageProvider, PendingUsage>();
+
+  constructor(private readCredential?: StoredCredentialReader) {}
 
   async get(
     registry: Registry,
@@ -38,6 +40,7 @@ export class UsageRequests {
             controller.signal,
             AbortSignal.timeout(USAGE_TIMEOUT_MS),
           ]),
+          this.readCredential,
         ),
       };
       this.pending.set(provider, request);

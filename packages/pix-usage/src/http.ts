@@ -36,10 +36,11 @@ export function abortable<T>(
   });
 }
 
-export async function getJson(
+async function requestJson(
+  method: "GET" | "POST",
   url: string,
   headers: Record<string, string>,
-  options: FetchOptions = {},
+  options: FetchOptions,
 ): Promise<unknown> {
   const timeout = AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS);
   const signal = options.signal
@@ -48,9 +49,14 @@ export async function getJson(
   try {
     signal.throwIfAborted();
     const response = await (options.fetch ?? globalThis.fetch)(url, {
-      method: "GET",
+      method,
       redirect: "error",
-      headers: { Accept: "application/json", ...headers },
+      headers: {
+        Accept: "application/json",
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        ...headers,
+      },
+      ...(method === "POST" ? { body: "{}" } : {}),
       signal,
     });
     if (!response.ok) {
@@ -117,4 +123,20 @@ export async function getJson(
     // Fetch exceptions and remote error bodies can contain credentials.
     throw new UsageError("network", "Usage network request failed.");
   }
+}
+
+export function getJson(
+  url: string,
+  headers: Record<string, string>,
+  options: FetchOptions = {},
+): Promise<unknown> {
+  return requestJson("GET", url, headers, options);
+}
+
+export function postJson(
+  url: string,
+  headers: Record<string, string>,
+  options: FetchOptions = {},
+): Promise<unknown> {
+  return requestJson("POST", url, headers, options);
 }

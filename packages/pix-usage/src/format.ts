@@ -9,9 +9,14 @@ export function formatProviderName(
   provider: UsageProvider,
   formatText: UsageTextFormatter,
 ): string {
-  return provider === "claude"
-    ? `${formatText("accent", "")} Claude`
-    : `${formatText("accent", "")} Codex`;
+  switch (provider) {
+    case "claude":
+      return `${formatText("accent", "")} Claude`;
+    case "codex":
+      return `${formatText("accent", "")} Codex`;
+    case "muse":
+      return `${formatText("accent", "󰛤")} Muse`;
+  }
 }
 
 export function formatUsedPercent(

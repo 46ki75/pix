@@ -63,6 +63,7 @@ afterEach(() => vi.restoreAllMocks());
 test.each([
   ["claude", " Claude"],
   ["codex", " Codex"],
+  ["muse", "󰛤 Muse"],
 ] as const)(
   "renders one compact %s row per reported window",
   (provider, name) => {
@@ -248,8 +249,13 @@ const otherStates: {
     state: { status: "unsupported" },
     text: "Usage is not supported for this model.",
   },
-  ...(["claude", "codex"] as const).flatMap((provider) => {
-    const name = provider === "claude" ? " Claude" : " Codex";
+  ...(["claude", "codex", "muse"] as const).flatMap((provider) => {
+    const name =
+      provider === "claude"
+        ? " Claude"
+        : provider === "codex"
+          ? " Codex"
+          : "󰛤 Muse";
     return [
       {
         state: { provider, status: "loading" } as const,

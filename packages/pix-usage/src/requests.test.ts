@@ -50,6 +50,17 @@ test("shares only in-flight requests for the same provider", async () => {
   expect(resolve).toHaveBeenCalledTimes(2);
 });
 
+test("forwards the stored credential reader to provider resolution", async () => {
+  const readCredential = vi.fn();
+  const requests = new UsageRequests(readCredential);
+  resolve.mockResolvedValueOnce(success("muse"));
+  const signal = new AbortController().signal;
+  await expect(requests.get(registry, "muse", signal)).resolves.toEqual(
+    success("muse"),
+  );
+  expect(resolve.mock.calls[0]?.[3]).toBe(readCredential);
+});
+
 test("different providers resolve independently", async () => {
   const requests = new UsageRequests();
   const claude = pending();

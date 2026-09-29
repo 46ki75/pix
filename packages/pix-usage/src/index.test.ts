@@ -35,9 +35,21 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
   const notify = vi.fn<ExtensionUIContext["notify"]>();
   const fg = vi.fn<ExtensionUIContext["theme"]["fg"]>((_color, text) => text);
   const getFgAnsi = vi.fn<ExtensionUIContext["theme"]["getFgAnsi"]>(() => "");
-  const getProviderAuth = vi.fn<ResolveAuth>().mockResolvedValue({
-    source: "OAuth",
-    auth: { apiKey: "claude-test-token" },
+  const getProviderAuth = vi
+    .fn<ResolveAuth>()
+    .mockImplementation(async (provider) => ({
+      source: "OAuth",
+      auth: {
+        apiKey:
+          provider === "meta" ? "LLM|muse-inference-key" : "claude-test-token",
+      },
+    }));
+  const getProviderAuthStatus = vi.fn().mockReturnValue({ configured: false });
+  const readCredential = vi.fn().mockReturnValue({
+    type: "oauth" as const,
+    refresh: "dca:muse-device-token",
+    access: "LLM|muse-inference-key",
+    expires: Date.now() + 60_000,
   });
   const api = {
     registerCommand: (name: string, command: Command) =>
@@ -47,13 +59,13 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
       return () => handlers.delete(name);
     },
   } as unknown as ExtensionAPI;
-  subscriptionUsage(api);
+  subscriptionUsage(api, { readCredential });
   const command = commands.get("usage");
   if (!command) throw new Error("Missing command");
   const ctx = {
     mode,
     hasUI: mode === "tui" || mode === "rpc",
-    modelRegistry: { getProviderAuth },
+    modelRegistry: { getProviderAuth, getProviderAuthStatus },
     ui: { notify, theme: { fg, getFgAnsi } },
   } as unknown as ExtensionCommandContext;
   return {
@@ -63,6 +75,8 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
     fg,
     getFgAnsi,
     getProviderAuth,
+    getProviderAuthStatus,
+    readCredential,
     shutdown: () => handlers.get("session_shutdown")?.(),
   };
 }
@@ -119,6 +133,43 @@ test.each(["tui", "rpc"] as const)(
     expect(notify.mock.calls[0]?.[0]).not.toContain("claude-test-token");
   },
 );
+
+test("reports Meta Muse quota with Pi's device OAuth credential", async () => {
+  const {
+    command,
+    ctx,
+    notify,
+    getProviderAuth,
+    getProviderAuthStatus,
+    readCredential,
+  } = harness();
+  getProviderAuthStatus.mockReturnValue({ configured: true, source: "stored" });
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+    Response.json({
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: 18, window_duration_mins: 300 },
+        weekly: { used_percent: 27 },
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+
+  await command.handler("muse", ctx);
+  expect(getProviderAuth).toHaveBeenCalledExactlyOnceWith("meta");
+  expect(getProviderAuthStatus).toHaveBeenCalledExactlyOnceWith("meta");
+  expect(readCredential).toHaveBeenCalledTimes(3);
+  expect(fetch.mock.calls[0]?.[1]).toMatchObject({
+    method: "POST",
+    headers: expect.objectContaining({
+      Authorization: "Bearer dca:muse-device-token",
+    }),
+  });
+  expect(notify).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining("󰛤 Muse\n\n   5-hour 󰓅  18%"),
+    "info",
+  );
+});
 
 test.each(
   (["tui", "rpc"] as const).flatMap((mode) =>
@@ -213,6 +264,11 @@ test.each([
                 "warning",
                 "No Pi subscription login; use /login openai-codex with OAuth (not an API key).",
               ],
+              ["accent", "󰛤"],
+              [
+                "warning",
+                "No Pi subscription login; use /login meta with OAuth (not an API key).",
+              ],
             ]
           : []),
         ["border", header],
@@ -302,7 +358,7 @@ test("validates arguments and completes provider names", async () => {
   const { command, ctx, getProviderAuth, notify } = harness();
   await command.handler("claude codex", ctx);
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    "Usage: /usage [claude|codex|all|toggle]",
+    "Usage: /usage [claude|codex|muse|all|toggle]",
     "warning",
   );
   expect(getProviderAuth).not.toHaveBeenCalled();
@@ -310,11 +366,14 @@ test("validates arguments and completes provider names", async () => {
     { value: "claude", label: "claude" },
     { value: "codex", label: "codex" },
   ]);
+  expect(command.getArgumentCompletions?.("m")).toEqual([
+    { value: "muse", label: "muse" },
+  ]);
   expect(command.getArgumentCompletions?.("bad")).toBeNull();
 });
 
 test.each(["", "all"])(
-  "%j checks both providers independently",
+  "%j checks all providers independently",
   async (argument) => {
     const { command, ctx, getProviderAuth, notify } = harness();
     getProviderAuth.mockImplementation(async (provider) =>
@@ -337,6 +396,9 @@ test.each(["", "all"])(
     expect(notify.mock.calls[0]?.[0]).toContain("󱛡 Weekly 󰓅  75%  -d --h --m");
     expect(notify.mock.calls[0]?.[0]).toContain(
       " Codex\n\n  No Pi subscription login",
+    );
+    expect(notify.mock.calls[0]?.[0]).toContain(
+      "󰛤 Muse\n\n  No Pi subscription login",
     );
     expect(notify.mock.calls[0]?.[1]).toBe("info");
   },
