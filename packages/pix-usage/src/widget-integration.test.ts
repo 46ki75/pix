@@ -361,7 +361,7 @@ test.each(["anthropic", "openai-codex", "meta", "opencode-go"])(
           ? " Codex 󱛡 Weekly"
           : provider === "meta"
             ? "󰛤 Muse  5-hour"
-            : "󰅩 OpenCode Go  5-hour",
+            : "󰨔 OpenCode Go  5-hour",
     );
     expect(h.text()).toContain(
       provider === "anthropic"

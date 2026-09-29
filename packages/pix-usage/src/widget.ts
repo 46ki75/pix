@@ -5,7 +5,10 @@ import {
   formatProviderName,
   formatUsedPercent,
   formatWindowIcon,
+  padVisibleEnd,
+  padVisibleStart,
   relativeResetTime,
+  usageWindowColumnWidths,
   type UsageTextFormatter,
 } from "./format.ts";
 import type { UsageProvider, UsageResult } from "./types.ts";
@@ -33,13 +36,26 @@ function renderRows(
   }
   if (!state.usage.windows.length)
     return [`${name} No quota windows reported.`];
+  const columns = usageWindowColumnWidths(state.usage.windows, now, {
+    minimumResetWidth: 0,
+    trimResetStart: true,
+  });
   return state.usage.windows.map((window) => {
-    const icon = formatWindowIcon(window, formatText);
-    const usage = formatUsedPercent(window.usedPercent, formatText);
-    const reset = window.resetsAt
-      ? relativeResetTime(window.resetsAt, now).trimStart()
-      : "-d --h --m";
-    const row = `${name} ${icon}${window.label} ${formatText("text", "󰓅")} ${usage} ${formatText("text", "")} ${reset}`;
+    const label = padVisibleEnd(
+      `${formatWindowIcon(window, formatText)}${window.label}`,
+      columns.label,
+    );
+    const usage = padVisibleStart(
+      formatUsedPercent(window.usedPercent, formatText),
+      columns.usage,
+    );
+    const relative = padVisibleStart(
+      window.resetsAt
+        ? relativeResetTime(window.resetsAt, now).trimStart()
+        : "-d --h --m",
+      columns.reset,
+    );
+    const row = `${name} ${label} ${formatText("text", "󰓅")} ${usage} ${formatText("text", "")} ${relative}`;
     if (!window.resetsAt) return row;
     const full = `${row} ${absoluteResetTime(window.resetsAt)}`;
     // Drop the optional timestamp as a unit instead of showing a partial date.

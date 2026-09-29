@@ -87,7 +87,7 @@ resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (U
 fractional seconds and checked timestamps are omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
-`󰛤` for Meta Muse, `󰅩` for OpenCode Go, `` for five-hour windows, `󱛡` for
+`󰛤` for Meta Muse, `󰨔` for OpenCode Go, `` for five-hour windows, `󱛡` for
 weekly windows (including model-specific weekly limits), `󰸗` for OpenCode's
 monthly window, `󰓅` for usage, `` for
 resets, and `󱘖` for the report title.
@@ -129,8 +129,9 @@ The hook starts the check without waiting for network work or delaying the next
 turn. Manual `/usage` reports bypass the widget cooldown.
 
 Reset countdowns update locally every minute without fetching. Percentages are
-**used**, with the same thresholds and icons as reports. A past reset is not proof
-that the provider has refreshed the quota.
+**used**, with the same thresholds and icons as reports. Multi-window results align
+labels, percentages, countdowns, and timestamps by visible width. A past reset is
+not proof that the provider has refreshed the quota.
 
 Loading, missing-login, empty-quota, and error states appear in the widget, not as
 repeated notifications or fabricated zero usage. A failed refresh replaces the old

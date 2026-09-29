@@ -244,7 +244,7 @@ test("reports OpenCode Go quota with its saved API key", async () => {
     Authorization: "Bearer opencode-test-key",
   });
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    expect.stringContaining("󰅩 OpenCode Go\n\n   5-hour  󰓅  18%"),
+    expect.stringContaining("󰨔 OpenCode Go\n\n   5-hour  󰓅  18%"),
     "info",
   );
   expect(notify.mock.calls[0]?.[0]).toContain("󰸗 Monthly 󰓅  36%");
@@ -352,7 +352,7 @@ test.each([
                 "warning",
                 "No Pi subscription login; use /login meta with OAuth (not an API key).",
               ],
-              ["accent", "󰅩"],
+              ["accent", "󰨔"],
               ["warning", openCodeWarning],
             ]
           : []),
@@ -489,7 +489,7 @@ test.each(["", "all"])(
       "󰛤 Muse\n\n  No Pi subscription login",
     );
     expect(notify.mock.calls[0]?.[0]).toContain(
-      "󰅩 OpenCode Go\n\n  No Pi OpenCode Go API key; use /login opencode-go.",
+      "󰨔 OpenCode Go\n\n  No Pi OpenCode Go API key; use /login opencode-go.",
     );
     expect(notify.mock.calls[0]?.[1]).toBe("info");
   },
