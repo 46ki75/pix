@@ -27,6 +27,14 @@ const codexToken = `header.${Buffer.from(
   }),
 ).toString("base64url")}.sig`;
 
+function providerName(provider: string): string {
+  return provider === "anthropic"
+    ? "Claude"
+    : provider === "openai-codex"
+      ? "Codex"
+      : "Muse";
+}
+
 function harness(
   provider: string | undefined = "anthropic",
   mode: ExtensionContext["mode"] = "tui",
@@ -53,8 +61,25 @@ function harness(
     .fn<ResolveAuth>()
     .mockImplementation(async (id) => ({
       source: "OAuth",
-      auth: { apiKey: id === "anthropic" ? "claude-test-token" : codexToken },
+      auth: {
+        apiKey:
+          id === "anthropic"
+            ? "claude-test-token"
+            : id === "meta"
+              ? "LLM|muse-inference-key"
+              : codexToken,
+      },
     }));
+  const getProviderAuthStatus = vi.fn().mockReturnValue({
+    configured: true,
+    source: "stored",
+  });
+  const readCredential = vi.fn().mockReturnValue({
+    type: "oauth" as const,
+    refresh: "dca:muse-device-token",
+    access: "LLM|muse-inference-key",
+    expires: NOW + 60_000,
+  });
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockImplementation(async (url) =>
@@ -65,21 +90,29 @@ function harness(
               resets_at: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
             },
           })
-        : Response.json({
-            rate_limit: {
-              primary_window: {
-                used_percent: 93,
-                limit_window_seconds: 604800,
+        : String(url).includes("api.meta.ai")
+          ? Response.json({
+              is_subs_active: true,
+              subs_usage: {
+                window: { used_percent: 18, window_duration_mins: 300 },
+                weekly: { used_percent: 27 },
               },
-            },
-          }),
+            })
+          : Response.json({
+              rate_limit: {
+                primary_window: {
+                  used_percent: 93,
+                  limit_window_seconds: 604800,
+                },
+              },
+            }),
     );
   vi.stubGlobal("fetch", fetch);
   const ctx = {
     mode,
     hasUI: mode === "tui" || mode === "rpc",
     model: provider ? { provider, id: "test-model" } : undefined,
-    modelRegistry: { getProviderAuth },
+    modelRegistry: { getProviderAuth, getProviderAuthStatus },
     ui: {
       setWidget,
       notify,
@@ -101,7 +134,7 @@ function harness(
       return () => handlers.delete(name);
     },
   } as unknown as ExtensionAPI;
-  subscriptionUsage(api);
+  subscriptionUsage(api, { readCredential });
   const select = (id: string) => {
     ctx.model = { provider: id, id: "test-model" } as NonNullable<
       ExtensionContext["model"]
@@ -126,6 +159,8 @@ function harness(
     turnEnd: () => handlers.get("turn_end")?.({ type: "turn_end" }, ctx),
     shutdown,
     getProviderAuth,
+    getProviderAuthStatus,
+    readCredential,
     fetch,
     requestRender,
     notify,
@@ -163,7 +198,7 @@ test("does no work at extension load or before session_start; completes toggle",
   ]);
 });
 
-test.each(["anthropic", "openai-codex"])(
+test.each(["anthropic", "openai-codex", "meta"])(
   "session_start shows %s by default; toggle hides it until explicitly shown again",
   async (provider) => {
     const h = harness(provider);
@@ -175,7 +210,10 @@ test.each(["anthropic", "openai-codex"])(
     );
     await flush();
     expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
-    expect(h.text()).toContain(provider === "anthropic" ? "Claude" : "Codex");
+    if (provider === "meta")
+      expect(h.getProviderAuthStatus).toHaveBeenCalledExactlyOnceWith("meta");
+    expect(h.text()).toContain(providerName(provider));
+    expect(h.readCredential).toHaveBeenCalledTimes(provider === "meta" ? 3 : 0);
     expect(h.notify).not.toHaveBeenCalled();
 
     await h.toggle();
@@ -230,7 +268,7 @@ test.each(["openai", undefined])(
   },
 );
 
-test.each(["anthropic", "openai-codex"])(
+test.each(["anthropic", "openai-codex", "meta"])(
   "toggle fetches only %s and renders above the editor",
   async (provider) => {
     const h = harness(provider);
@@ -242,11 +280,23 @@ test.each(["anthropic", "openai-codex"])(
     );
     await flush();
     expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith(provider);
+    if (provider === "meta")
+      expect(h.getProviderAuthStatus).toHaveBeenCalledExactlyOnceWith("meta");
     expect(h.fetch).toHaveBeenCalledOnce();
     expect(h.text()).toContain(
-      provider === "anthropic" ? " Claude  5-hour" : " Codex 󱛡 Weekly",
+      provider === "anthropic"
+        ? " Claude  5-hour"
+        : provider === "openai-codex"
+          ? " Codex 󱛡 Weekly"
+          : "󰛤 Muse  5-hour",
     );
-    expect(h.text()).toContain(provider === "anthropic" ? "12%" : "93%");
+    expect(h.text()).toContain(
+      provider === "anthropic"
+        ? "12%"
+        : provider === "openai-codex"
+          ? "93%"
+          : "18%",
+    );
     expect(h.notify).toHaveBeenCalledExactlyOnceWith(
       "Usage widget shown.",
       "info",

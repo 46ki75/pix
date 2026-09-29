@@ -2,11 +2,14 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CLAUDE_USAGE_URL,
   CODEX_USAGE_URL,
+  MUSE_USAGE_URL,
   codexAccountId,
   fetchClaudeUsage,
   fetchCodexUsage,
+  fetchMuseUsage,
   parseClaudeUsage,
   parseCodexUsage,
+  parseMuseUsage,
 } from "./providers.ts";
 
 const NOW = Date.parse("2026-09-25T00:00:00Z");
@@ -261,6 +264,134 @@ describe("Codex payloads", () => {
   });
 });
 
+describe("Muse payloads", () => {
+  test("normalizes the reported rolling and weekly subscription windows", () => {
+    expect(
+      parseMuseUsage({
+        api_key: "LLM|must-be-discarded",
+        payment_method: "Visa-0000",
+        require_payment: false,
+        is_subs_active: true,
+        subs_usage: {
+          window: {
+            used_percent: 96,
+            window_duration_mins: 300,
+            resets_at: Date.parse(RESET) / 1000,
+          },
+          weekly: {
+            used_percent: 40,
+            resets_at: Date.parse("2026-10-02T00:00:00Z") / 1000,
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        id: "window",
+        label: "5-hour",
+        usedPercent: 96,
+        resetsAt: RESET,
+        windowSeconds: 18000,
+      },
+      {
+        id: "weekly",
+        label: "Weekly",
+        usedPercent: 40,
+        resetsAt: "2026-10-02T00:00:00.000Z",
+        windowSeconds: 604800,
+      },
+    ]);
+  });
+
+  test.each([
+    { is_subs_active: true },
+    { is_subs_active: true, subs_usage: null },
+  ])("keeps active logins whose mint response omits quota: %j", (payload) => {
+    expect(parseMuseUsage(payload)).toEqual([]);
+  });
+
+  test.each([-1, 0, 1e100])(
+    "omits an unusable Muse reset without discarding its window: %s",
+    (resets_at) => {
+      expect(
+        parseMuseUsage({
+          is_subs_active: true,
+          subs_usage: {
+            window: {
+              used_percent: 12,
+              window_duration_mins: 300,
+              resets_at,
+            },
+            weekly: { used_percent: 34, resets_at },
+          },
+        }),
+      ).toMatchObject([{ resetsAt: null }, { resetsAt: null }]);
+    },
+  );
+
+  test.each([
+    [
+      { require_payment: true, is_subs_active: false },
+      "requires a payment method",
+    ],
+    [{ is_subs_active: false }, "No active Meta Muse subscription"],
+    [{}, "No active Meta Muse subscription"],
+  ] as const)("reports subscription setup failures: %j", (payload, message) => {
+    expect(() => parseMuseUsage(payload)).toThrow(message);
+  });
+
+  test.each([
+    null,
+    [],
+    { is_subs_active: "yes" },
+    { is_subs_active: true, require_payment: "no" },
+    { is_subs_active: true, subs_usage: [] },
+    { is_subs_active: true, subs_usage: {} },
+    {
+      is_subs_active: true,
+      subs_usage: { window: {}, weekly: { used_percent: 1 } },
+    },
+    {
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: -1, window_duration_mins: 300 },
+        weekly: { used_percent: 1 },
+      },
+    },
+    {
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: 1, window_duration_mins: 0 },
+        weekly: { used_percent: 1 },
+      },
+    },
+    {
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: 1, window_duration_mins: "300" },
+        weekly: { used_percent: 1 },
+      },
+    },
+    {
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: 1, window_duration_mins: 1e30 },
+        weekly: { used_percent: 1 },
+      },
+    },
+    {
+      is_subs_active: true,
+      subs_usage: {
+        window: { used_percent: 1, window_duration_mins: 300 },
+        weekly: { used_percent: "1" },
+      },
+    },
+  ])("rejects malformed subscription quota data: %j", (payload) => {
+    expect(() => parseMuseUsage(payload)).toThrow(
+      "Unrecognized usage response.",
+    );
+  });
+});
+
 test("extracts only the Codex account routing claim", () => {
   expect(codexAccountId(CODEX_TOKEN)).toBe("account-test");
   for (const value of [
@@ -277,7 +408,7 @@ test("extracts only the Codex account routing claim", () => {
   }
 });
 
-test("fetchers accept tokens without Pi and make the documented read-only requests", async () => {
+test("fetchers accept tokens without Pi and make the documented requests", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   const fetch = vi
@@ -291,9 +422,19 @@ test("fetchers accept tokens without Pi and make the documented read-only reques
           primary_window: { used_percent: 5, reset_after_seconds: 18000 },
         },
       }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        is_subs_active: true,
+        subs_usage: {
+          window: { used_percent: 3, window_duration_mins: 300 },
+          weekly: { used_percent: 4 },
+        },
+      }),
     );
   const claude = await fetchClaudeUsage("claude-test-token", { fetch });
   const codex = await fetchCodexUsage(CODEX_TOKEN, { fetch });
+  const muse = await fetchMuseUsage("dca:muse-test-token", { fetch });
   expect(claude).toMatchObject({
     provider: "claude",
     fetchedAt: "2026-09-25T00:00:00.000Z",
@@ -303,6 +444,11 @@ test("fetchers accept tokens without Pi and make the documented read-only reques
     provider: "codex",
     fetchedAt: claude.fetchedAt,
     windows: [{ usedPercent: 5, resetsAt: RESET }],
+  });
+  expect(muse).toMatchObject({
+    provider: "muse",
+    fetchedAt: claude.fetchedAt,
+    windows: [{ usedPercent: 3 }, { usedPercent: 4 }],
   });
   expect(fetch).toHaveBeenNthCalledWith(
     1,
@@ -330,6 +476,21 @@ test("fetchers accept tokens without Pi and make the documented read-only reques
       },
     }),
   );
+  expect(fetch).toHaveBeenNthCalledWith(
+    3,
+    MUSE_USAGE_URL,
+    expect.objectContaining({
+      method: "POST",
+      redirect: "error",
+      body: "{}",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer dca:muse-test-token",
+        "Content-Type": "application/json",
+        "x-api-version": "1.0.0",
+      },
+    }),
+  );
 });
 
 test("invalid tokens never reach the network", async () => {
@@ -342,6 +503,15 @@ test("invalid tokens never reach the network", async () => {
   );
   await expect(fetchCodexUsage("not-a-jwt", { fetch })).rejects.toThrow(
     "Codex account ID is unavailable",
+  );
+  await expect(fetchMuseUsage("LLM|inference-key", { fetch })).rejects.toThrow(
+    "device-code OAuth login",
+  );
+  await expect(fetchMuseUsage("dca:", { fetch })).rejects.toThrow(
+    "device-code OAuth login",
+  );
+  await expect(fetchMuseUsage("dca:bad token", { fetch })).rejects.toThrow(
+    "device-code OAuth login",
   );
   expect(fetch).not.toHaveBeenCalled();
 });

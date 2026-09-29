@@ -5,7 +5,7 @@
     "access": "public"
   },
   "type": "module",
-  "description": "Claude and Codex subscription usage reports and a widget for Pi Coding Agent",
+  "description": "Claude, Codex, and Meta Muse subscription usage reports and a widget for Pi Coding Agent",
   "keywords": [
     "pi-package"
   ],

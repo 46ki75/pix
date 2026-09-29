@@ -52,7 +52,9 @@ export class UsageWidgetController {
         ? "claude"
         : providerId === "openai-codex"
           ? "codex"
-          : undefined;
+          : providerId === "meta"
+            ? "muse"
+            : undefined;
     if (!provider) {
       this.state = {
         status: providerId === undefined ? "no-model" : "unsupported",

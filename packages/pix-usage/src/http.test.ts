@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { abortable, getJson, MAX_RESPONSE_BYTES } from "./http.ts";
+import { abortable, getJson, MAX_RESPONSE_BYTES, postJson } from "./http.ts";
 
 const URL = "https://api.anthropic.com/api/oauth/usage";
 const HEADERS = { Authorization: "Bearer secret-token" };
@@ -20,6 +20,28 @@ test("reads bounded JSON even when UTF-8 code points cross chunks", async () => 
   await expect(getJson(URL, HEADERS, { fetch })).resolves.toEqual({
     label: "週",
   });
+});
+
+test("posts an empty JSON object with fixed JSON headers", async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValue(Response.json({ ok: true }));
+  await expect(postJson(URL, HEADERS, { fetch })).resolves.toEqual({
+    ok: true,
+  });
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    URL,
+    expect.objectContaining({
+      method: "POST",
+      redirect: "error",
+      body: "{}",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...HEADERS,
+      },
+    }),
+  );
 });
 
 test.each([

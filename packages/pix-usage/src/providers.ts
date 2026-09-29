@@ -1,8 +1,9 @@
-import { type FetchOptions, getJson } from "./http.ts";
+import { type FetchOptions, getJson, postJson } from "./http.ts";
 import { UsageError, type UsageSnapshot, type UsageWindow } from "./types.ts";
 
 export const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+export const MUSE_USAGE_URL = "https://api.meta.ai/muse-code/key";
 
 function invalid(): never {
   throw new UsageError("response", "Unrecognized usage response.");
@@ -121,6 +122,68 @@ export function parseCodexUsage(payload: unknown, now: number): UsageWindow[] {
   return windows;
 }
 
+function optionalBoolean(
+  data: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = data[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") invalid();
+  return value;
+}
+
+function epochReset(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) invalid();
+  if (value <= 0) return null;
+  const date = new Date(value * 1000);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+export function parseMuseUsage(payload: unknown): UsageWindow[] {
+  const data = record(payload);
+  const requiresPayment = optionalBoolean(data, "require_payment");
+  const active = optionalBoolean(data, "is_subs_active");
+  if (requiresPayment) {
+    throw new UsageError(
+      "auth",
+      "Meta Muse requires a payment method; finish setup at dev.meta.ai.",
+    );
+  }
+  if (active !== true) {
+    throw new UsageError(
+      "auth",
+      "No active Meta Muse subscription was found for this login.",
+    );
+  }
+  // Meta can omit this object while the rolling window is idle, even when the
+  // weekly limit has usage. Preserve that as unknown rather than inventing zeroes.
+  if (data.subs_usage === undefined || data.subs_usage === null) return [];
+
+  const usage = record(data.subs_usage);
+  const primary = record(usage.window);
+  const weekly = record(usage.weekly);
+  const minutes = nonnegative(primary.window_duration_mins);
+  const windowSeconds = Math.round(minutes) * 60;
+  if (!Number.isSafeInteger(windowSeconds) || windowSeconds <= 0) invalid();
+  return [
+    {
+      id: "window",
+      label: codexLabel(windowSeconds, "Primary"),
+      usedPercent: nonnegative(primary.used_percent),
+      resetsAt: epochReset(primary.resets_at),
+      windowSeconds,
+    },
+    {
+      id: "weekly",
+      label: "Weekly",
+      usedPercent: nonnegative(weekly.used_percent),
+      resetsAt: epochReset(weekly.resets_at),
+      windowSeconds: 7 * 86400,
+    },
+  ];
+}
+
 export function codexAccountId(accessToken: string): string {
   try {
     const parts = accessToken.split(".");
@@ -153,6 +216,16 @@ function authorization(accessToken: string): string {
     throw new UsageError("auth", "Invalid subscription access token.");
   }
   return `Bearer ${accessToken}`;
+}
+
+function museAuthorization(identityToken: string): string {
+  if (!/^dca:\S+$/.test(identityToken)) {
+    throw new UsageError(
+      "auth",
+      "Meta Muse usage requires a device-code OAuth login; use /login meta.",
+    );
+  }
+  return `Bearer ${identityToken}`;
 }
 
 export async function fetchClaudeUsage(
@@ -191,5 +264,24 @@ export async function fetchCodexUsage(
     provider: "codex",
     fetchedAt: isoDate(now),
     windows: parseCodexUsage(payload, now),
+  };
+}
+
+export async function fetchMuseUsage(
+  identityToken: string,
+  options: FetchOptions = {},
+): Promise<UsageSnapshot> {
+  const payload = await postJson(
+    MUSE_USAGE_URL,
+    {
+      Authorization: museAuthorization(identityToken),
+      "x-api-version": "1.0.0",
+    },
+    options,
+  );
+  return {
+    provider: "muse",
+    fetchedAt: new Date().toISOString(),
+    windows: parseMuseUsage(payload),
   };
 }
