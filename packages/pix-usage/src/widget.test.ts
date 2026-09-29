@@ -82,8 +82,8 @@ test.each([
     );
     expect(rows).toEqual([
       `── 󱘖 Usage ${"─".repeat(109)}`,
-      ` ${name} 󱛡 Weekly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
-      ` ${name}  5-hour 󰓅 12.3%  2h 15m 2026-09-25 02:15:00 (UTC)`,
+      ` ${name} 󱛡 Weekly 󰓅   93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)`,
+      ` ${name}  5-hour 󰓅 12.3%      2h 15m 2026-09-25 02:15:00 (UTC)`,
     ]);
     expect(rows.join("\n")).not.toMatch(/checked|fetched/i);
   },
@@ -116,6 +116,47 @@ test("uses the monthly icon for OpenCode's variable-duration window", () => {
   ).toBe(
     " 󰅩 OpenCode Go 󰸗 Monthly 󰓅  93%  3d  9h 47m 2026-09-28 09:47:00 (UTC)",
   );
+});
+
+test("aligns multi-window widget columns to their widest values", () => {
+  const now = Date.parse("2026-09-29T22:28:06.000Z");
+  const rows = plain(
+    success("opencode", [
+      window({
+        id: "rolling",
+        label: "5-hour",
+        usedPercent: 0,
+        resetsAt: "2026-09-30T03:28:05.000Z",
+        windowSeconds: 18000,
+      }),
+      window({
+        id: "weekly",
+        label: "Weekly",
+        usedPercent: 2,
+        resetsAt: "2026-10-05T00:00:00.000Z",
+        windowSeconds: 604800,
+      }),
+      window({
+        id: "monthly",
+        label: "Monthly",
+        usedPercent: 1,
+        resetsAt: "2026-10-29T12:59:19.000Z",
+        windowSeconds: null,
+      }),
+    ]),
+    now,
+  ).slice(1);
+  expect(rows).toEqual([
+    " 󰅩 OpenCode Go  5-hour  󰓅   0%       4h 59m 2026-09-30 03:28:05 (UTC)",
+    " 󰅩 OpenCode Go 󱛡 Weekly  󰓅   2%   5d  1h 31m 2026-10-05 00:00:00 (UTC)",
+    " 󰅩 OpenCode Go 󰸗 Monthly 󰓅   1%  29d 14h 31m 2026-10-29 12:59:19 (UTC)",
+  ]);
+  for (const marker of ["󰓅", "", "2026-"]) {
+    const columns = rows.map((row) =>
+      visibleWidth(row.slice(0, row.indexOf(marker))),
+    );
+    expect(new Set(columns).size).toBe(1);
+  }
 });
 
 test.each([
@@ -167,20 +208,27 @@ test.each([
   },
 );
 
-test("fits reset timestamps independently for each quota row", () => {
+test("accounts for aligned columns when deciding whether timestamps fit", () => {
   const resetsAt = "2026-09-30T22:59:59Z";
   const now = Date.parse("2026-09-30T13:20:00Z");
-  const short = "  Claude 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)";
+  const short = "  Claude 󱛡 Weekly        󰓅  93%  9h 39m";
   const long = "  Claude 󱛡 Sonnet weekly 󰓅  93%  9h 39m";
+  const timestamp = " 2026-09-30 22:59:59 (UTC)";
   const state = success("claude", [
     window({ resetsAt }),
     window({ label: "Sonnet weekly", resetsAt }),
   ]);
+  const theme = makeTheme();
   expect(
-    renderUsageWidget(state, visibleWidth(short), makeTheme(), now)
+    renderUsageWidget(state, visibleWidth(short + timestamp) - 1, theme, now)
       .slice(1)
       .map(stripVTControlCharacters),
   ).toEqual([short, long]);
+  expect(
+    renderUsageWidget(state, visibleWidth(short + timestamp), theme, now)
+      .slice(1)
+      .map(stripVTControlCharacters),
+  ).toEqual([short + timestamp, long + timestamp]);
 });
 
 test("unknown resets never add an absolute timestamp even with ample space", () => {

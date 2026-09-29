@@ -63,6 +63,10 @@ const plainText: UsageTextFormatter = (_color, text) => text;
 export function usageWindowColumnWidths(
   windows: readonly UsageWindow[],
   now: number,
+  options: {
+    minimumResetWidth?: number;
+    trimResetStart?: boolean;
+  } = {},
 ): UsageWindowColumnWidths {
   return {
     label: Math.max(
@@ -78,14 +82,13 @@ export function usageWindowColumnWidths(
       ),
     ),
     reset: Math.max(
-      10,
-      ...windows.map((window) =>
-        visibleWidth(
-          window.resetsAt
-            ? relativeResetTime(window.resetsAt, now)
-            : "-d --h --m",
-        ),
-      ),
+      options.minimumResetWidth ?? 10,
+      ...windows.map((window) => {
+        const reset = window.resetsAt
+          ? relativeResetTime(window.resetsAt, now)
+          : "-d --h --m";
+        return visibleWidth(options.trimResetStart ? reset.trimStart() : reset);
+      }),
     ),
   };
 }
