@@ -1,0 +1,152 @@
+import { readFile, rm, stat } from "node:fs/promises";
+import { dirname } from "node:path";
+import { expect, test } from "vitest";
+import {
+  formatContent,
+  formatEditableContent,
+  MAX_TEXT_BYTES,
+  removeEditablePromptGuard,
+} from "./output.ts";
+
+test("keeps text and supported images in order", async () => {
+  const response = await formatContent(
+    [
+      { type: "text", text: "ok" },
+      { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+    ],
+    { artifact: {} },
+  );
+  expect(response.content[0]).toMatchObject({
+    type: "text",
+    text: expect.stringContaining("ok"),
+  });
+  expect(response.content[1]).toEqual({
+    type: "image",
+    mimeType: "image/png",
+    data: "aGVsbG8=",
+  });
+  expect(response.details).toEqual({ truncated: false });
+});
+
+test.each([0, 1, 2])(
+  "enforces the decoded 4 MiB image boundary (extra bytes=%s)",
+  async (extra) => {
+    const data = Buffer.alloc(4 * 1024 * 1024 + extra).toString("base64");
+    const content = [{ type: "image" as const, mimeType: "image/png", data }];
+    const response = await formatContent(content, { artifact: { content } });
+    const path = response.details.fullOutputPath;
+    try {
+      expect(response.content.some((block) => block.type === "image")).toBe(
+        extra === 0,
+      );
+      expect(response.details.truncated).toBe(extra !== 0);
+      if (extra > 0) {
+        expect(path).toBeDefined();
+        if (!path) throw new Error("Missing full image artifact");
+        expect(JSON.parse(await readFile(path, "utf8")).content[0].data).toBe(
+          data,
+        );
+      }
+    } finally {
+      if (path) await rm(dirname(path), { recursive: true, force: true });
+    }
+  },
+);
+
+test("ordered content omits images beyond the byte-bounded preview", async () => {
+  const source = "日本語".repeat(10_000);
+  const response = await formatContent(
+    [
+      { type: "text", text: source },
+      { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+      { type: "text", text: "tail" },
+    ],
+    { artifact: { source } },
+  );
+  const path = response.details.fullOutputPath;
+  expect(path).toBeDefined();
+  if (!path) throw new Error("No artifact");
+  try {
+    const expected = Buffer.from(source)
+      .subarray(0, MAX_TEXT_BYTES)
+      .toString("utf8")
+      .replace(/\uFFFD$/, "");
+    expect(response.content[0]).toEqual({ type: "text", text: expected });
+    expect(response.content.some((block) => block.type === "image")).toBe(
+      false,
+    );
+    expect(Buffer.byteLength(expected)).toBeLessThanOrEqual(MAX_TEXT_BYTES);
+  } finally {
+    await rm(dirname(path), { recursive: true, force: true });
+  }
+});
+
+test.each(["/new", "!rm -rf example", " \r\n!echo safe\u001b[31m"])(
+  "guards command-like editable content and strips terminal controls: %j",
+  async (source) => {
+    const editable = await formatEditableContent([
+      { type: "text", text: source },
+    ]);
+    expect(editable.guard).toBeDefined();
+    if (!editable.guard) throw new Error("Missing editor command guard");
+    expect(editable.text.startsWith(editable.guard)).toBe(true);
+    const unguarded = removeEditablePromptGuard(editable.text, editable.guard);
+    expect(
+      removeEditablePromptGuard(
+        `concurrent${editable.text}input`,
+        editable.guard,
+      ),
+    ).toBe(`concurrent${unguarded}input`);
+    expect(unguarded).not.toContain("\r");
+    expect(unguarded).not.toContain("\u001b");
+    expect(unguarded.trimStart()).toMatch(/^[!/]/u);
+    await editable.cleanup();
+  },
+);
+
+test("materializes prompt images as private references in editable content", async () => {
+  const editable = await formatEditableContent([
+    { type: "text", text: "Before" },
+    { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+    { type: "text", text: "\n\nAfter" },
+  ]);
+  const path = editable.text.match(/@"([^"]+)"/)?.[1];
+  expect(path).toBeDefined();
+  if (!path) throw new Error("Missing image reference");
+  try {
+    expect(editable.text).toBe(`Before\n\n@"${path}"\n\nAfter`);
+    expect(await readFile(path, "utf8")).toBe("hello");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
+  } finally {
+    await editable.cleanup();
+  }
+  await expect(stat(dirname(path))).rejects.toThrow();
+});
+
+test("spills oversized output and unsupported content without silently dropping it", async () => {
+  const content = [
+    { type: "text" as const, text: "日本語\n".repeat(9000) },
+    { type: "audio" as const, data: "aGVsbG8=", mimeType: "audio/wav" },
+  ];
+  const response = await formatContent(content, { artifact: { content } });
+  const path = response.details.fullOutputPath;
+  expect(path).toBeDefined();
+  if (!path) throw new Error("No artifact");
+  try {
+    const text = response.content[0];
+    if (text?.type !== "text") throw new Error("Missing text");
+    expect(Buffer.byteLength(text.text)).toBeLessThan(MAX_TEXT_BYTES + 1000);
+    expect(text.text).not.toContain("�");
+    expect(response.content).toContainEqual({
+      type: "text",
+      text: expect.stringContaining(path),
+    });
+    const full = JSON.parse(await readFile(path, "utf8"));
+    expect(full.content[1].type).toBe("audio");
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
+  } finally {
+    await rm(dirname(path), { recursive: true, force: true });
+  }
+});

@@ -4,6 +4,15 @@ A small Pi MCP adapter: discover tools, load their schemas on demand, call
 those tools natively, and use user-selected MCP prompts and resources. No
 scripting engine or model-provider-specific API is required.
 
+## Migration status
+
+This legacy adapter remains available while
+[`pix-mcp-prompt`](../pix-mcp-prompt/README.md) is validated for Pi 0.99.2.
+The new package uses native `mcp.json` for prompts and leaves tools/resources to
+Pi. It is currently private and unreleased; this package is not yet deprecated.
+Read its migration guide before switching, and do not load both packages in one
+session. Previously published versions will remain available.
+
 ## Usage
 
 To load this package in an existing Pi installation:

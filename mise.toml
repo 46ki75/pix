@@ -53,7 +53,7 @@ description = "Launch Pi with all local extensions and themes; accepts Pi argume
 dir = "{{config_root}}"
 raw_args = true
 raw = true
-run = "pnpm exec pi --no-extensions -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
+run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp-prompt -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
 
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
@@ -67,8 +67,15 @@ dir = "{{config_root}}/packages/pix-webfetch"
 raw = true
 run = "pnpm exec pi -e ."
 
+[tasks."mcp-prompt:dev"]
+description = "Launch native MCP and @ikuma.cloud/pix-mcp-prompt; accepts Pi arguments"
+dir = "{{config_root}}"
+raw_args = true
+raw = true
+run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-mcp-prompt"
+
 [tasks."mcp:dev"]
-description = "Launch Pi with only @ikuma.cloud/pix-mcp; accepts Pi arguments"
+description = "Launch legacy @ikuma.cloud/pix-mcp; accepts Pi arguments"
 dir = "{{config_root}}/packages/pix-mcp"
 raw_args = true
 raw = true

@@ -3,6 +3,7 @@
   "compaction": {
     "enabled": true
   },
+  "extensions": ["-builtin:mcp"],
   "packages": [
     "npm:@ikuma.cloud/pix-webfetch",
     "npm:@ikuma.cloud/pix-websearch",
