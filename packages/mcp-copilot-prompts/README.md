@@ -37,18 +37,22 @@ The server communicates over stdio. A typical project-level MCP declaration is:
 ```
 
 MCP configuration files and working-directory behavior are client-specific. With
-[`@ikuma.cloud/pix-mcp`](https://github.com/46ki75/pix/tree/main/packages/pix-mcp), place this entry in the project's
-`.mcp.json`; its default stdio working directory is the directory containing that
-file. Then use:
+[`@ikuma.cloud/pix-mcp-prompt`](https://github.com/46ki75/pix/tree/main/packages/pix-mcp-prompt), place this entry in
+the project's native `.pi/mcp.json` and grant Pi project trust. The server's
+working directory defaults to the Pi session directory. This prompt extension
+is currently an unreleased local-checkout preview for Pi 0.99.2. Then use:
 
 ```text
 /mcp-prompt
 /mcp-prompt run copilot-prompts <prompt> [name=value ...]
 ```
 
-Review project MCP configuration before loading it. In particular, a bare
-`.mcp.json` is not protected by Pi's project-trust mechanism and can declare any
-local executable.
+Review project MCP configuration before approving it: it can declare any local
+executable. Native Pi handles tools/resources but does not expose MCP prompts;
+load the prompt extension for these commands. It opens a separate connection on
+first use because Pi does not expose shared MCP clients. Existing `pix-mcp`
+users can keep their installation until migration is complete; its bare
+`.mcp.json` configuration is not protected by project trust.
 
 ### Command-line options
 
@@ -63,8 +67,9 @@ Root selection uses explicit `--root` values first. Without them, the server
 uses roots supplied by an MCP client that supports `roots/list`, falling back to
 its working directory when that capability is unavailable. Empty client roots
 produce an empty prompt catalog; a failed `roots/list` request also fails closed
-with no roots. `pix-mcp` does not currently supply MCP roots, so use `--root .`
-there.
+with no roots. `pix-mcp-prompt` supplies the session directory as an MCP root,
+like native Pi. The legacy `pix-mcp` adapter does not supply roots; use an
+explicit `--root` when retaining that client.
 
 For each root, the server discovers direct `.prompt.md` children of
 `.github/prompts`. Unique Copilot names remain unchanged. A name shared across

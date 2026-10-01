@@ -49,7 +49,8 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
-| `mise run mcp:dev` | Launch Pi with only @ikuma.cloud/pix-mcp |
+| `mise run mcp-prompt:dev` | Launch native MCP with @ikuma.cloud/pix-mcp-prompt |
+| `mise run mcp:dev` | Launch the legacy @ikuma.cloud/pix-mcp adapter |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 | `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
@@ -73,17 +74,23 @@ Its tests run with `mise run test --project pix-webfetch`.
 Web search and web fetch have separate package versions and runtime dependencies,
 so provider updates and content-extraction updates can be released independently.
 
-[`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) connects to configured stdio and
-Streamable HTTP MCP servers, exposes compact discovery, activates native tool
-schemas on demand, and uses user-selected MCP prompts and resources. Run
-`mise run mcp:dev` for an isolated development launch or
-`mise run test --project pix-mcp` for its tests. Review its configuration and
-automatic startup behavior before connecting servers. Tool-call permissions are
-left to Pi extensions rather than enforced by the adapter.
+[`@ikuma.cloud/pix-mcp-prompt`](packages/pix-mcp-prompt/README.md) is a private
+migration preview for Pi **0.99.2**. It preserves `/mcp-prompt` while native Pi
+handles tools and resources, using the same `mcp.json` configuration and project
+trust. Prompt connections are separate and opened on first use. Run
+`mise run mcp-prompt:dev` or `mise run test --project pix-mcp-prompt`.
+The root development CLI is pinned to 0.99.2; existing packages retain their
+independently tested development versions.
+
+[`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) remains available as the legacy
+adapter until its replacement is published and verified. Run `mise run mcp:dev`
+or `mise run test --project pix-mcp` for its isolated development/tests. Do not
+load both packages in one session. See the new package's migration guide before
+changing configuration or removing the old adapter.
 
 [`@ikuma.cloud/mcp-copilot-prompts`](packages/mcp-copilot-prompts/README.md) is a
 local stdio MCP server that exposes repository `.github/prompts/*.prompt.md`
-files as user-selected MCP prompts. It works with `pix-mcp` and other clients
+files as user-selected MCP prompts. It works with `pix-mcp-prompt` and other clients
 that implement MCP prompts. Run `mise run test --project mcp-copilot-prompts`
 for its tests.
 
