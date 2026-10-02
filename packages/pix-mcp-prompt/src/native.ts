@@ -11,7 +11,7 @@ import {
   type RegisteredMcpServer,
 } from "@earendil-works/pi-coding-agent";
 
-const SUPPORTED_PI_VERSION = "0.99.2";
+const SUPPORTED_PI_VERSION = "1.0.0";
 
 interface NativeAuthProvider {
   token(): Promise<string | undefined>;
@@ -25,6 +25,7 @@ interface NativeOAuthSettings {
   callbackUrl?: string | undefined;
   scope?: string | undefined;
   clientName?: string | undefined;
+  authServerMetadataUrl?: URL | undefined;
 }
 
 interface NativeHelpers {
@@ -39,7 +40,7 @@ interface NativeHelpers {
     authProvider: NativeAuthProvider | undefined,
   ): McpTransport;
   McpOAuthCredentialStore: new () => {
-    forServer(serverUrl: string): unknown;
+    forServer(name: string, serverUrl: string): unknown;
   };
   createMcpAuthProvider(options: {
     serverUrl: string;
@@ -155,7 +156,8 @@ export async function createNativeTransport(
     const oauth = entry.config.oauth;
     authProvider = helpers.createMcpAuthProvider({
       serverUrl: entry.config.url,
-      store: credentials.forServer(entry.config.url),
+      // Pi 1.0 keys credentials and refresh locks by name AND URL to isolate accounts.
+      store: credentials.forServer(entry.name, entry.config.url),
       settings: () => ({
         clientId: oauth?.clientId,
         clientSecret:
@@ -169,6 +171,9 @@ export async function createNativeTransport(
         callbackUrl: oauth?.callbackUrl,
         scope: oauth?.scope,
         clientName: oauth?.clientName,
+        authServerMetadataUrl: oauth?.authServerMetadataUrl
+          ? new URL(oauth.authServerMetadataUrl)
+          : undefined,
       }),
       // Browser authorization is deliberately owned by Pi's explicit MCP login flow.
       onChallenge: () => {},

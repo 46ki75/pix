@@ -7,11 +7,11 @@ scripting engine or model-provider-specific API is required.
 ## Migration status
 
 This legacy adapter remains available while
-[`pix-mcp-prompt`](../pix-mcp-prompt/README.md) is validated for Pi 0.99.2.
+[`pix-mcp-prompt`](../pix-mcp-prompt/README.md) is validated for Pi 1.0.0.
 The new package uses native `mcp.json` for prompts and leaves tools/resources to
-Pi. It is currently private and unreleased; this package is not yet deprecated.
-Read its migration guide before switching, and do not load both packages in one
-session. Previously published versions will remain available.
+Pi. This legacy package is not yet deprecated. Read the replacement's migration
+guide before switching, and do not load both packages in one session. Previously
+published versions will remain available.
 
 ## Usage
 

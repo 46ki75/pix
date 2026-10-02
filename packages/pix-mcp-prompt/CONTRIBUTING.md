@@ -21,6 +21,6 @@ another configuration parser or credential store. When supporting another Pi
 version, inspect its shipped implementation, update the version gate, and verify
 configuration, trust, authentication, and lifecycle tests before widening support.
 
-Keep the package private during migration. Before release, inspect its packed
-artifact, test loading it into a clean Pi installation, and validate the picker
-interactively. Publish the replacement before deprecating the legacy package.
+Before each release, inspect the packed artifact, test loading it into a clean
+Pi installation, and validate the picker interactively. Publish and verify the
+replacement before deprecating the legacy package.
