@@ -3,8 +3,8 @@
 User-selected MCP prompts alongside Pi's native tools and resources.
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
-This package is a private, unreleased migration preview for **Pi 0.99.2**. Load it
-from this checkout; do not install it from npm yet:
+This version targets **Pi 1.0.0**. Load it from this checkout to test it before
+release:
 
 ```sh
 pi -e /absolute/path/to/pix/packages/pix-mcp-prompt
@@ -48,8 +48,11 @@ and whole-value `!command` resolution. Review configuration before trusting it:
 it can execute programs and contact remote services.
 
 Sign in with native `/mcp` or `pi mcp login`. Prompt connections use the same
-`mcp-auth.json` and refresh locks. Provider authentication uses Pi's provider
-credentials; project configuration cannot request provider authentication.
+`mcp-auth.json` and refresh locks. OAuth accounts are keyed by server name and
+URL, including Pi's migration of legacy URL-only credentials. The native
+`oauth.authServerMetadataUrl` override also applies to prompt token refreshes.
+Provider authentication uses Pi's provider credentials; project configuration
+cannot request provider authentication.
 Embedded SDK hosts should set `PI_CODING_AGENT_DIR` as well as their SDK
 `agentDir`, matching the native MCP extension's use of `getAgentDir()`.
 
@@ -77,7 +80,7 @@ and arguments; MCP `completion/complete` is not implemented.
 
 ## Connections and compatibility
 
-Pi 0.99.2 does not expose its connected MCP clients. This extension therefore
+Pi 1.0.0 does not expose its connected MCP clients. This extension therefore
 opens **a separate connection**, including a second process for stdio servers.
 It waits until the first prompt command to do so; native Pi may already have
 connected the same servers at startup. Prompt discovery never requests tools or
@@ -91,9 +94,10 @@ prompt client reconnects when next needed.
 
 Native configuration and authentication helpers are shipped but not public
 exports. `src/native.ts` isolates their use and **rejects host versions other than
-0.99.2** rather than silently changing trust or credential behavior. Future Pi
-versions require explicit compatibility validation. This is not a shared-client
-API or a claim of upstream support.
+1.0.0** rather than silently changing trust or credential behavior. This revision
+replaces the 0.99.2 adapter; it does not support older hosts. Future Pi versions
+require explicit compatibility validation. This is not a shared-client API or a
+claim of upstream support.
 
 ## Content and safety
 
@@ -116,8 +120,8 @@ a sandbox: server content and local executables remain untrusted.
 
 ## Migrating from pix-mcp
 
-1. Keep the existing installation available until this preview is validated for
-   your servers. Never load both extensions in one session.
+1. Keep the existing installation available until this replacement is validated
+   for your servers. Never load both extensions in one session.
 2. Move project entries from `.mcp.json` to `.pi/mcp.json` and grant project trust.
 3. Convert `disabled: true` to `enabled: false`; convert `timeout` from
    milliseconds to seconds. Remove `startupTimeoutMs` and `catalogTimeoutMs`.

@@ -1,4 +1,11 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -67,7 +74,7 @@ function transportContext(
 }
 
 test("loads native global and trusted project MCP configuration", async () => {
-  expect(VERSION).toBe("0.99.2");
+  expect(VERSION).toBe("1.0.0");
   const { agentDir, cwd } = await sandbox();
   const globalPath = join(agentDir, "mcp.json");
   const projectPath = join(cwd, ".pi", "mcp.json");
@@ -173,6 +180,35 @@ test("preserves native errors and lets file entries override registered aliases"
     loaded.servers.find((entry) => entry.name === "disabled-extension")?.config
       .enabled,
   ).toBe(false);
+});
+
+test("rejects provider authentication from trusted project configuration", async () => {
+  const { agentDir, cwd } = await sandbox();
+  await writeJson(join(agentDir, "mcp.json"), {
+    mcpServers: {
+      provider: {
+        url: "https://global.example.test/mcp",
+        auth: { provider: "fixture-provider" },
+      },
+    },
+  });
+  await writeJson(join(cwd, ".pi", "mcp.json"), {
+    mcpServers: {
+      provider: {
+        url: "https://project.example.test/mcp",
+        auth: { provider: "fixture-provider" },
+      },
+    },
+  });
+
+  const loaded = await loadServers(loadContext(cwd, true), []);
+
+  expect(loaded.errors).toEqual([
+    expect.stringContaining("auth is only allowed in the global mcp.json"),
+  ]);
+  expect(loaded.servers).toMatchObject([
+    { scope: "global", config: { url: "https://global.example.test/mcp" } },
+  ]);
 });
 
 test("does not read legacy MCP configuration files", async () => {
@@ -284,12 +320,166 @@ test("uses model provider credentials without copying them into MCP storage", as
   await expect(settled()).resolves.toBeUndefined();
 });
 
+test("keeps native OAuth accounts separate by server name and URL", async () => {
+  const { agentDir, cwd } = await sandbox();
+  const url = "https://oauth.example.test/mcp";
+  await writeJson(join(agentDir, "mcp-auth.json"), {
+    [`mcp__work_account|${url}`]: {
+      serverUrl: url,
+      tokens: { access_token: "work-token", token_type: "Bearer" },
+    },
+    [`mcp__personal|${url}`]: {
+      serverUrl: url,
+      tokens: { access_token: "personal-token", token_type: "Bearer" },
+    },
+  });
+
+  for (const [name, serverUrl, token] of [
+    ["work-account", url, "work-token"],
+    ["work_account", url, "work-token"],
+    ["personal", url, "personal-token"],
+    ["other", url, undefined],
+    ["work-account", "https://other.example.test/mcp", undefined],
+  ] as const) {
+    const { transport, settled } = await createNativeTransport(
+      { name, source: "test", config: { url: serverUrl } },
+      transportContext(cwd),
+    );
+    const authProvider = (transport as StreamableHttpTransport).options
+      .authProvider;
+    expect(authProvider).toBeDefined();
+    await expect(authProvider?.token()).resolves.toBe(token);
+    await settled();
+  }
+});
+
+test("delegates legacy OAuth credential migration to Pi for only the first account", async () => {
+  const { agentDir, cwd } = await sandbox();
+  const url = "https://oauth.example.test/mcp";
+  const authPath = join(agentDir, "mcp-auth.json");
+  const state = {
+    serverUrl: url,
+    tokens: { access_token: "legacy-token", token_type: "Bearer" },
+  };
+  await writeJson(authPath, { [url]: state });
+
+  for (const [name, token] of [
+    ["first", "legacy-token"],
+    ["second", undefined],
+  ] as const) {
+    const { transport, settled } = await createNativeTransport(
+      { name, source: "test", config: { url } },
+      transportContext(cwd),
+    );
+    const authProvider = (transport as StreamableHttpTransport).options
+      .authProvider;
+    await expect(authProvider?.token()).resolves.toBe(token);
+    await settled();
+  }
+  expect(JSON.parse(await readFile(authPath, "utf8"))).toEqual({
+    [`mcp__first|${url}`]: state,
+  });
+});
+
+test("refreshes native OAuth tokens using the configured authorization metadata URL", async () => {
+  const { agentDir, cwd } = await sandbox();
+  const url = "https://oauth.example.test/mcp";
+  const resourceMetadataUrl =
+    "https://oauth.example.test/.well-known/oauth-protected-resource/mcp";
+  const metadataUrl = "https://auth.example.test/custom/metadata";
+  const tokenUrl = "https://auth.example.test/token";
+  const authPath = join(agentDir, "mcp-auth.json");
+  await writeJson(authPath, {
+    [`mcp__oauth|${url}`]: {
+      serverUrl: url,
+      tokens: {
+        access_token: "stale-token",
+        refresh_token: "refresh-token",
+        token_type: "Bearer",
+      },
+    },
+  });
+  const { transport, settled } = await createNativeTransport(
+    {
+      name: "oauth",
+      source: "test",
+      config: {
+        url,
+        oauth: {
+          clientId: "fixture-client",
+          authServerMetadataUrl: metadataUrl,
+        },
+      },
+    },
+    transportContext(cwd),
+  );
+  const authProvider = (transport as StreamableHttpTransport).options
+    .authProvider;
+  if (!authProvider?.onUnauthorized)
+    throw new Error("Missing native OAuth provider");
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+    const requestedUrl = String(input);
+    if (requestedUrl === resourceMetadataUrl) {
+      return Response.json({
+        resource: url,
+        authorization_servers: ["https://wrong-issuer.example.test"],
+      });
+    }
+    if (requestedUrl === metadataUrl) {
+      return Response.json({
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: tokenUrl,
+        response_types_supported: ["code"],
+        token_endpoint_auth_methods_supported: ["none"],
+      });
+    }
+    if (requestedUrl === tokenUrl) {
+      expect(init?.method).toBe("POST");
+      const body = new URLSearchParams(String(init?.body));
+      expect(body.get("grant_type")).toBe("refresh_token");
+      expect(body.get("refresh_token")).toBe("refresh-token");
+      expect(body.get("client_id")).toBe("fixture-client");
+      return Response.json({
+        access_token: "fresh-token",
+        refresh_token: "rotated-refresh-token",
+        token_type: "Bearer",
+      });
+    }
+    throw new Error(`Unexpected OAuth request: ${requestedUrl}`);
+  });
+
+  await authProvider.onUnauthorized({
+    response: new Response(undefined, { status: 401 }),
+    serverUrl: new URL(url),
+    fetch,
+    token: "stale-token",
+  });
+  await settled();
+
+  expect(fetch.mock.calls.map(([input]) => String(input))).toEqual([
+    resourceMetadataUrl,
+    metadataUrl,
+    tokenUrl,
+  ]);
+  await expect(authProvider.token()).resolves.toBe("fresh-token");
+  expect(JSON.parse(await readFile(authPath, "utf8"))).toMatchObject({
+    [`mcp__oauth|${url}`]: {
+      tokens: {
+        access_token: "fresh-token",
+        refresh_token: "rotated-refresh-token",
+      },
+    },
+  });
+});
+
 test("uses Pi's native OAuth store and propagates secret resolution errors", async () => {
   const { agentDir, cwd } = await sandbox();
   vi.stubEnv("PIX_NATIVE_OAUTH_SECRET", undefined);
   const url = "https://oauth.example.test/mcp";
   await writeJson(join(agentDir, "mcp-auth.json"), {
     [url]: {
+      serverUrl: url,
       tokens: {
         access_token: "stale-access-token",
         refresh_token: "refresh-token",
