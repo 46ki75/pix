@@ -11,7 +11,8 @@ import {
   type RegisteredMcpServer,
 } from "@earendil-works/pi-coding-agent";
 
-const SUPPORTED_PI_VERSION = "1.0.0";
+// Private helpers need validation per release, including patch releases.
+const SUPPORTED_PI_VERSIONS = ["1.0.0", "1.0.2"];
 
 interface NativeAuthProvider {
   token(): Promise<string | undefined>;
@@ -25,6 +26,7 @@ interface NativeOAuthSettings {
   callbackUrl?: string | undefined;
   scope?: string | undefined;
   clientName?: string | undefined;
+  clientRegistration?: "dcr" | "cimd" | undefined;
   authServerMetadataUrl?: URL | undefined;
 }
 
@@ -58,14 +60,14 @@ interface NativeHelpers {
 let nativeHelpersPromise: Promise<NativeHelpers> | undefined;
 
 async function nativeHelpers(): Promise<NativeHelpers> {
-  if (VERSION !== SUPPORTED_PI_VERSION) {
+  if (!SUPPORTED_PI_VERSIONS.includes(VERSION)) {
     throw new Error(
-      `pix-mcp-prompt native MCP compatibility error: expected @earendil-works/pi-coding-agent ${SUPPORTED_PI_VERSION}, found ${VERSION}`,
+      `pix-mcp-prompt native MCP compatibility error: expected @earendil-works/pi-coding-agent ${SUPPORTED_PI_VERSIONS.join(" or ")}, found ${VERSION}`,
     );
   }
 
   // Pi does not export these helpers from its package API. Keep their unstable paths and
-  // signatures behind this single, version-pinned adapter rather than copying native behavior.
+  // signatures behind this single, version-gated adapter rather than copying native behavior.
   nativeHelpersPromise ??= (async () => {
     const internalUrl = (path: string) =>
       pathToFileURL(resolve(getPackageDir(), path)).href;
@@ -171,6 +173,7 @@ export async function createNativeTransport(
         callbackUrl: oauth?.callbackUrl,
         scope: oauth?.scope,
         clientName: oauth?.clientName,
+        clientRegistration: oauth?.clientRegistration,
         authServerMetadataUrl: oauth?.authServerMetadataUrl
           ? new URL(oauth.authServerMetadataUrl)
           : undefined,

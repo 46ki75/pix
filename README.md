@@ -75,11 +75,11 @@ Web search and web fetch have separate package versions and runtime dependencies
 so provider updates and content-extraction updates can be released independently.
 
 [`@ikuma.cloud/pix-mcp-prompt`](packages/pix-mcp-prompt/README.md) is a prompt
-companion for Pi **1.0.0**. It preserves `/mcp-prompt` while native Pi
+companion for Pi **1.0.0 and 1.0.2**. It preserves `/mcp-prompt` while native Pi
 handles tools and resources, using the same `mcp.json` configuration and project
 trust. Prompt connections are separate and opened on first use. Run
 `mise run mcp-prompt:dev` or `mise run test --project pix-mcp-prompt`.
-The root development CLI is pinned to 1.0.0; existing packages retain their
+The root development CLI is pinned to 1.0.2; existing packages retain their
 independently tested development versions.
 
 [`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) remains available as the legacy

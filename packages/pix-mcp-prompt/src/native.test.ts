@@ -74,7 +74,7 @@ function transportContext(
 }
 
 test("loads native global and trusted project MCP configuration", async () => {
-  expect(VERSION).toBe("1.0.0");
+  expect(VERSION).toBe("1.0.2");
   const { agentDir, cwd } = await sandbox();
   const globalPath = join(agentDir, "mcp.json");
   const projectPath = join(cwd, ".pi", "mcp.json");
@@ -120,6 +120,41 @@ test("loads native global and trusted project MCP configuration", async () => {
     config: { command: "project-shared" },
   });
   expect(trusted.servers[2]?.config.enabled).toBe(false);
+});
+
+test("applies trusted project state-only overrides while preserving global credentials", async () => {
+  const { agentDir, cwd } = await sandbox();
+  const globalPath = join(agentDir, "mcp.json");
+  const projectPath = join(cwd, ".pi", "mcp.json");
+  const config = {
+    url: "https://global.example.test/mcp",
+    auth: { provider: "fixture-provider" },
+    headers: { "X-Fixture": "global-header" },
+  };
+  await writeJson(globalPath, { mcpServers: { provider: config } });
+  await writeJson(projectPath, {
+    mcpServers: {
+      provider: { enabled: false, exposure: "direct" },
+    },
+  });
+
+  const untrusted = await loadServers(loadContext(cwd, false), []);
+  expect(untrusted.errors).toEqual([]);
+  expect(untrusted.servers).toEqual([
+    { name: "provider", source: globalPath, scope: "global", config },
+  ]);
+
+  const trusted = await loadServers(loadContext(cwd, true), []);
+  expect(trusted.errors).toEqual([]);
+  expect(trusted.servers).toEqual([
+    {
+      name: "provider",
+      source: globalPath,
+      scope: "global",
+      override: projectPath,
+      config: { ...config, enabled: false, exposure: "direct" },
+    },
+  ]);
 });
 
 test("preserves native errors and lets file entries override registered aliases", async () => {
@@ -381,97 +416,108 @@ test("delegates legacy OAuth credential migration to Pi for only the first accou
   });
 });
 
-test("refreshes native OAuth tokens using the configured authorization metadata URL", async () => {
-  const { agentDir, cwd } = await sandbox();
-  const url = "https://oauth.example.test/mcp";
-  const resourceMetadataUrl =
-    "https://oauth.example.test/.well-known/oauth-protected-resource/mcp";
-  const metadataUrl = "https://auth.example.test/custom/metadata";
-  const tokenUrl = "https://auth.example.test/token";
-  const authPath = join(agentDir, "mcp-auth.json");
-  await writeJson(authPath, {
-    [`mcp__oauth|${url}`]: {
-      serverUrl: url,
-      tokens: {
-        access_token: "stale-token",
-        refresh_token: "refresh-token",
-        token_type: "Bearer",
-      },
-    },
-  });
-  const { transport, settled } = await createNativeTransport(
-    {
-      name: "oauth",
-      source: "test",
-      config: {
-        url,
-        oauth: {
-          clientId: "fixture-client",
-          authServerMetadataUrl: metadataUrl,
+test.each(["dcr", "cimd"] as const)(
+  "refreshes native OAuth tokens using the configured metadata URL and %s registration",
+  async (clientRegistration) => {
+    const { agentDir, cwd } = await sandbox();
+    const url = "https://oauth.example.test/mcp";
+    const resourceMetadataUrl =
+      "https://oauth.example.test/.well-known/oauth-protected-resource/mcp";
+    const metadataUrl = "https://auth.example.test/custom/metadata";
+    const tokenUrl = "https://auth.example.test/token";
+    const authPath = join(agentDir, "mcp-auth.json");
+    await writeJson(authPath, {
+      [`mcp__oauth|${url}`]: {
+        serverUrl: url,
+        tokens: {
+          access_token: "stale-token",
+          refresh_token: "refresh-token",
+          token_type: "Bearer",
         },
       },
-    },
-    transportContext(cwd),
-  );
-  const authProvider = (transport as StreamableHttpTransport).options
-    .authProvider;
-  if (!authProvider?.onUnauthorized)
-    throw new Error("Missing native OAuth provider");
-  const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
-    const requestedUrl = String(input);
-    if (requestedUrl === resourceMetadataUrl) {
-      return Response.json({
-        resource: url,
-        authorization_servers: ["https://wrong-issuer.example.test"],
-      });
-    }
-    if (requestedUrl === metadataUrl) {
-      return Response.json({
-        issuer: "https://auth.example.test",
-        authorization_endpoint: "https://auth.example.test/authorize",
-        token_endpoint: tokenUrl,
-        response_types_supported: ["code"],
-        token_endpoint_auth_methods_supported: ["none"],
-      });
-    }
-    if (requestedUrl === tokenUrl) {
-      expect(init?.method).toBe("POST");
-      const body = new URLSearchParams(String(init?.body));
-      expect(body.get("grant_type")).toBe("refresh_token");
-      expect(body.get("refresh_token")).toBe("refresh-token");
-      expect(body.get("client_id")).toBe("fixture-client");
-      return Response.json({
-        access_token: "fresh-token",
-        refresh_token: "rotated-refresh-token",
-        token_type: "Bearer",
-      });
-    }
-    throw new Error(`Unexpected OAuth request: ${requestedUrl}`);
-  });
-
-  await authProvider.onUnauthorized({
-    response: new Response(undefined, { status: 401 }),
-    serverUrl: new URL(url),
-    fetch,
-    token: "stale-token",
-  });
-  await settled();
-
-  expect(fetch.mock.calls.map(([input]) => String(input))).toEqual([
-    resourceMetadataUrl,
-    metadataUrl,
-    tokenUrl,
-  ]);
-  await expect(authProvider.token()).resolves.toBe("fresh-token");
-  expect(JSON.parse(await readFile(authPath, "utf8"))).toMatchObject({
-    [`mcp__oauth|${url}`]: {
-      tokens: {
-        access_token: "fresh-token",
-        refresh_token: "rotated-refresh-token",
+    });
+    const { transport, settled } = await createNativeTransport(
+      {
+        name: "oauth",
+        source: "test",
+        config: {
+          url,
+          oauth: {
+            ...(clientRegistration === "dcr"
+              ? { clientId: "fixture-client" }
+              : { clientRegistration }),
+            authServerMetadataUrl: metadataUrl,
+          },
+        },
       },
-    },
-  });
-});
+      transportContext(cwd),
+    );
+    const authProvider = (transport as StreamableHttpTransport).options
+      .authProvider;
+    if (!authProvider?.onUnauthorized)
+      throw new Error("Missing native OAuth provider");
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const requestedUrl = String(input);
+      if (requestedUrl === resourceMetadataUrl) {
+        return Response.json({
+          resource: url,
+          authorization_servers: ["https://wrong-issuer.example.test"],
+        });
+      }
+      if (requestedUrl === metadataUrl) {
+        return Response.json({
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: tokenUrl,
+          response_types_supported: ["code"],
+          token_endpoint_auth_methods_supported: ["none"],
+          client_id_metadata_document_supported: true,
+          authorization_response_iss_parameter_supported: true,
+        });
+      }
+      if (requestedUrl === tokenUrl) {
+        expect(init?.method).toBe("POST");
+        const body = new URLSearchParams(String(init?.body));
+        expect(body.get("grant_type")).toBe("refresh_token");
+        expect(body.get("refresh_token")).toBe("refresh-token");
+        expect(body.get("client_id")).toBe(
+          clientRegistration === "dcr"
+            ? "fixture-client"
+            : "https://pi.dev/oauth/client.json",
+        );
+        return Response.json({
+          access_token: "fresh-token",
+          refresh_token: "rotated-refresh-token",
+          token_type: "Bearer",
+        });
+      }
+      throw new Error(`Unexpected OAuth request: ${requestedUrl}`);
+    });
+
+    await authProvider.onUnauthorized({
+      response: new Response(undefined, { status: 401 }),
+      serverUrl: new URL(url),
+      fetch,
+      token: "stale-token",
+    });
+    await settled();
+
+    expect(fetch.mock.calls.map(([input]) => String(input))).toEqual([
+      resourceMetadataUrl,
+      metadataUrl,
+      tokenUrl,
+    ]);
+    await expect(authProvider.token()).resolves.toBe("fresh-token");
+    expect(JSON.parse(await readFile(authPath, "utf8"))).toMatchObject({
+      [`mcp__oauth|${url}`]: {
+        tokens: {
+          access_token: "fresh-token",
+          refresh_token: "rotated-refresh-token",
+        },
+      },
+    });
+  },
+);
 
 test("uses Pi's native OAuth store and propagates secret resolution errors", async () => {
   const { agentDir, cwd } = await sandbox();
