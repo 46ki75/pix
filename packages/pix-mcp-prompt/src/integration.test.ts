@@ -657,6 +657,33 @@ test.each([
   },
 );
 
+test.each([true, false])(
+  "respects project enabled-state overrides in both clients (trusted=%s)",
+  async (trusted) => {
+    const integration = await setup({
+      projectTrusted: trusted,
+      globalServers: ({ logPath }) => ({
+        global: fixtureServer(logPath, "global"),
+      }),
+      projectServers: { global: { enabled: false } },
+    });
+    const { session, logPath, notify, errors } = integration;
+
+    await session.prompt("/mcp");
+    expect(startedPids(await readTrace(logPath))).toHaveLength(trusted ? 0 : 1);
+    await session.prompt("/mcp-prompt list");
+    expect(notify).toHaveBeenLastCalledWith(
+      trusted
+        ? "No MCP prompts are available."
+        : expect.stringContaining("global review"),
+      "info",
+    );
+    expect(startedPids(await readTrace(logPath))).toHaveLength(trusted ? 0 : 2);
+    expect(errors).toEqual([]);
+    integration.expectNoModelRequests();
+  },
+);
+
 test("replaces changed prompt connections without disturbing native MCP and closes all on shutdown", async () => {
   const integration = await setup();
   const { session, logPath, writeProjectServers, shutdown } = integration;

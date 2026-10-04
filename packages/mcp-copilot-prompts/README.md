@@ -39,8 +39,8 @@ The server communicates over stdio. A typical project-level MCP declaration is:
 MCP configuration files and working-directory behavior are client-specific. With
 [`@ikuma.cloud/pix-mcp-prompt`](https://github.com/46ki75/pix/tree/main/packages/pix-mcp-prompt), place this entry in
 the project's native `.pi/mcp.json` and grant Pi project trust. The server's
-working directory defaults to the Pi session directory. The prompt extension in
-this checkout targets Pi 1.0.0. Then use:
+working directory defaults to the Pi session directory. See the prompt
+extension's compatibility section for supported Pi versions. Then use:
 
 ```text
 /mcp-prompt
