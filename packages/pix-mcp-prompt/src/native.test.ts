@@ -74,7 +74,7 @@ function transportContext(
 }
 
 test("loads native global and trusted project MCP configuration", async () => {
-  expect(VERSION).toBe("1.0.2");
+  expect(VERSION).toBe("1.1.0");
   const { agentDir, cwd } = await sandbox();
   const globalPath = join(agentDir, "mcp.json");
   const projectPath = join(cwd, ".pi", "mcp.json");

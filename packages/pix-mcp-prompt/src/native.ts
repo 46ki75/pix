@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 // Private helpers need validation per release, including patch releases.
-const SUPPORTED_PI_VERSIONS = ["1.0.0", "1.0.2"];
+const SUPPORTED_PI_VERSIONS = ["1.0.0", "1.0.2", "1.1.0"];
 
 interface NativeAuthProvider {
   token(): Promise<string | undefined>;

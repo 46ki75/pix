@@ -3,8 +3,8 @@
 User-selected MCP prompts alongside Pi's native tools and resources.
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
-This version supports **Pi 1.0.0 and 1.0.2**. Load it from this checkout to test
-it before release:
+This version supports **Pi 1.0.0, 1.0.2, and 1.1.0**. Load it from this checkout
+to test it before release:
 
 ```sh
 pi -e /absolute/path/to/pix/packages/pix-mcp-prompt
@@ -25,9 +25,9 @@ There is no prompt-specific configuration file or flag. Bare `.mcp.json` is not
 read. The extension uses Pi's shipped configuration loader, transport factory,
 and authentication helpers rather than implementing another configuration format.
 Registered extension servers are also considered; file definitions take
-precedence, including names differing only in `-` and `_`. On Pi 1.0.2, project
-entries containing only `enabled`, `exposure`, or `toolExposure` override a global
-server without replacing its transport or credentials.
+precedence, including names differing only in `-` and `_`. On Pi 1.0.2 and 1.1.0,
+project entries containing only `enabled`, `exposure`, or `toolExposure` override a
+global server without replacing its transport or credentials.
 
 For example, after installing `@ikuma.cloud/mcp-copilot-prompts`, add this to
 `.pi/mcp.json` and approve the project:
@@ -54,8 +54,8 @@ Sign in with native `/mcp` or `pi mcp login`. Prompt connections use the same
 URL, including Pi's migration of legacy URL-only credentials. The native
 `oauth.authServerMetadataUrl` override also applies to prompt token refreshes.
 Provider authentication uses Pi's provider credentials; project configuration
-cannot request provider authentication. On Pi 1.0.2, prompt token refreshes also
-honor `oauth.clientRegistration` (`dcr` or `cimd`).
+cannot request provider authentication. On Pi 1.0.2 and 1.1.0, prompt token
+refreshes also honor `oauth.clientRegistration` (`dcr` or `cimd`).
 Embedded SDK hosts should set `PI_CODING_AGENT_DIR` as well as their SDK
 `agentDir`, matching the native MCP extension's use of `getAgentDir()`.
 
@@ -83,11 +83,12 @@ and arguments; MCP `completion/complete` is not implemented.
 
 ## Connections and compatibility
 
-Neither supported Pi version exposes its connected MCP clients. This extension
-therefore opens **a separate connection**, including a second process for stdio
-servers. It waits until the first prompt command to do so; native Pi may already
-have connected the same servers at startup. Prompt discovery never requests tools or
-resource catalogs. Catalog list-change notifications invalidate stale selections.
+None of the supported Pi versions expose their connected MCP clients. This
+extension therefore opens **a separate connection**, including a second process
+for stdio servers. It waits until the first prompt command to do so; native Pi
+may already have connected the same servers at startup. Prompt discovery never
+requests tools or resource catalogs. Catalog list-change notifications invalidate
+stale selections.
 
 Native file and registration changes are reconciled on prompt commands and
 agent turns. A disabled or replaced connection is closed. Native `/mcp reconnect`
@@ -96,8 +97,8 @@ the prompt client; use `/reload` to reset both implementations. A disconnected
 prompt client reconnects when next needed.
 
 Native configuration and authentication helpers are shipped but not public
-exports. `src/native.ts` isolates their use and **accepts only Pi 1.0.0 and
-1.0.2** rather than silently changing trust or credential behavior. Other
+exports. `src/native.ts` isolates their use and **accepts only Pi 1.0.0, 1.0.2,
+and 1.1.0** rather than silently changing trust or credential behavior. Other
 versions, including unverified patch releases, require explicit compatibility
 validation. This is not a shared-client API or a claim of upstream support.
 

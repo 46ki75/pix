@@ -25,7 +25,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-test.each(["1.0.0", "1.0.2"])(
+test.each(["1.0.0", "1.0.2", "1.1.0"])(
   "accepts verified host %s through the version gate",
   async (version) => {
     host.version = version;
@@ -41,14 +41,14 @@ test.each(["1.0.0", "1.0.2"])(
   },
 );
 
-test.each(["0.99.2", "1.0.1", "1.0.3", "1.1.0"])(
+test.each(["0.99.2", "1.0.1", "1.0.3", "1.1.1"])(
   "rejects unverified host %s before reading configuration or importing internals",
   async (version) => {
     host.version = version;
     await expect(
       loadServers({ cwd: "/unused", isProjectTrusted: () => false }, []),
     ).rejects.toThrow(
-      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2, found ${version}`,
+      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2 or 1.1.0, found ${version}`,
     );
     expect(packageDir).not.toHaveBeenCalled();
   },
