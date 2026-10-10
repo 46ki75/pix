@@ -11,6 +11,11 @@ import {
   type Result,
 } from "@modelcontextprotocol/sdk/types.js";
 
+// Intentional use of the deprecated low-level Server: the SDK explicitly permits
+// advanced use cases. SDK 1.30.0 has no negotiated-version getter or McpServer
+// custom-server injection, so this subclass observes initialization to gate
+// resource links for older clients. Revisit when a public alternative preserves
+// this behavior; do not migrate solely to silence the deprecation diagnostic.
 export class ProtocolVersionServer extends Server {
   private protocolVersion: string | undefined;
 

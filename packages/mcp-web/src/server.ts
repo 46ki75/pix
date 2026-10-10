@@ -17,6 +17,7 @@ import {
   SearchError,
   selectionFromEnv,
 } from "@ikuma.cloud/pix-websearch/core";
+// Low-level Server is intentional; see protocol.ts for the deprecation rationale.
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
