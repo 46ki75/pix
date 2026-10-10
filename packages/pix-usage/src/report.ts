@@ -2,7 +2,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   absoluteResetTime,
   formatProviderName,
-  formatUsedPercent,
+  formatWindowUsage,
   formatWindowIcon,
   padVisibleEnd,
   padVisibleStart,
@@ -40,7 +40,7 @@ export function formatUsageReport(
           columns.label,
         );
         const usage = padVisibleStart(
-          formatUsedPercent(window.usedPercent, formatText),
+          formatWindowUsage(window, formatText),
           columns.usage,
         );
         const relative = padVisibleStart(

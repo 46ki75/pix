@@ -55,25 +55,47 @@ separate manual checks.
   removed. This integration supports Pi's standard CLI credential store; custom
   SDK registry stores and auth paths are outside its scope. Never read OpenCode's
   own credential files or forward model headers or endpoint overrides.
-  Meta is the narrow exception: its quota endpoint rejects Pi's derived inference
-  key, so use the side-effect-free `getProviderAuthStatus()` check and read only the
+  Meta also needs its stored identity token: its quota endpoint rejects Pi's
+  derived inference key, so use the side-effect-free `getProviderAuthStatus()`
+  check and read only the
   `meta` OAuth device token through Pi's public `readStoredCredential()` API.
   Correlate the stored inference key with `getProviderAuth("meta")` to fail closed
   on credential-store or login races. If resolution refreshes Meta through the
   key-mint endpoint, require a retry rather than minting again. Do not write
   credential files, inspect unrelated credentials, invoke provider CLIs, or log
   credential-resolution errors.
+- `src/copilot-auth.ts` reads only the stored `github-copilot` OAuth credential,
+  using Pi's side-effect-free auth status and public credential reader. Pi's
+  `refresh` field is the GitHub token; `access` is the derived inference token.
+  Do not call the model-auth resolver: quotas need neither model headers nor
+  inference-token refresh. Require the built-in provider, allowlisted first-party
+  model routes, and absent or exactly `github.com` issuer metadata. Recheck copied
+  credential/routing values before transmission, retry, and accepting a response.
+  Fail closed on enterprise hosts, overrides, malformed metadata, or login races.
+  Only the standard CLI store is supported; status plus file reads cannot prove
+  custom SDK store identity or historical endpoint provenance.
 - `src/providers.ts` validates and normalizes provider payloads without Pi imports.
   Provider-declared optional quota windows and reset times are unknown, not zero
   usage or guessed resets. OpenCode Go requires rolling, weekly, and monthly
   windows with valid status, percentage, and reset fields. Muse may omit
   `subs_usage`, but if it is present both `window` and `weekly` are required. Its
   nonpositive or unrepresentable reset epochs are unknown; retain the otherwise
-  valid window.
+  valid window. Copilot Free accounts use chat, including when a placeholder
+  premium bucket omits its zero entitlement. Other accounts prefer premium quota
+  and fall back to chat when it is absent or unallocated. Never sum overlapping
+  buckets. Choose units from top-level `token_based_billing`. For a finite allowance, subtract
+  `quota_remaining` from `entitlement`, or explicitly mark a percentage-derived
+  estimate. `credits_used` is a separate aggregate without a denominator, not the
+  numerator for `entitlement`. Unknown ratios are null and must render without
+  a percentage. A zero finite entitlement is unallocated, not exhausted; unlimited
+  snapshots can still have an unavailable shared pool. Prefer per-category reset
+  epochs; date-only account resets supply no countdown. Keep raw identities,
+  plan strings, overage metadata, and unused buckets out of normalized results.
 - `src/http.ts` bounds requests and bodies, refuses redirects, and sanitizes errors.
   `src/auth.ts` retries safe quota reads, including OpenCode's GET, once only for
   timeouts. Recheck OpenCode routing and credential identity before retrying, then
-  reuse the unchanged token. Do not retry Meta's key-mint POST.
+  reuse the unchanged token. Copilot's GET also retries a timeout only once and
+  revalidates credentials/routing before retrying. Do not retry Meta's key-mint POST.
   Never surface raw response bodies, tokens, JWT claims, or network errors.
 - `src/report.ts` formats only normalized quota data and safe error messages. Keep
   account identity and arbitrary provider strings out of terminal output.
@@ -91,5 +113,9 @@ Request and payload references:
 [OpenCode Go limits](https://opencode.ai/docs/go#usage-limits),
 [Pi's OpenCode Go provider](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/providers/opencode-go.ts),
 [Pi's Codex request implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/api/openai-codex-responses.ts),
-and [Pi's Meta OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/meta.ts).
+[Pi's Meta OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/meta.ts),
+[Pi's Copilot OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/github-copilot.ts),
+[VS Code quota normalization](https://github.com/microsoft/vscode/blob/959031245ebb1fe077e0d512e1397c0ae82006e4/src/vs/workbench/services/chat/common/chatEntitlementService.ts#L817-L1031),
+[VS Code quota requests](https://github.com/microsoft/vscode/blob/959031245ebb1fe077e0d512e1397c0ae82006e4/extensions/copilot/src/platform/authentication/node/copilotTokenManager.ts#L340-L352),
+and [GitHub billing terminology](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing).
 Keep these boundaries isolated so endpoint changes do not affect Pi integration.

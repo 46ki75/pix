@@ -57,9 +57,17 @@ function harness(mode: ExtensionCommandContext["mode"] = "tui") {
         }
       : { configured: false },
   );
-  const getProvider = vi.fn().mockReturnValue({
-    getModels: () => [{ baseUrl: "https://opencode.ai/zen/go/v1" }],
-  });
+  const getProvider = vi.fn().mockImplementation((id) => ({
+    id,
+    getModels: () => [
+      {
+        baseUrl:
+          id === "github-copilot"
+            ? "https://api.individual.githubcopilot.com"
+            : "https://opencode.ai/zen/go/v1",
+      },
+    ],
+  }));
   const getRegisteredProviderIds = vi.fn().mockReturnValue([]);
   const credentialExpires = Date.now() + 60_000;
   const readCredential = vi.fn().mockImplementation((provider) =>
@@ -250,6 +258,50 @@ test("reports OpenCode Go quota with its saved API key", async () => {
   expect(notify.mock.calls[0]?.[0]).toContain("󰸗 Monthly 󰓅  36%");
 });
 
+test.each(["tui", "rpc"] as const)(
+  "reports Copilot credit counts in %s without resolving model auth",
+  async (mode) => {
+    const h = harness(mode);
+    h.getProviderAuthStatus.mockReturnValue({
+      configured: true,
+      source: "stored",
+    });
+    h.readCredential.mockReturnValue({
+      type: "oauth",
+      refresh: "github-test-token",
+      access: "inference-token",
+      expires: Date.now() + 60_000,
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      Response.json({
+        token_based_billing: true,
+        quota_snapshots: {
+          premium_interactions: {
+            unlimited: false,
+            entitlement: "1500",
+            quota_remaining: 1080,
+            percent_remaining: 72,
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await h.command.handler("copilot", h.ctx);
+    expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("420 / 1,500 credits (28%)"),
+      "info",
+    );
+    expect(h.notify.mock.calls[0]?.[0]).toContain("Copilot");
+    expect(h.notify.mock.calls[0]?.[0]).not.toMatch(
+      /github-test-token|inference-token/,
+    );
+    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "token github-test-token",
+    });
+  },
+);
+
 test.each(
   (["tui", "rpc"] as const).flatMap((mode) =>
     [24, 80, 120].flatMap((columns) =>
@@ -354,6 +406,11 @@ test.each([
               ],
               ["accent", "󰨔"],
               ["warning", openCodeWarning],
+              ["accent", ""],
+              [
+                "warning",
+                "No Pi GitHub Copilot OAuth login; use /login github-copilot (not an API key).",
+              ],
             ]
           : []),
         ["border", header],
@@ -443,13 +500,14 @@ test("validates arguments and completes provider names", async () => {
   const { command, ctx, getProviderAuth, notify } = harness();
   await command.handler("claude codex", ctx);
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    "Usage: /usage [claude|codex|muse|opencode|all|toggle]",
+    "Usage: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
     "warning",
   );
   expect(getProviderAuth).not.toHaveBeenCalled();
   expect(command.getArgumentCompletions?.("c")).toEqual([
     { value: "claude", label: "claude" },
     { value: "codex", label: "codex" },
+    { value: "copilot", label: "copilot" },
   ]);
   expect(command.getArgumentCompletions?.("m")).toEqual([
     { value: "muse", label: "muse" },
@@ -490,6 +548,9 @@ test.each(["", "all"])(
     );
     expect(notify.mock.calls[0]?.[0]).toContain(
       "󰨔 OpenCode Go\n\n  No Pi OpenCode Go API key; use /login opencode-go.",
+    );
+    expect(notify.mock.calls[0]?.[0]).toContain(
+      " Copilot\n\n  No Pi GitHub Copilot OAuth login",
     );
     expect(notify.mock.calls[0]?.[1]).toBe("info");
   },

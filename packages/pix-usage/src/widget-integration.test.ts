@@ -18,6 +18,18 @@ import subscriptionUsage from "./index.ts";
 const NOW = Date.parse("2026-09-25T00:00:00Z");
 const MINUTE = 60_000;
 const REFRESH = 5 * MINUTE;
+const COPILOT_USAGE = {
+  token_based_billing: true,
+  quota_reset_date_utc: "2026-10-01T00:00:00.000Z",
+  quota_snapshots: {
+    premium_interactions: {
+      unlimited: false,
+      entitlement: "1500",
+      quota_remaining: 1080,
+      percent_remaining: 72,
+    },
+  },
+};
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 type ResolveAuth = ExtensionCommandContext["modelRegistry"]["getProviderAuth"];
 type Widget = Component & { dispose?(): void };
@@ -78,70 +90,87 @@ function harness(
     configured: true,
     source: "stored",
   });
-  const getProvider = vi.fn().mockReturnValue({
-    getModels: () => [{ baseUrl: "https://opencode.ai/zen/go/v1" }],
-  });
+  const getProvider = vi.fn().mockImplementation((id) => ({
+    id,
+    getModels: () => [
+      {
+        baseUrl:
+          id === "github-copilot"
+            ? "https://api.individual.githubcopilot.com"
+            : "https://opencode.ai/zen/go/v1",
+      },
+    ],
+  }));
   const getRegisteredProviderIds = vi.fn().mockReturnValue([]);
   const readCredential = vi.fn().mockImplementation((provider) =>
     provider === "opencode-go"
       ? { type: "api_key" as const, key: "opencode-test-key" }
-      : {
-          type: "oauth" as const,
-          refresh: "dca:muse-device-token",
-          access: "LLM|muse-inference-key",
-          expires: NOW + 60_000,
-        },
+      : provider === "github-copilot"
+        ? {
+            type: "oauth" as const,
+            refresh: "github-test-token",
+            access: "inference-token",
+            expires: NOW + 60_000,
+          }
+        : {
+            type: "oauth" as const,
+            refresh: "dca:muse-device-token",
+            access: "LLM|muse-inference-key",
+            expires: NOW + 60_000,
+          },
   );
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockImplementation(async (url) =>
-      String(url).includes("anthropic.com")
-        ? Response.json({
-            five_hour: {
-              utilization: 12,
-              resets_at: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
-            },
-          })
-        : String(url).includes("api.meta.ai")
+      String(url).includes("api.github.com")
+        ? Response.json(COPILOT_USAGE)
+        : String(url).includes("anthropic.com")
           ? Response.json({
-              is_subs_active: true,
-              subs_usage: {
-                window: { used_percent: 18, window_duration_mins: 300 },
-                weekly: { used_percent: 27 },
+              five_hour: {
+                utilization: 12,
+                resets_at: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
               },
             })
-          : String(url).includes("opencode.ai")
+          : String(url).includes("api.meta.ai")
             ? Response.json({
-                usage: {
-                  rolling: {
-                    status: "ok",
-                    percent: 24,
-                    resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
-                  },
-                  weekly: {
-                    status: "ok",
-                    percent: 48,
-                    resetsAt: new Date(
-                      NOW + 7 * 24 * 60 * MINUTE,
-                    ).toISOString(),
-                  },
-                  monthly: {
-                    status: "ok",
-                    percent: 72,
-                    resetsAt: new Date(
-                      NOW + 30 * 24 * 60 * MINUTE,
-                    ).toISOString(),
-                  },
+                is_subs_active: true,
+                subs_usage: {
+                  window: { used_percent: 18, window_duration_mins: 300 },
+                  weekly: { used_percent: 27 },
                 },
               })
-            : Response.json({
-                rate_limit: {
-                  primary_window: {
-                    used_percent: 93,
-                    limit_window_seconds: 604800,
+            : String(url).includes("opencode.ai")
+              ? Response.json({
+                  usage: {
+                    rolling: {
+                      status: "ok",
+                      percent: 24,
+                      resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+                    },
+                    weekly: {
+                      status: "ok",
+                      percent: 48,
+                      resetsAt: new Date(
+                        NOW + 7 * 24 * 60 * MINUTE,
+                      ).toISOString(),
+                    },
+                    monthly: {
+                      status: "ok",
+                      percent: 72,
+                      resetsAt: new Date(
+                        NOW + 30 * 24 * 60 * MINUTE,
+                      ).toISOString(),
+                    },
                   },
-                },
-              }),
+                })
+              : Response.json({
+                  rate_limit: {
+                    primary_window: {
+                      used_percent: 93,
+                      limit_window_seconds: 604800,
+                    },
+                  },
+                }),
     );
   vi.stubGlobal("fetch", fetch);
   const ctx = {
@@ -286,6 +315,67 @@ test.each(["anthropic", "openai-codex", "meta", "opencode-go"])(
     h.shutdown();
   },
 );
+
+test("Copilot startup, cooldown, model changes, fallback polling and hidden cleanup", async () => {
+  const h = harness("github-copilot");
+  h.start();
+  await flush();
+  expect(h.text()).toContain("Copilot AI credits 󰓅 420 / 1,500 credits (28%)");
+  expect(h.getProviderAuth).not.toHaveBeenCalled();
+  expect(h.fetch).toHaveBeenCalledOnce();
+  h.select("github-copilot");
+  h.turnEnd();
+  await flush();
+  expect(h.fetch).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(MINUTE);
+  h.turnEnd();
+  await flush();
+  expect(h.fetch).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(REFRESH - MINUTE);
+  expect(h.fetch).toHaveBeenCalledTimes(3);
+  await h.toggle();
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(REFRESH);
+  expect(h.fetch).toHaveBeenCalledTimes(3);
+  h.shutdown();
+});
+
+test.each(["rpc", "json", "print"] as const)(
+  "Copilot never resolves credentials or polls automatically in %s",
+  async (mode) => {
+    const h = harness("github-copilot", mode);
+    h.start();
+    h.turnEnd();
+    await vi.advanceTimersByTimeAsync(REFRESH);
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.fetch).not.toHaveBeenCalled();
+    h.shutdown();
+  },
+);
+
+test("switching away cancels Copilot and discards its late response", async () => {
+  const h = harness("github-copilot");
+  let finish!: (value: Response) => void;
+  let signal: AbortSignal | null | undefined;
+  h.fetch.mockImplementationOnce((_url, init) => {
+    signal = init?.signal;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  h.start();
+  await flush();
+  h.select("anthropic");
+  await flush();
+  expect(signal?.aborted).toBe(true);
+  finish(Response.json(COPILOT_USAGE));
+  await flush();
+  expect(h.text()).toContain("Claude");
+  expect(h.text()).not.toContain("Copilot");
+  expect(h.notify).not.toHaveBeenCalled();
+  h.shutdown();
+});
 
 test("OpenCode startup refuses a proxy provider before resolving its key", async () => {
   const h = harness("opencode-go");
@@ -944,13 +1034,19 @@ test("missing OAuth is shown in the widget and can recover on the next refresh",
 });
 
 test.each(
-  (["claude", "opencode"] as const).flatMap((provider) =>
+  (["claude", "opencode", "copilot"] as const).flatMap((provider) =>
     (["widget", "report"] as const).map((first) => ({ provider, first })),
   ),
 )(
   "overlapping $provider $first-first requests share work; hiding never cancels the report",
   async ({ provider, first }) => {
-    const h = harness(provider === "claude" ? "anthropic" : "opencode-go");
+    const h = harness(
+      provider === "claude"
+        ? "anthropic"
+        : provider === "copilot"
+          ? "github-copilot"
+          : "opencode-go",
+    );
     let finish!: (response: Response) => void;
     h.fetch.mockImplementationOnce(
       () =>
@@ -973,31 +1069,39 @@ test.each(
     finish(
       provider === "claude"
         ? Response.json({ five_hour: { utilization: 12 } })
-        : Response.json({
-            usage: {
-              rolling: {
-                status: "ok",
-                percent: 24,
-                resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+        : provider === "copilot"
+          ? Response.json(COPILOT_USAGE)
+          : Response.json({
+              usage: {
+                rolling: {
+                  status: "ok",
+                  percent: 24,
+                  resetsAt: new Date(NOW + 5 * 60 * MINUTE).toISOString(),
+                },
+                weekly: {
+                  status: "ok",
+                  percent: 48,
+                  resetsAt: new Date(NOW + 7 * 24 * 60 * MINUTE).toISOString(),
+                },
+                monthly: {
+                  status: "ok",
+                  percent: 72,
+                  resetsAt: new Date(NOW + 30 * 24 * 60 * MINUTE).toISOString(),
+                },
               },
-              weekly: {
-                status: "ok",
-                percent: 48,
-                resetsAt: new Date(NOW + 7 * 24 * 60 * MINUTE).toISOString(),
-              },
-              monthly: {
-                status: "ok",
-                percent: 72,
-                resetsAt: new Date(NOW + 30 * 24 * 60 * MINUTE).toISOString(),
-              },
-            },
-          }),
+            }),
     );
     await report;
     expect(h.fetch).toHaveBeenCalledOnce();
     expect(h.widget).toBeUndefined();
     expect(h.notify).toHaveBeenLastCalledWith(
-      expect.stringContaining(provider === "claude" ? "12%" : "24%"),
+      expect.stringContaining(
+        provider === "claude"
+          ? "12%"
+          : provider === "copilot"
+            ? "420 / 1,500 credits (28%)"
+            : "24%",
+      ),
       "info",
     );
     expect(vi.getTimerCount()).toBe(0);

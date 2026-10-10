@@ -1,6 +1,6 @@
 # @ikuma.cloud/pix-usage
 
-Claude, Codex, Meta Muse, and OpenCode Go subscription quota reports and a
+Claude, Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports and a
 current-provider widget for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing
 OAuth logins and an OpenCode API key, not a separate credential store or usage SDK.
 
@@ -28,9 +28,10 @@ pi install ./packages/pix-usage
 
 ## Usage
 
-Sign in through `/login anthropic`, `/login openai-codex`, or `/login meta`,
-choosing the subscription/OAuth flow rather than an API key. For OpenCode Go, use
-`/login opencode-go` to save its API key. Then run:
+Sign in through `/login anthropic`, `/login openai-codex`, `/login meta`, or
+`/login github-copilot`, choosing the subscription/OAuth flow rather than an API
+key. Copilot currently supports github.com logins, not custom enterprise hosts.
+For OpenCode Go, use `/login opencode-go` to save its API key. Then run:
 
 ```text
 /usage          Check all providers
@@ -38,6 +39,7 @@ choosing the subscription/OAuth flow rather than an API key. For OpenCode Go, us
 /usage codex    Check Codex only
 /usage muse     Check Meta Muse only
 /usage opencode Check OpenCode Go only
+/usage copilot  Check GitHub Copilot only
 /usage all      Check all providers
 /usage toggle   Hide or show the current-provider widget (terminal only)
 ```
@@ -68,10 +70,11 @@ heading, like quota rows. In terminal mode, missing logins use `warning` and fai
 requests or credential resolution use `error`; other providers keep their normal
 colors.
 
-Quota labels, percentages, relative resets, and UTC timestamps are column-aligned
-across successful rows in a report. Percentage values are right-aligned to the
-widest value, with a minimum width of three characters and no truncation. In
-terminal mode, percentages above 75% use the active theme's `error` color; those
+Quota labels, usage values, relative resets, and UTC timestamps are column-aligned
+across successful rows in a report. Percent-only values have a minimum width of
+three characters before `%`, with no truncation. Copilot amounts and percentages
+are aligned as one value. In terminal mode, percentages above 75% use the active
+theme's `error` color; those
 above 50% through 75% use `warning`. Thresholds use unrounded usage; values at or
 below 50% keep their existing color.
 
@@ -87,16 +90,49 @@ resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (U
 fractional seconds and checked timestamps are omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
-`󰛤` for Meta Muse, `󰨔` for OpenCode Go, `` for five-hour windows, `󱛡` for
-weekly windows (including model-specific weekly limits), `󰸗` for OpenCode's
-monthly window, `󰓅` for usage, `` for
-resets, and `󱘖` for the report title.
+`󰛤` for Meta Muse, `󰨔` for OpenCode Go, `` for GitHub Copilot, `` for
+five-hour windows, `󱛡` for weekly windows (including model-specific weekly
+limits), `󰸗` for OpenCode's monthly window, `󰓅` for usage, `` for resets,
+and `󱘖` for the report title.
 Other or unknown durations have no window icon. In terminal mode, provider icons
 use the active theme's `accent` color, and window, usage, and reset icons use `text`.
 The dividers enclose all provider sections and use `border`; other text keeps Pi's
 informational notification color (`dim`). RPC reports contain no ANSI colors.
 Icons are added only when rendering reports and widgets; the reusable fetchers
 return plain labels.
+
+### Copilot credit and request counts
+
+Copilot reports a single chat-related quota: Free accounts use `chat`; other
+accounts prefer `premium_interactions`, falling back to `chat` when premium is
+absent or unallocated. Overlapping categories are never summed; inline completion
+quotas are not displayed.
+
+```text
+ Copilot
+
+  AI credits 󰓅 420 / 1,500 credits (28%)         22d 2026-11-01 00:00:00 (UTC)
+```
+
+The denominator is the API's quota entitlement, not a hardcoded plan allowance
+or a guarantee that those credits are included in your subscription. It can
+reflect an organization-assigned budget. Used amounts come from
+`entitlement - quota_remaining`; when the remaining counter is absent, the amount
+is estimated from the reported percentage and prefixed with `≈`. The percentage
+remains the provider-reported ratio. Amounts use US digit grouping and up to two
+decimal places; small positive amounts below 0.01 show `<0.01` instead of zero.
+Legacy request-billed accounts show `Premium` or `Chat` and request units instead.
+
+Uncapped accounts can report an aggregate credit count without a denominator:
+`420 credits used · limit unavailable`. Without a count, the row shows
+`No individual limit reported`. An explicitly unavailable pooled quota is labeled
+`quota unavailable`, even if historical usage is reported. Missing limits never
+imply zero consumption or unlimited access to a shared organization pool.
+
+The reset uses the category's reported epoch, otherwise a timezone-bearing
+account reset. Legacy date-only resets have no precise clock and appear unknown;
+a month length or next reset is never inferred. Overage spend, additional-usage
+budgets, and session/weekly rate limits are not part of this indicator.
 
 ### Current-provider widget
 
@@ -112,9 +148,10 @@ the current session; reload or session replacement shows the widget again.
 Other extensions' widget order is not controlled.
 
 It follows the selected model's provider: `anthropic` selects Claude,
-`openai-codex` selects Codex, `meta` selects Muse, and `opencode-go` selects
-OpenCode Go. It shows one row per reported quota window, including model-specific
-buckets; it does not filter those buckets to the selected model.
+`openai-codex` selects Codex, `meta` selects Muse, `opencode-go` selects
+OpenCode Go, and `github-copilot` selects Copilot. It shows one row per normalized
+quota window, including model-specific buckets; it does not filter those buckets
+to the selected model.
 Other providers and an absent model show an explanatory message without resolving
 credentials or making requests.
 
@@ -194,6 +231,23 @@ credential itself. Muse CLI files, browser cookies, and the Keychain are not rea
 A custom Pi API key, Meta dashboard key, Muse inference key, or separate Muse CLI
 login is not used.
 
+Copilot requires an OAuth credential saved through `/login github-copilot` in
+Pi's standard CLI credential store. It uses side-effect-free auth status and
+`readStoredCredential()` to read only that provider. Pi stores the GitHub OAuth
+token in `refresh` and the derived inference token in `access`; only the former
+is sent to `GET https://api.github.com/copilot_internal/user`. This does not
+refresh or mint inference tokens, call the model-auth resolver, or read `gh`,
+Copilot CLI, browser, or Keychain credentials. Environment/API keys and runtime
+or extension fallback credentials are refused.
+
+Copilot validates the stored issuer and effective first-party provider/model
+routes before sending. Custom enterprise-host logins, malformed issuer metadata,
+provider replacements, and proxy routes are refused. Credential identity and
+routing are rechecked before sending, before a timeout retry, and after the
+response; changed logins or routing require a fresh check. Custom SDK stores and
+auth paths are outside its scope, and Pi does not expose historical routing
+provenance after an override is removed.
+
 Quota requests target only fixed first-party HTTPS endpoints, and redirects are
 refused. Codex's account ID is decoded from the access token for the
 `chatgpt-account-id` routing header, matching Pi's Codex transport. OpenCode sends
@@ -205,8 +259,10 @@ headers or use model endpoint overrides.
 
 HTTP requests have a 15-second timeout covering the response body and a 256 KiB
 response limit. Claude and Codex timeouts are retried once without resolving
-credentials again. Before retrying an OpenCode timeout, the extension rechecks its
-routing, credential source, and key, then reuses the unchanged key. Muse's quota-bearing key-mint POST is not retried,
+credentials again. Copilot timeouts are retried once after rechecking routing and
+the saved credential, without resolving model authentication. Before retrying an
+OpenCode timeout, the extension rechecks its routing, credential source, and key,
+then reuses the unchanged key. Muse's quota-bearing key-mint POST is not retried,
 and a Pi credential refresh is never followed by another mint in the same check.
 Each provider check has a 35-second total deadline, including credential lookup
 and request attempts.
@@ -241,8 +297,12 @@ waiting; the extension does not interfere with Pi's refresh lock.
   proxy key after the override is removed. Active endpoint and provider
   replacements are refused. Only Pi's standard CLI credential store is supported;
   custom SDK registry stores and auth paths are outside this extension's scope.
-- The extension does not request reset-credit inventory, credit balances, spending,
-  or Codex's additional/model-scoped quota buckets. Meta's required key-mint
+- Copilot billing mode and quota availability vary by account. Live-account
+  compatibility requires separate validation beyond the mocked test suite.
+  The oldest Free payload format without `quota_snapshots` is not supported. A successful quota check is not a guarantee of model access.
+- Beyond Copilot's displayed quota counts, the extension does not request
+  reset-credit inventory, credit balances, spending, or Codex's
+  additional/model-scoped quota buckets. Meta's required key-mint
   response can contain payment and plan metadata; those fields are discarded and
   never displayed. The extension does not reproduce the entire provider billing
   page.
@@ -265,11 +325,15 @@ waiting; the extension does not interfere with Pi's refresh lock.
 [`src/providers.ts`](src/providers.ts) has no Pi dependency. Its
 `fetchClaudeUsage(accessToken, options?)`,
 `fetchCodexUsage(accessToken, options?)`,
-`fetchMuseUsage(identityToken, options?)`, and
-`fetchOpenCodeUsage(apiKey, options?)` functions accept credentials and return
+`fetchMuseUsage(identityToken, options?)`,
+`fetchOpenCodeUsage(apiKey, options?)`, and
+`fetchCopilotUsage(githubToken, options?)` functions accept credentials and return
 normalized `UsageSnapshot` values. Options allow an abort signal, timeout, and
 injected `fetch` for tests. Codex expects the same account-bearing JWT used by Pi;
 Muse requires the `dca:` device identity token, not an `LLM|` inference key.
-OpenCode requires an API key for a workspace with a Go subscription. Pure parsers
-and normalized types are separate from credential resolution and UI formatting.
-Keep credential ownership in the calling application.
+OpenCode requires an API key for a workspace with a Go subscription. Copilot
+requires a github.com OAuth token, not a Copilot inference token or enterprise
+credential. Its normalized windows can carry exact or estimated amounts;
+`usedPercent: null` means that no meaningful ratio was reported, never zero.
+Pure parsers and normalized types are separate from credential resolution and UI
+formatting. Keep credential ownership in the calling application.
