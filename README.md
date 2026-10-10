@@ -81,6 +81,8 @@ It also exposes full truncated fetch output through MCP resource links.
 The server is private while developing. Run `mise run --silent mcp-web:build`,
 then configure your MCP client to launch `packages/mcp-web/dist/cli.js` with Node.
 Run `mise run --silent test --project mcp-web` for protocol and built-CLI tests.
+See its [network domain allowlist](packages/mcp-web/README.md#network-domain-allowlist)
+for search-provider hosts and fetch access requirements.
 
 [`@ikuma.cloud/pix-mcp-prompt`](packages/pix-mcp-prompt/README.md) is a prompt
 companion for Pi **1.0.0, 1.0.2, and 1.1.0**. It preserves `/mcp-prompt` while

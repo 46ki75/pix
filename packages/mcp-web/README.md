@@ -39,6 +39,30 @@ Remove old server entries exposing the same tools to avoid duplicate registratio
 No HTTP listener or browser automation is included; stdout is reserved for MCP.
 `node packages/mcp-web/dist/cli.js --help` lists CLI options.
 
+## Network domain allowlist
+
+For an outbound domain whitelist, allow HTTPS (TCP port 443) to these
+search-provider hosts:
+
+| Provider | Domain |
+| --- | --- |
+| Exa | `mcp.exa.ai` |
+| Parallel | `search.parallel.ai` |
+| Firecrawl | `mcp.firecrawl.dev` |
+| Tavily | `api.tavily.com` |
+| TinyFish | `agent.tinyfish.ai` |
+
+With `PIX_WEBSEARCH_PROVIDER=auto`, allow all five domains. With a fixed
+provider, only that provider's domain is required for search.
+
+`webfetch` additionally needs access to each requested URL's host and port,
+including any redirect destinations. Search-result websites are not covered
+by the provider domains above. Fetching does not load linked assets.
+
+This list documents runtime network requirements; the server does not enforce
+a domain allowlist. MCP `resources/read` retrieves saved local output and needs
+no additional outbound network access.
+
 ## Tools
 
 ```ts
