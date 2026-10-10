@@ -6,7 +6,7 @@ import {
   formatWindowIcon,
   padVisibleEnd,
   padVisibleStart,
-  relativeResetTime,
+  formatWindowReset,
   usageWindowColumnWidths,
 } from "./format.ts";
 import type { UsageResult } from "./types.ts";
@@ -44,9 +44,7 @@ export function formatUsageReport(
           columns.usage,
         );
         const relative = padVisibleStart(
-          window.resetsAt
-            ? relativeResetTime(window.resetsAt, now)
-            : "-d --h --m",
+          formatWindowReset(window, now),
           columns.reset,
         );
         const reset = window.resetsAt

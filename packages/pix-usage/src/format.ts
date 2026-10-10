@@ -123,9 +123,7 @@ export function usageWindowColumnWidths(
     reset: Math.max(
       options.minimumResetWidth ?? 10,
       ...windows.map((window) => {
-        const reset = window.resetsAt
-          ? relativeResetTime(window.resetsAt, now)
-          : "-d --h --m";
+        const reset = formatWindowReset(window, now);
         return visibleWidth(options.trimResetStart ? reset.trimStart() : reset);
       }),
     ),
@@ -138,6 +136,14 @@ export function padVisibleEnd(value: string, width: number): string {
 
 export function padVisibleStart(value: string, width: number): string {
   return " ".repeat(Math.max(0, width - visibleWidth(value))) + value;
+}
+
+export function formatWindowReset(
+  window: Pick<UsageWindow, "resetsAt" | "resetsOn">,
+  now: number,
+): string {
+  if (window.resetsAt) return relativeResetTime(window.resetsAt, now);
+  return window.resetsOn ? `${window.resetsOn} (time unknown)` : "-d --h --m";
 }
 
 export function absoluteResetTime(resetsAt: string): string {

@@ -280,8 +280,95 @@ test("uses a timezone-bearing legacy reset but never fabricates a clock from a d
   ).toBeNull();
 });
 
-test.each([0, -1, 1e20])(
-  "an unusable category reset %s does not borrow a different quota's clock",
+test.each([undefined, null, 0])(
+  "an absent category reset %s falls back to the account timestamp",
+  (quota_reset_at) => {
+    expect(parseCopilotUsage(payload({ quota_reset_at }))[0]).toMatchObject({
+      resetsAt: RESET,
+    });
+  },
+);
+
+test.each([
+  "quota_reset_date_utc",
+  "quota_reset_date",
+  "limited_user_reset_date",
+])("preserves a calendar-only %s without inventing a timestamp", (field) => {
+  for (const quota_reset_at of [undefined, null, 0]) {
+    const value = parseCopilotUsage(
+      payload(
+        { quota_reset_at },
+        {
+          quota_reset_date_utc: undefined,
+          [field]: "2026-11-01",
+        },
+      ),
+    )[0];
+    expect(value).toMatchObject({ resetsAt: null, resetsOn: "2026-11-01" });
+  }
+});
+
+test.each([
+  "2026-02-30",
+  "2026-02-29",
+  "2026-04-31",
+  "2026-13-01",
+  "2026-00-01",
+  "2026-11-00",
+  "2026-11-1",
+  "2026-11-01\u001b[31m",
+])("rejects invalid or unsafe calendar-only reset %j", (quota_reset_date) => {
+  expect(() =>
+    parseCopilotUsage(
+      payload({}, { quota_reset_date_utc: undefined, quota_reset_date }),
+    ),
+  ).toThrow("Unrecognized usage response.");
+});
+
+test("preserves leap-day calendar resets and account field precedence", () => {
+  expect(
+    parseCopilotUsage(
+      payload(
+        {},
+        {
+          quota_reset_date_utc: undefined,
+          quota_reset_date: "2028-02-29",
+          limited_user_reset_date: "2028-03-01",
+        },
+      ),
+    )[0],
+  ).toMatchObject({ resetsAt: null, resetsOn: "2028-02-29" });
+  const precise = parseCopilotUsage(
+    payload({}, { quota_reset_date: "2026-12-01" }),
+  )[0];
+  expect(precise?.resetsAt).toBe(RESET);
+  expect(precise).not.toHaveProperty("resetsOn");
+});
+
+test("a category timestamp wins over an account-only date", () => {
+  const precise = parseCopilotUsage(
+    payload(
+      { quota_reset_at: Date.parse("2026-10-20T12:00:00Z") / 1000 },
+      {
+        quota_reset_date_utc: undefined,
+        quota_reset_date: "2026-11-01",
+      },
+    ),
+  )[0];
+  expect(precise?.resetsAt).toBe("2026-10-20T12:00:00.000Z");
+  expect(precise).not.toHaveProperty("resetsOn");
+});
+
+test("zero category reset without an account date remains unknown", () => {
+  const value = parseCopilotUsage(
+    payload({ quota_reset_at: 0 }, { quota_reset_date_utc: undefined }),
+  )[0];
+  expect(value?.resetsAt).toBeNull();
+  expect(value).not.toHaveProperty("resetsOn");
+});
+
+test.each([-1, 1e20])(
+  "an unusable nonzero category reset %s does not borrow a different quota's clock",
   (quota_reset_at) => {
     expect(
       parseCopilotUsage(payload({ quota_reset_at }))[0]?.resetsAt,

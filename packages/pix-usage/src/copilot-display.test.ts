@@ -4,6 +4,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
 import { formatWindowUsage } from "./format.ts";
 import { formatUsageReport } from "./report.ts";
+import { parseCopilotUsage } from "./providers.ts";
 import type { UsageResult, UsageWindow } from "./types.ts";
 import { renderUsageWidget } from "./widget.ts";
 
@@ -48,6 +49,81 @@ test("renders exact credits, grouping, and the reported percentage", () => {
   expect(formatUsageReport([result()], plain, NOW)).toContain(
     "AI credits 󰓅 420 / 1,500 credits (28%)         22d 2026-11-01 00:00:00 (UTC)",
   );
+});
+
+test.each([
+  [{ quota_reset_date: "2026-11-01" }, "2026-11-01 (time unknown)"],
+  [
+    { quota_reset_date_utc: "2026-11-01T00:00:00Z" },
+    "22d 2026-11-01 00:00:00 (UTC)",
+  ],
+] as const)(
+  "renders a parsed account reset despite a zero category reset: %j",
+  (reset, expected) => {
+    const value = parseCopilotUsage({
+      token_based_billing: true,
+      ...reset,
+      quota_snapshots: {
+        premium_interactions: {
+          unlimited: false,
+          entitlement: "1500",
+          quota_remaining: 1498.7,
+          percent_remaining: 99.9,
+          quota_reset_at: 0,
+        },
+      },
+    })[0]!;
+    const state = result(value);
+    for (const output of [
+      formatUsageReport([state], plain, NOW),
+      stripVTControlCharacters(renderUsageWidget(state, 160, theme(), NOW)[1]!),
+    ]) {
+      expect(output).toContain("1.3 / 1,500 credits (0.1%)");
+      expect(output).toContain(expected);
+      expect(output).not.toContain("-d --h --m");
+    }
+  },
+);
+
+test("date-only resets stay visible without timezone conversion, countdowns, or a fabricated midnight", () => {
+  const state = result(window({ resetsAt: null, resetsOn: "2026-11-01" }));
+  for (const now of [
+    NOW,
+    Date.parse("2026-11-01T23:59:59Z"),
+    Date.parse("2026-11-02T00:00:01Z"),
+  ]) {
+    const row = stripVTControlCharacters(
+      renderUsageWidget(state, 160, theme(), now)[1]!,
+    );
+    expect(row).toBe(
+      "  Copilot AI credits 󰓅 420 / 1,500 credits (28%)  2026-11-01 (time unknown)",
+    );
+    const report = formatUsageReport([state], plain, now);
+    expect(report).toContain(" 2026-11-01 (time unknown)");
+    expect(report).not.toMatch(/\b(?:UTC|ago|now)\b|00:00:00|22d|-d --h --m/);
+    const width = visibleWidth(row);
+    for (const size of [width - 1, width, width + 1, 80]) {
+      const resized = stripVTControlCharacters(
+        renderUsageWidget(state, size, theme(), now)[1]!,
+      );
+      expect(visibleWidth(resized)).toBeLessThanOrEqual(size);
+      expect(resized).toContain("2026-11-01");
+      if (size >= width) expect(resized).toBe(row);
+    }
+  }
+});
+
+test("date-only and precise resets keep mixed report columns aligned", () => {
+  const dated = result(window({ resetsAt: null, resetsOn: "2026-11-01" }));
+  const precise = result();
+  const report = formatUsageReport([dated, precise], plain, NOW);
+  const rows = report.split("\n").filter((line) => line.includes(""));
+  expect(
+    new Set(rows.map((line) => visibleWidth(line.slice(0, line.indexOf("")))))
+      .size,
+  ).toBe(1);
+  expect(rows[0]).toContain("2026-11-01 (time unknown)");
+  expect(rows[1]).toContain("22d 2026-11-01 00:00:00 (UTC)");
 });
 
 test("renders estimates and fractional premium request amounts", () => {
