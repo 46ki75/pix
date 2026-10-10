@@ -18,6 +18,10 @@ To launch Pi with both web search and web fetch:
 mise run web:dev
 ```
 
+The Pi extension still loads source without a build. The standalone MCP server
+uses the Pi-independent `./core` export; build it with
+`mise run --silent webfetch:build`. Package packing builds and includes this core.
+
 ## Testing
 
 From the repository root:

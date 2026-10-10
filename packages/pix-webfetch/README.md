@@ -35,6 +35,9 @@ with separate `-e` arguments:
 pi -e /absolute/path/to/pix/packages/pix-websearch -e /absolute/path/to/pix/packages/pix-webfetch
 ```
 
+For other MCP clients, [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) exposes
+both tools through a single standalone stdio server.
+
 ## Tool contract
 
 ```ts

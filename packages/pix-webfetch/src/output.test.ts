@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
+import { pathToFileURL } from "node:url";
 import { expect, test, vi } from "vitest";
 import type { SaveArtifact } from "./artifacts.ts";
 import { createWebFetch, MAX_URL_LENGTH } from "./fetch.ts";
@@ -17,7 +18,15 @@ const mockSave = () => vi.fn<SaveArtifact>().mockResolvedValue(path);
 
 test("includes source metadata without creating an artifact for short output", async () => {
   const save = mockSave();
-  const result = await formatPage(page, "Page content", "text", save);
+  const recoveryHint = vi.fn(() => "Custom recovery instructions");
+  const result = await formatPage(
+    page,
+    "Page content",
+    "text",
+    save,
+    undefined,
+    recoveryHint,
+  );
   expect(result.content).toBe(`${header}Page content`);
   expect(result.details).toEqual({
     url: page.url,
@@ -26,6 +35,7 @@ test("includes source metadata without creating an artifact for short output", a
     truncated: false,
   });
   expect(save).not.toHaveBeenCalled();
+  expect(recoveryHint).not.toHaveBeenCalled();
 });
 
 test("bounds long-line UTF-8 output including metadata and the recovery notice", async () => {
@@ -44,6 +54,32 @@ test("bounds long-line UTF-8 output including metadata and the recovery notice",
     fullOutputPath: path,
   });
   expect(save).toHaveBeenCalledWith(header + text, "txt", undefined);
+});
+
+test("budgets transport-specific recovery instructions without splitting UTF-8", async () => {
+  const fullPath = "/temporary/directory with spaces/输出.txt";
+  const save = mockSave().mockResolvedValue(fullPath);
+  const recoveryHint = vi.fn(
+    (artifactPath: string) =>
+      `Full MCP resource: ${pathToFileURL(artifactPath).href}\nUse resources/read to continue.`,
+  );
+  const text = "日本語🌐".repeat(MAX_OUTPUT_BYTES);
+  const result = await formatPage(
+    page,
+    text,
+    "text",
+    save,
+    undefined,
+    recoveryHint,
+  );
+  expect(Buffer.byteLength(result.content)).toBeLessThanOrEqual(
+    MAX_OUTPUT_BYTES,
+  );
+  expect(result.content).not.toContain("�");
+  expect(result.content).toContain(pathToFileURL(fullPath).href);
+  expect(result.content).toContain("Use resources/read to continue.");
+  expect(recoveryHint).toHaveBeenCalledExactlyOnceWith(fullPath);
+  expect(save).toHaveBeenCalledExactlyOnceWith(header + text, "txt", undefined);
 });
 
 test("prefers complete lines in the preview", async () => {

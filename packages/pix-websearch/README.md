@@ -20,6 +20,9 @@ Ask Pi to search for something, for example:
 Search for the latest TypeScript release and summarize the changes with sources.
 ```
 
+For other MCP clients, [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) exposes
+this tool and `webfetch` through a single standalone stdio server.
+
 ## Configuration
 
 `PIX_WEBSEARCH_PROVIDER` defaults to `auto`. Set it to `exa`, `parallel`,

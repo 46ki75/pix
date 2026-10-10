@@ -49,6 +49,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
 | `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
 | `mise run web:dev` | Launch Pi with both web tools |
+| `mise run --silent mcp-web:build` | Build one stdio MCP server with both web tools |
 | `mise run mcp-prompt:dev` | Launch native MCP with @ikuma.cloud/pix-mcp-prompt |
 | `mise run mcp:dev` | Launch the legacy @ikuma.cloud/pix-mcp adapter |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
@@ -73,6 +74,13 @@ Its tests run with `mise run test --project pix-webfetch`.
 
 Web search and web fetch have separate package versions and runtime dependencies,
 so provider updates and content-extraction updates can be released independently.
+
+[`@ikuma.cloud/mcp-web`](packages/mcp-web/README.md) consolidates both tools into
+one standalone stdio MCP server, reusing those packages without a Pi runtime.
+It also exposes full truncated fetch output through MCP resource links.
+The server is private while developing. Run `mise run --silent mcp-web:build`,
+then configure your MCP client to launch `packages/mcp-web/dist/cli.js` with Node.
+Run `mise run --silent test --project mcp-web` for protocol and built-CLI tests.
 
 [`@ikuma.cloud/pix-mcp-prompt`](packages/pix-mcp-prompt/README.md) is a prompt
 companion for Pi **1.0.0, 1.0.2, and 1.1.0**. It preserves `/mcp-prompt` while

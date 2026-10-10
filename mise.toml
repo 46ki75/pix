@@ -55,6 +55,19 @@ raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp-prompt -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
 
+[tasks."webfetch:build"]
+description = "Build the standalone webfetch core"
+run = "pnpm --filter @ikuma.cloud/pix-webfetch run build"
+
+[tasks."websearch:build"]
+description = "Build the standalone websearch core"
+run = "pnpm --filter @ikuma.cloud/pix-websearch run build"
+
+[tasks."mcp-web:build"]
+description = "Build the combined stdio MCP server and its web cores"
+depends = ["webfetch:build", "websearch:build"]
+run = "pnpm --filter @ikuma.cloud/mcp-web run build"
+
 [tasks."websearch:dev"]
 description = "Launch Pi with @ikuma.cloud/pix-websearch"
 dir = "{{config_root}}/packages/pix-websearch"

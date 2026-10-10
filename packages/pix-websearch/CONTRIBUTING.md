@@ -18,6 +18,10 @@ To try a fixed provider:
 PIX_WEBSEARCH_PROVIDER=tavily mise run websearch:dev
 ```
 
+The Pi extension still loads source without a build. The standalone MCP server
+uses the Pi-independent `./core` export; build it with
+`mise run --silent websearch:build`. Package packing builds and includes this core.
+
 ## Testing
 
 From the repository root:

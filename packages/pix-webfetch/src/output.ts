@@ -10,6 +10,8 @@ export async function formatPage(
   format: FetchFormat,
   save: SaveArtifact,
   signal?: AbortSignal,
+  recoveryHint: (path: string) => string = () =>
+    "Use read with offset/limit to continue.",
 ) {
   signal?.throwIfAborted();
   const header = `URL: ${page.url}\nContent-Type: ${page.contentType}\n\n`;
@@ -24,7 +26,7 @@ export async function formatPage(
         ? "md"
         : "txt";
     fullOutputPath = await save(content, extension, signal);
-    const note = `\n\n[Content truncated. Full output: ${fullOutputPath}\nUse read with offset/limit to continue.]`;
+    const note = `\n\n[Content truncated. Full output: ${fullOutputPath}\n${recoveryHint(fullOutputPath)}]`;
     const budget = MAX_OUTPUT_BYTES - Buffer.byteLength(note);
     // Untrusted metadata can exhaust the preview budget before the body starts.
     const preview =
