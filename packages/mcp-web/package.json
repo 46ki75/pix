@@ -1,0 +1,39 @@
+{
+  "name": "@ikuma.cloud/mcp-web",
+  "version": "0.0.1",
+  "description": "Web search and page fetching in one stdio MCP server",
+  "type": "module",
+  "bin": {
+    "mcp-web": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CONTRIBUTING.md"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "prepack": "pnpm run build"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "websearch",
+    "webfetch"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "entities": "7.0.1",
+    "html-to-text": "10.0.1",
+    "htmlparser2": "10.1.0"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "9.0.4",
+    "marked": "18.0.11"
+  }
+}

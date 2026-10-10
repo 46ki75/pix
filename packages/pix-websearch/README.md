@@ -20,14 +20,34 @@ Ask Pi to search for something, for example:
 Search for the latest TypeScript release and summarize the changes with sources.
 ```
 
+For other MCP clients, [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) exposes
+this tool and `webfetch` through a single standalone stdio server.
+
 ## Configuration
 
-`PIX_WEBSEARCH_PROVIDER` defaults to `auto`. Set it to `exa`, `parallel`,
-`firecrawl`, `tavily`, or `tinyfish` to select a fixed provider:
+`PIX_WEBSEARCH_PROVIDER` controls which providers can receive search requests:
+
+| Value | Behavior |
+| --- | --- |
+| Unset, blank, or `auto` | All five providers enabled; automatic selection |
+| One name, such as `tavily` | Fixed provider; no fallback |
+| Comma-separated names, such as `exa,tavily` | Automatic selection and fallback within that pool only |
+| `none` | No provider requests; search calls report a disabled error |
+
+Provider names are `exa`, `parallel`, `firecrawl`, `tavily`, and `tinyfish`.
+Names are case-sensitive. Whitespace around entries and duplicate names are
+ignored; one unique name uses fixed-provider mode. Lists are pools, not priority
+orders. Unknown names, empty entries, and mixing `auto` or `none` into a list
+are configuration errors.
+
+For example, enable only Exa and Tavily:
 
 ```sh
-PIX_WEBSEARCH_PROVIDER=tavily pi -e /absolute/path/to/pix/packages/pix-websearch
+PIX_WEBSEARCH_PROVIDER=exa,tavily pi -e /absolute/path/to/pix/packages/pix-websearch
 ```
+
+The same setting works in the standalone MCP server. `none` leaves the tool
+registered but disables provider requests; it does not affect `webfetch`.
 
 Optional credentials are read when Pi loads the extension:
 
@@ -50,15 +70,17 @@ public MCP guide at that date.
 
 ### Automatic selection
 
-`auto` randomly selects an available provider and keeps it for the Pi session.
-HTTP 429 puts that provider in cooldown and retries another provider. Each
-provider is attempted at most once per call. `Retry-After` seconds and HTTP dates
+Automatic mode (`auto` or a provider list) randomly selects an available enabled
+provider and keeps it for the Pi session. HTTP 429 puts that provider in cooldown
+and retries another enabled provider. Providers outside the configured pool are
+never selected or used for fallback. Each enabled provider is attempted at most
+once per call. `Retry-After` seconds and HTTP dates
 are supported; missing or invalid values use 60 seconds.
 
 Cooldowns live in memory in this extension instance and apply across sessions
 in the same Pi process. Session start/shutdown clears the remembered selection;
 reloading the extension clears all state. Separate Pi processes do not share
-cooldowns. If all providers are cooling down, the call fails immediately.
+cooldowns. If all enabled providers are cooling down, the call fails immediately.
 
 Fixed-provider mode reports errors directly. Automatic mode also reports
 authentication, network, parsing, and other non-429 failures directly.

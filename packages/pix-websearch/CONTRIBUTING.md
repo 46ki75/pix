@@ -18,6 +18,11 @@ To try a fixed provider:
 PIX_WEBSEARCH_PROVIDER=tavily mise run websearch:dev
 ```
 
+The Pi extension still loads source without a build. A Pi-independent `./core`
+export is also available; build it with `mise run --silent websearch:build`.
+Package packing builds and includes this core. The standalone MCP server owns
+its own implementation and no longer consumes this package.
+
 ## Testing
 
 From the repository root:
@@ -27,8 +32,9 @@ mise run test --project pix-websearch
 ```
 
 Tests mock HTTP and isolate Pi discovery from personal configuration. They cover
-provider request/response contracts, JSON and SSE handling, bounded response
-reads, cancellation, rate-limit fallback, output limits, and Pi package loading.
+provider request/response contracts, provider-list configuration and disabling,
+JSON and SSE handling, bounded response reads, cancellation, restricted-pool
+rate-limit fallback, output limits, and Pi package loading.
 
 ## Implementation references
 
