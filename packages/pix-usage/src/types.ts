@@ -1,9 +1,24 @@
-export type UsageProvider = "claude" | "codex" | "muse" | "opencode";
+export type UsageProvider =
+  | "claude"
+  | "codex"
+  | "muse"
+  | "opencode"
+  | "copilot";
+
+export interface UsageAmount {
+  used: number;
+  total: number | null;
+  unit: "credits" | "requests";
+  estimated: boolean;
+}
 
 export interface UsageWindow {
   id: string;
   label: string;
-  usedPercent: number;
+  // Null means no meaningful ratio, not zero consumption.
+  usedPercent: number | null;
+  amount?: UsageAmount;
+  quotaState?: "unlimited" | "unavailable";
   resetsAt: string | null;
   windowSeconds: number | null;
 }

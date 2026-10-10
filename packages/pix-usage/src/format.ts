@@ -19,22 +19,61 @@ export function formatProviderName(
       return `${formatText("accent", "󰛤")} Muse`;
     case "opencode":
       return `${formatText("accent", "󰨔")} OpenCode Go`;
+    case "copilot":
+      return `${formatText("accent", "")} Copilot`;
   }
 }
 
 export function formatUsedPercent(
   usedPercent: number,
   formatText: UsageTextFormatter,
+  minimumWidth = 3,
 ): string {
   // Large finite numbers are already integers; don't overflow them by scaling.
   const percent = `${String(
     Number.isInteger(usedPercent)
       ? usedPercent
       : Math.round(usedPercent * 10) / 10,
-  ).padStart(3)}%`;
+  ).padStart(minimumWidth)}%`;
   const color =
     usedPercent > 75 ? "error" : usedPercent > 50 ? "warning" : undefined;
   return color ? formatText(color, percent) : percent;
+}
+
+const amountFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+
+function formatAmount(value: number): string {
+  return value > 0 && value < 0.01 ? "<0.01" : amountFormat.format(value);
+}
+
+export function formatWindowUsage(
+  window: UsageWindow,
+  formatText: UsageTextFormatter,
+): string {
+  const { amount, usedPercent } = window;
+  if (amount) {
+    const used = `${amount.estimated ? "≈" : ""}${formatAmount(amount.used)}`;
+    if (amount.total !== null) {
+      const percent =
+        usedPercent === null
+          ? ""
+          : ` (${formatUsedPercent(usedPercent, formatText, 0)})`;
+      return `${used} / ${formatAmount(amount.total)} ${amount.unit}${percent}`;
+    }
+    const limit =
+      window.quotaState === "unavailable"
+        ? formatText("warning", "quota unavailable")
+        : "limit unavailable";
+    return `${used} ${amount.unit} used · ${limit}`;
+  }
+  if (usedPercent !== null) return formatUsedPercent(usedPercent, formatText);
+  if (window.quotaState === "unavailable")
+    return formatText("warning", "Quota unavailable");
+  return window.quotaState === "unlimited"
+    ? "No individual limit reported"
+    : "Usage unavailable";
 }
 
 export function formatWindowIcon(
@@ -78,7 +117,7 @@ export function usageWindowColumnWidths(
     usage: Math.max(
       0,
       ...windows.map((window) =>
-        visibleWidth(formatUsedPercent(window.usedPercent, plainText)),
+        visibleWidth(formatWindowUsage(window, plainText)),
       ),
     ),
     reset: Math.max(

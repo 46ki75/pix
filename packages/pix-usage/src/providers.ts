@@ -5,6 +5,7 @@ export const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 export const MUSE_USAGE_URL = "https://api.meta.ai/muse-code/key";
 export const OPENCODE_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
+export const COPILOT_USAGE_URL = "https://api.github.com/copilot_internal/user";
 
 function invalid(): never {
   throw new UsageError("response", "Unrecognized usage response.");
@@ -212,6 +213,113 @@ export function parseMuseUsage(payload: unknown): UsageWindow[] {
   ];
 }
 
+function copilotCounter(value: unknown): number {
+  const count = nonnegative(value);
+  if (count > Number.MAX_SAFE_INTEGER) invalid();
+  return count;
+}
+
+function copilotEntitlement(value: unknown, unlimited: boolean): number | null {
+  if (value == null) return null;
+  if (unlimited && (value === -1 || value === "-1")) return null;
+  if (typeof value === "string") {
+    if (!/^\d+(?:\.\d+)?$/.test(value)) invalid();
+    return copilotCounter(Number(value));
+  }
+  return copilotCounter(value);
+}
+
+function copilotReset(
+  data: Record<string, unknown>,
+  bucket: Record<string, unknown>,
+): string | null {
+  // A category-specific reset must not borrow a different quota's account clock.
+  if (bucket.quota_reset_at != null) return epochReset(bucket.quota_reset_at);
+  if (data.quota_reset_date_utc != null)
+    return isoReset(data.quota_reset_date_utc);
+  const legacy = data.quota_reset_date ?? data.limited_user_reset_date;
+  // Date-only legacy values contain no clock. Do not turn them into countdowns.
+  if (typeof legacy === "string" && /^\d{4}-\d{2}-\d{2}$/.test(legacy)) {
+    isoReset(`${legacy}T00:00:00Z`);
+    return null;
+  }
+  return isoReset(legacy);
+}
+
+export function parseCopilotUsage(payload: unknown): UsageWindow[] {
+  const data = record(payload);
+  const credits = optionalBoolean(data, "token_based_billing") === true;
+  if (!Object.hasOwn(data, "quota_snapshots")) invalid();
+  if (data.quota_snapshots == null) return [];
+  const snapshots = record(data.quota_snapshots);
+  // Free seats use chat even when a placeholder premium snapshot omits its zero
+  // entitlement. Match VS Code's Free SKU selection; do not infer allocation
+  // from the placeholder's percentage. Never sum potentially overlapping pools.
+  const free =
+    data.access_type_sku === "free_limited_copilot" ||
+    data.copilot_plan === "free";
+  const ids = free
+    ? (["chat"] as const)
+    : (["premium_interactions", "chat"] as const);
+  for (const id of ids) {
+    if (snapshots[id] == null) continue;
+    const bucket = record(snapshots[id]);
+    const unlimited = optionalBoolean(bucket, "unlimited");
+    if (unlimited === undefined) invalid();
+    const total = copilotEntitlement(bucket.entitlement, unlimited);
+    const hasQuota = optionalBoolean(bucket, "has_quota");
+    const overage = optionalBoolean(bucket, "overage_permitted");
+    if (!unlimited && total === 0) continue;
+    const window: UsageWindow = {
+      id,
+      label: credits
+        ? "AI credits"
+        : id === "premium_interactions"
+          ? "Premium"
+          : "Chat",
+      usedPercent: null,
+      resetsAt: copilotReset(data, bucket),
+      windowSeconds: null,
+    };
+    if (unlimited) {
+      window.quotaState =
+        hasQuota === false && overage !== true ? "unavailable" : "unlimited";
+      // credits_used is an aggregate without a denominator. It is NOT the used
+      // portion of entitlement. See VS Code's getQuotaUsage at commit
+      // 959031245ebb1fe077e0d512e1397c0ae82006e4, chatEntitlementService.ts.
+      if (credits && bucket.credits_used != null) {
+        window.amount = {
+          used: copilotCounter(bucket.credits_used),
+          total: null,
+          unit: "credits",
+          estimated: false,
+        };
+      }
+    } else {
+      const remainingPercent = nonnegative(bucket.percent_remaining);
+      if (remainingPercent > 100) invalid();
+      window.usedPercent = 100 - remainingPercent;
+      const remaining =
+        bucket.quota_remaining == null
+          ? null
+          : copilotCounter(bucket.quota_remaining);
+      if (total !== null) {
+        window.amount = {
+          used:
+            remaining === null
+              ? (total * window.usedPercent) / 100
+              : Math.max(0, total - remaining),
+          total,
+          unit: credits ? "credits" : "requests",
+          estimated: remaining === null,
+        };
+      }
+    }
+    return [window];
+  }
+  return [];
+}
+
 export function codexAccountId(accessToken: string): string {
   try {
     const parts = accessToken.split(".");
@@ -308,6 +416,32 @@ export async function fetchOpenCodeUsage(
     provider: "opencode",
     fetchedAt: new Date().toISOString(),
     windows: parseOpenCodeUsage(payload),
+  };
+}
+
+export async function fetchCopilotUsage(
+  githubToken: string,
+  options: FetchOptions = {},
+): Promise<UsageSnapshot> {
+  if (
+    !githubToken ||
+    /[^\x21-\x7e]/.test(githubToken) ||
+    githubToken.startsWith("!")
+  ) {
+    throw new UsageError("auth", "Invalid GitHub OAuth token.");
+  }
+  const payload = await getJson(
+    COPILOT_USAGE_URL,
+    {
+      Authorization: `token ${githubToken}`,
+      "X-GitHub-Api-Version": "2025-04-01",
+    },
+    options,
+  );
+  return {
+    provider: "copilot",
+    fetchedAt: new Date().toISOString(),
+    windows: parseCopilotUsage(payload),
   };
 }
 

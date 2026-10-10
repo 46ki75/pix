@@ -2,10 +2,12 @@ import {
   type ExtensionContext,
   readStoredCredential,
 } from "@earendil-works/pi-coding-agent";
+import { prepareCopilotUsageAuth } from "./copilot-auth.ts";
 import { abortable } from "./http.ts";
 import {
   fetchClaudeUsage,
   fetchCodexUsage,
+  fetchCopilotUsage,
   fetchMuseUsage,
   fetchOpenCodeUsage,
 } from "./providers.ts";
@@ -21,12 +23,14 @@ const PROVIDER_IDS = {
   codex: "openai-codex",
   muse: "meta",
   opencode: "opencode-go",
+  copilot: "github-copilot",
 } as const;
 const FETCH_USAGE = {
   claude: fetchClaudeUsage,
   codex: fetchCodexUsage,
   muse: fetchMuseUsage,
   opencode: fetchOpenCodeUsage,
+  copilot: fetchCopilotUsage,
 } as const;
 const FETCH_ATTEMPTS = 2;
 const OPENCODE_LOGIN_MESSAGE =
@@ -178,11 +182,18 @@ export async function resolveUsage(
     signal.throwIfAborted();
     let token: string;
     let beforeRetry: (() => void) | undefined;
+    let afterRequest: (() => void) | undefined;
     let museCredentialAtRequest: StoredOAuthCredential | undefined;
     let readCurrentMuseCredential:
       | (() => StoredOAuthCredential | undefined)
       | undefined;
-    if (provider === "muse") {
+    if (provider === "copilot") {
+      const auth = prepareCopilotUsageAuth(registry, readCredential, signal);
+      if (auth.status === "unavailable") return { provider, ...auth };
+      token = auth.githubToken;
+      beforeRetry = auth.revalidate;
+      afterRequest = auth.revalidate;
+    } else if (provider === "muse") {
       const status = registry.getProviderAuthStatus?.(providerId);
       if (!status?.configured || status.source !== "stored") {
         return {
@@ -326,12 +337,15 @@ export async function resolveUsage(
       }
       token = resolved.auth.apiKey;
     }
-    const usage = await fetchUsageWithRetry(
-      provider,
-      token,
-      signal,
-      beforeRetry,
-    );
+    let usage: UsageSnapshot;
+    try {
+      usage = await fetchUsageWithRetry(provider, token, signal, beforeRetry);
+    } finally {
+      // Discard Copilot results after login/routing changes, including failures.
+      // Cancellation must not trigger additional credential reads.
+      if (!signal.aborted) afterRequest?.();
+    }
+    signal.throwIfAborted();
     if (museCredentialAtRequest && readCurrentMuseCredential) {
       const current = readCurrentMuseCredential();
       signal.throwIfAborted();
