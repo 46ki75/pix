@@ -232,18 +232,22 @@ function copilotEntitlement(value: unknown, unlimited: boolean): number | null {
 function copilotReset(
   data: Record<string, unknown>,
   bucket: Record<string, unknown>,
-): string | null {
-  // A category-specific reset must not borrow a different quota's account clock.
-  if (bucket.quota_reset_at != null) return epochReset(bucket.quota_reset_at);
-  if (data.quota_reset_date_utc != null)
-    return isoReset(data.quota_reset_date_utc);
-  const legacy = data.quota_reset_date ?? data.limited_user_reset_date;
-  // Date-only legacy values contain no clock. Do not turn them into countdowns.
-  if (typeof legacy === "string" && /^\d{4}-\d{2}-\d{2}$/.test(legacy)) {
-    isoReset(`${legacy}T00:00:00Z`);
-    return null;
+): Pick<UsageWindow, "resetsAt" | "resetsOn"> {
+  // VS Code normalizes quota_reset_at: 0 to absent; it must not hide the account
+  // reset. A nonzero category clock remains authoritative, even if unusable.
+  if (bucket.quota_reset_at != null && bucket.quota_reset_at !== 0)
+    return { resetsAt: epochReset(bucket.quota_reset_at) };
+  const reset =
+    data.quota_reset_date_utc ??
+    data.quota_reset_date ??
+    data.limited_user_reset_date;
+  if (typeof reset === "string" && /^\d{4}-\d{2}-\d{2}$/.test(reset)) {
+    // Validate the calendar, but preserve its precision instead of inventing
+    // midnight UTC or converting the date through the local timezone.
+    isoReset(`${reset}T00:00:00Z`);
+    return { resetsAt: null, resetsOn: reset };
   }
-  return isoReset(legacy);
+  return { resetsAt: isoReset(reset) };
 }
 
 export function parseCopilotUsage(payload: unknown): UsageWindow[] {
@@ -278,7 +282,7 @@ export function parseCopilotUsage(payload: unknown): UsageWindow[] {
           ? "Premium"
           : "Chat",
       usedPercent: null,
-      resetsAt: copilotReset(data, bucket),
+      ...copilotReset(data, bucket),
       windowSeconds: null,
     };
     if (unlimited) {

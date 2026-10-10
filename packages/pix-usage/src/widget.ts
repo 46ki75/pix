@@ -7,7 +7,7 @@ import {
   formatWindowIcon,
   padVisibleEnd,
   padVisibleStart,
-  relativeResetTime,
+  formatWindowReset,
   usageWindowColumnWidths,
   type UsageTextFormatter,
 } from "./format.ts";
@@ -50,9 +50,7 @@ function renderRows(
       columns.usage,
     );
     const relative = padVisibleStart(
-      window.resetsAt
-        ? relativeResetTime(window.resetsAt, now).trimStart()
-        : "-d --h --m",
+      formatWindowReset(window, now).trimStart(),
       columns.reset,
     );
     const row = `${name} ${label} ${formatText("text", "󰓅")} ${usage} ${formatText("text", "")} ${relative}`;

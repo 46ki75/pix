@@ -89,8 +89,12 @@ separate manual checks.
   numerator for `entitlement`. Unknown ratios are null and must render without
   a percentage. A zero finite entitlement is unallocated, not exhausted; unlimited
   snapshots can still have an unavailable shared pool. Prefer per-category reset
-  epochs; date-only account resets supply no countdown. Keep raw identities,
-  plan strings, overage metadata, and unused buckets out of normalized results.
+  epochs; a zero category epoch is absent and must not suppress the account
+  fallback, matching VS Code's `quota_reset_at || undefined` normalization.
+  Preserve validated date-only account resets in `resetsOn` with `resetsAt: null`.
+  Render the calendar date with an unknown-time label, never a guessed midnight,
+  timezone conversion, or countdown. Keep raw identities, plan strings, overage
+  metadata, and unused buckets out of normalized results.
 - `src/http.ts` bounds requests and bodies, refuses redirects, and sanitizes errors.
   `src/auth.ts` retries safe quota reads, including OpenCode's GET, once only for
   timeouts. Recheck OpenCode routing and credential identity before retrying, then

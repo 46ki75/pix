@@ -86,8 +86,10 @@ with a minimum width of ten characters, so shorter countdowns such as `4h 59m` d
 not shift the UTC timestamp left.
 Sub-minute intervals show `<1m`. Past timestamps show `ago`, and an exact match
 shows `now`; neither confirms that the provider has refreshed the quota. Unknown
-resets show `-d --h --m` without a date. Known dates use `YYYY-MM-DD HH:mm:ss (UTC)`;
-fractional seconds and checked timestamps are omitted from the report.
+resets show `-d --h --m` without a date. Precise resets use
+`YYYY-MM-DD HH:mm:ss (UTC)`; calendar-only resets use `YYYY-MM-DD (time unknown)`
+without a countdown or timezone. Fractional seconds and checked timestamps are
+omitted from the report.
 
 Use a Nerd Font to display the icons: `` for OpenAI/Codex, `` for Claude,
 `󰛤` for Meta Muse, `󰨔` for OpenCode Go, `` for GitHub Copilot, `` for
@@ -129,10 +131,12 @@ Uncapped accounts can report an aggregate credit count without a denominator:
 `quota unavailable`, even if historical usage is reported. Missing limits never
 imply zero consumption or unlimited access to a shared organization pool.
 
-The reset uses the category's reported epoch, otherwise a timezone-bearing
-account reset. Legacy date-only resets have no precise clock and appear unknown;
-a month length or next reset is never inferred. Overage spend, additional-usage
-budgets, and session/weekly rate limits are not part of this indicator.
+The reset uses the category's reported epoch, falling back to the account reset
+when the category value is absent or zero. Account dates without a clock remain
+visible as `2026-11-01 (time unknown)`, without inventing midnight, a timezone, or a
+countdown. A month length or next reset is never inferred. Overage spend,
+additional-usage budgets, and session/weekly rate limits are not part of this
+indicator.
 
 ### Current-provider widget
 
@@ -175,10 +179,11 @@ repeated notifications or fabricated zero usage. A failed refresh replaces the o
 quota display. Hiding the widget stops automatic refreshes and cancels requests
 unless an overlapping manual report still needs them.
 
-Known resets show the relative countdown followed by `YYYY-MM-DD HH:mm:ss (UTC)`
+Precise resets show the relative countdown followed by `YYYY-MM-DD HH:mm:ss (UTC)`
 when the entire row fits. On narrower terminals, the absolute timestamp is omitted
-as a unit, keeping the countdown. Each row adapts independently when resized;
-unknown resets never add a date.
+as a unit, keeping the countdown. Calendar-only resets show
+`YYYY-MM-DD (time unknown)` instead of a countdown. Each row adapts independently
+when resized; unknown resets never add a date.
 
 The divider fills the available terminal width; content rows have a one-space
 indent. If a row is still too long without its timestamp, it is truncated. The
@@ -335,5 +340,7 @@ OpenCode requires an API key for a workspace with a Go subscription. Copilot
 requires a github.com OAuth token, not a Copilot inference token or enterprise
 credential. Its normalized windows can carry exact or estimated amounts;
 `usedPercent: null` means that no meaningful ratio was reported, never zero.
+A calendar-only reset is returned as `resetsOn: "YYYY-MM-DD"` with `resetsAt: null`;
+only `resetsAt` represents a timestamp suitable for a countdown.
 Pure parsers and normalized types are separate from credential resolution and UI
 formatting. Keep credential ownership in the calling application.

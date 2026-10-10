@@ -20,6 +20,8 @@ export interface UsageWindow {
   amount?: UsageAmount;
   quotaState?: "unlimited" | "unavailable";
   resetsAt: string | null;
+  // Calendar-only reset (YYYY-MM-DD), used when resetsAt is null. No clock or timezone.
+  resetsOn?: string;
   windowSeconds: number | null;
 }
 
