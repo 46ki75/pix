@@ -49,18 +49,18 @@ description = "Check repository formatting, lint, types, and tests"
 depends = ["fmt-check --all-files", "lint --all-files", "typecheck", "test"]
 
 [tasks.dev]
-description = "Launch Pi with all local extensions and themes; accepts Pi arguments"
+description = "Launch Pi with maintained local extensions and themes; accepts Pi arguments"
 dir = "{{config_root}}"
 raw_args = true
 raw = true
-run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-websearch -e ./packages/pix-webfetch -e ./packages/pix-mcp-prompt -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
+run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-mcp-prompt -e ./packages/pix-bg -e ./packages/pix-statusline -e ./packages/pix-usage -e ./packages/pix-theme-inspector -e ./packages/pix-theme-elmethis"
 
 [tasks."webfetch:build"]
-description = "Build the standalone webfetch core"
+description = "Build the deprecated standalone webfetch core"
 run = "pnpm --filter @ikuma.cloud/pix-webfetch run build"
 
 [tasks."websearch:build"]
-description = "Build the standalone websearch core"
+description = "Build the deprecated standalone websearch core"
 run = "pnpm --filter @ikuma.cloud/pix-websearch run build"
 
 [tasks."mcp-web:build"]
@@ -68,13 +68,13 @@ description = "Build the self-contained web stdio MCP server"
 run = "pnpm --filter @ikuma.cloud/mcp-web run build"
 
 [tasks."websearch:dev"]
-description = "Launch Pi with @ikuma.cloud/pix-websearch"
+description = "Launch Pi with deprecated @ikuma.cloud/pix-websearch"
 dir = "{{config_root}}/packages/pix-websearch"
 raw = true
 run = "pnpm exec pi -e ."
 
 [tasks."webfetch:dev"]
-description = "Launch Pi with @ikuma.cloud/pix-webfetch"
+description = "Launch Pi with deprecated @ikuma.cloud/pix-webfetch"
 dir = "{{config_root}}/packages/pix-webfetch"
 raw = true
 run = "pnpm exec pi -e ."
@@ -87,7 +87,7 @@ raw = true
 run = "pnpm exec pi --no-extensions -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e ./packages/pix-mcp-prompt"
 
 [tasks."mcp:dev"]
-description = "Launch legacy @ikuma.cloud/pix-mcp; accepts Pi arguments"
+description = "Launch deprecated @ikuma.cloud/pix-mcp; accepts Pi arguments"
 dir = "{{config_root}}/packages/pix-mcp"
 raw_args = true
 raw = true
@@ -129,7 +129,7 @@ raw = true
 run = "pnpm exec pi --no-extensions -e . --use-theme elmethis-light/elmethis-dark"
 
 [tasks."web:dev"]
-description = "Launch Pi with web search and web fetch"
+description = "Launch Pi with the deprecated web search and web fetch extensions"
 dir = "{{config_root}}/packages/pix-webfetch"
 raw = true
 run = "pnpm exec pi -e ../pix-websearch -e ."

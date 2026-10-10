@@ -3,8 +3,15 @@
 User-selected MCP prompts alongside Pi's native tools and resources.
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
-This version supports **Pi 1.0.0, 1.0.2, and 1.1.0**. Load it from this checkout
-to test it before release:
+This version supports **Pi 1.0.0, 1.0.2, and 1.1.0**.
+
+## Installation
+
+```sh
+pi install npm:@ikuma.cloud/pix-mcp-prompt
+```
+
+To load it from this checkout instead:
 
 ```sh
 pi -e /absolute/path/to/pix/packages/pix-mcp-prompt
@@ -123,22 +130,29 @@ a sandbox: server content and local executables remain untrusted.
 
 ## Migrating from pix-mcp
 
-1. Keep the existing installation available until this replacement is validated
-   for your servers. Never load both extensions in one session.
+1. Upgrade Pi to a supported version listed above. Keep the legacy installation
+   available for rollback until the replacement is validated for your servers.
+   Never load both extensions in one session.
 2. Move project entries from `.mcp.json` to `.pi/mcp.json` and grant project trust.
 3. Convert `disabled: true` to `enabled: false`; convert `timeout` from
    milliseconds to seconds. Remove `startupTimeoutMs` and `catalogTimeoutMs`.
 4. Adjust `cwd` for session-relative resolution. Pi expands environment/command
    values in `env` and `headers`, not arbitrary `command`/`args`/`url` strings;
    `~` expansion in stdio paths is supported. Replace `${VAR:-default}`.
-5. Remove legacy `--mcp-config` launch flags. Use native `/mcp`, `codemode`,
-   `tool_search`, and the native resource tools instead of the old `mcp` tool or
-   `/mcp-resource` picker. Tool names and schema handling now belong to Pi.
+5. Remove legacy `--mcp-config` launch flags and enable Pi's built-in MCP
+   extension, removing any `-builtin:mcp` setting or `--no-mcp` launch flag.
+   Use native `/mcp`, `codemode`, `tool_search`, and the native resource tools
+   instead of the old `mcp` tool or `/mcp-resource` picker. Tool names and schema
+   handling now belong to Pi.
+6. Remove the legacy package with `pi remove npm:@ikuma.cloud/pix-mcp`, then
+   install this package as shown above if you need prompts. Add `--local` to
+   package commands for project installations; remove any legacy path-based
+   extension settings or `-e` arguments separately. Run `pi mcp list` to verify
+   native connections and `/mcp-prompt list` to verify prompts.
 
 Invalid project entries are handled exactly as native Pi handles them, which can
 leave a valid global entry effective; the legacy adapter masked that global
 entry. Review configurations rather than copying legacy fields unchanged.
 
-The published `@ikuma.cloud/pix-mcp` package is not yet deprecated. Publish and
-verify this replacement first, then issue an npm deprecation notice with these
-migration instructions. Do not unpublish old versions.
+`@ikuma.cloud/pix-mcp` is deprecated. Existing versions remain installable for
+compatibility and rollback; they will not be unpublished.

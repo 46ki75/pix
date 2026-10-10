@@ -3,11 +3,40 @@
 One stdio [MCP](https://modelcontextprotocol.io/) server exposing `websearch` and
 `webfetch`. Search providers, page conversion, and artifact storage are owned by
 this package; neither Pi nor the Pi web-extension packages are required to build,
-install, or run it. The existing Pi extensions remain independently usable.
+install, or run it. This is the replacement for the deprecated
+[`pix-websearch`](../pix-websearch/README.md) and
+[`pix-webfetch`](../pix-webfetch/README.md) extensions.
 
 Requires Node.js 20.19 or newer.
 
-## Build and configure
+## Install and configure
+
+Install the published CLI:
+
+```sh
+npm install -g @ikuma.cloud/mcp-web
+```
+
+Configure your MCP client to launch it:
+
+```json
+{
+  "mcpServers": {
+    "web": {
+      "command": "mcp-web",
+      "env": {
+        "PIX_WEBSEARCH_PROVIDER": "auto"
+      }
+    }
+  }
+}
+```
+
+The client's PATH must include the installed CLI and a supported Node executable.
+Use an absolute CLI path if needed. This package is a standard MCP server, not a
+Pi extension; do not load it with `pi install` or `-e`.
+
+### From a checkout
 
 From the repository root, follow the [workspace setup](../../README.md#setup), then:
 
@@ -38,7 +67,35 @@ Remove old server entries exposing the same tools to avoid duplicate registratio
 No HTTP listener or browser automation is included; stdout is reserved for MCP.
 `node packages/mcp-web/dist/cli.js --help` lists CLI options.
 
-### Search provider selection
+## Pi migration
+
+Upgrade to Pi with native MCP support and keep its built-in MCP extension
+enabled. The published replacements were smoke-tested with Pi 1.1.0.
+After installing the CLI above, replace global npm-installed web extensions with
+one MCP server:
+
+```sh
+pi remove npm:@ikuma.cloud/pix-websearch
+pi remove npm:@ikuma.cloud/pix-webfetch
+pi mcp add web --env PIX_WEBSEARCH_PROVIDER=auto --exposure direct -- mcp-web
+pi mcp list
+```
+
+Add `--local` to the remove/add commands for project installations and grant
+project trust. Remove legacy path-based extension settings or `-e` arguments
+separately. Run `/reload` in an existing session after changing configuration.
+If you still use `pix-mcp`, follow its
+[native MCP migration guide](../pix-mcp-prompt/README.md#migrating-from-pix-mcp)
+before adding the server; do not load both MCP adapters.
+
+Keep provider selection and optional API keys in the server's `env` or inherited
+environment. `--exposure direct` keeps both tools directly available to the model,
+but their native names become `mcp__web__websearch` and `mcp__web__webfetch`.
+MCP results replace the extensions' Pi-specific `details`; oversized fetch output
+is available through `read_mcp_resource` as well as its local temporary file.
+Do not load the deprecated web extensions alongside this server.
+
+## Search provider selection
 
 Set `PIX_WEBSEARCH_PROVIDER` in the server's `env` configuration:
 
