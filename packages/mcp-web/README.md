@@ -105,6 +105,14 @@ This list documents runtime network requirements; the server does not enforce
 a domain allowlist. MCP `resources/read` retrieves saved local output and needs
 no additional outbound network access.
 
+### Proxies
+
+Proxy environment variables are not enabled by default. On Node.js 24, set
+`NODE_USE_ENV_PROXY=1` in the MCP server's `env` alongside `HTTP_PROXY` and/or
+`HTTPS_PROXY`; use `NO_PROXY` for bypasses. These settings must be present when
+Node starts. Both tools use this native behavior, with no custom proxy handling.
+See [Node's proxy documentation](https://nodejs.org/docs/latest-v24.x/api/cli.html#node_use_env_proxy1).
+
 ## Tools
 
 ```ts
