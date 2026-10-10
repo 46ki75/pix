@@ -13,10 +13,11 @@ mise run --silent test --project mcp-web
 mise run --silent check
 ```
 
-Tests exercise protocol discovery, both tools, provider fallback, input errors,
-cancellation, bounded artifact recovery, resource-read authorization, and legacy
-protocol negotiation through an in-memory MCP client. CLI tests build all three packages and connect to the
-compiled server over stdio, using a local HTTP fixture. No external services,
+Tests exercise protocol discovery, both tools, provider pools and disabling,
+rate-limit fallback, input errors, cancellation, bounded artifact recovery,
+resource-read authorization, and legacy protocol negotiation through an in-memory
+MCP client. CLI tests build all three packages and connect to the compiled server
+over stdio, using a local HTTP fixture. No external services,
 personal Pi configuration, or model requests are needed. Existing web-package
 tests remain responsible for detailed provider and conversion behavior.
 

@@ -11,6 +11,7 @@ import { afterEach, expect, test, vi } from "vitest";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 test("Pi loads pix-websearch and invokes the tool without a UI or model request", async () => {
@@ -29,6 +30,7 @@ test("Pi loads pix-websearch and invokes the tool without a UI or model request"
   vi.stubGlobal("fetch", fetch);
   vi.stubEnv("PIX_WEBSEARCH_PROVIDER", "tavily");
   vi.stubEnv("TAVILY_API_KEY", "");
+  vi.spyOn(Math, "random").mockReturnValue(0.99);
   try {
     const loaded = await discoverAndLoadExtensions(
       [fileURLToPath(new URL("../", import.meta.url))],
@@ -84,6 +86,27 @@ test("Pi loads pix-websearch and invokes the tool without a UI or model request"
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.stubEnv("PIX_WEBSEARCH_PROVIDER", "none");
+    await expect(
+      tool.execute("call-disabled", { query: "Pi" }, undefined, undefined, ctx),
+    ).rejects.toThrow("Web search is disabled");
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.stubEnv("PIX_WEBSEARCH_PROVIDER", "exa,tavily");
+    const pooled = await tool.execute(
+      "call-pool",
+      { query: "Pi" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(pooled.details).toMatchObject({ provider: "tavily" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.tavily.com/search",
+      "https://api.tavily.com/search",
+    ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -81,6 +81,8 @@ It also exposes full truncated fetch output through MCP resource links.
 The server is private while developing. Run `mise run --silent mcp-web:build`,
 then configure your MCP client to launch `packages/mcp-web/dist/cli.js` with Node.
 Run `mise run --silent test --project mcp-web` for protocol and built-CLI tests.
+Use [`PIX_WEBSEARCH_PROVIDER`](packages/mcp-web/README.md#search-provider-selection)
+to select a provider pool, pin one provider, or disable search.
 See its [network domain allowlist](packages/mcp-web/README.md#network-domain-allowlist)
 for search-provider hosts and fetch access requirements.
 

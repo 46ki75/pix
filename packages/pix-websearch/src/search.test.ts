@@ -178,6 +178,137 @@ describe("provider selection", () => {
     expect(exa.search).toHaveBeenCalledTimes(1);
   });
 
+  test("restricts automatic selection and 429 fallback to the configured pool", async () => {
+    const exa = provider("exa"),
+      parallel = provider("parallel"),
+      tavily = provider("tavily");
+    exa.search.mockRejectedValueOnce(limited());
+    const search = createSearch([exa, parallel, tavily], { random: () => 0 });
+    const pool = { ...options, selection: ["exa", "tavily"] as const };
+    expect((await search.search("first", pool)).provider).toBe("tavily");
+    expect((await search.search("second", pool)).provider).toBe("tavily");
+    expect(exa.search).toHaveBeenCalledTimes(1);
+    expect(tavily.search).toHaveBeenCalledTimes(2);
+    expect(parallel.search).not.toHaveBeenCalled();
+  });
+
+  test("never falls back outside a rate-limited pool", async () => {
+    const exa = provider("exa"),
+      parallel = provider("parallel"),
+      tavily = provider("tavily");
+    exa.search.mockRejectedValue(limited("0"));
+    tavily.search.mockRejectedValue(limited("0"));
+    const search = createSearch([exa, parallel, tavily], { random: () => 0 });
+    await expect(
+      search.search("Pi", { ...options, selection: ["exa", "tavily"] }),
+    ).rejects.toThrow("rate limited");
+    expect(exa.search).toHaveBeenCalledTimes(1);
+    expect(tavily.search).toHaveBeenCalledTimes(1);
+    expect(parallel.search).not.toHaveBeenCalled();
+  });
+
+  test("does not reuse session affinity for a provider excluded by a changed pool", async () => {
+    const exa = provider("exa"),
+      parallel = provider("parallel"),
+      tavily = provider("tavily");
+    const search = createSearch([exa, parallel, tavily], { random: () => 0 });
+    expect(
+      (
+        await search.search("first", {
+          ...options,
+          selection: ["exa", "tavily"],
+        })
+      ).provider,
+    ).toBe("exa");
+    expect(
+      (
+        await search.search("second", {
+          ...options,
+          selection: ["parallel", "tavily"],
+        })
+      ).provider,
+    ).toBe("parallel");
+    expect((await search.search("third", options)).provider).toBe("parallel");
+    expect(exa.search).toHaveBeenCalledTimes(1);
+    expect(parallel.search).toHaveBeenCalledTimes(2);
+    expect(tavily.search).not.toHaveBeenCalled();
+  });
+
+  test("computes retry delay only from providers in the configured pool", async () => {
+    const exa = provider("exa"),
+      parallel = provider("parallel"),
+      tavily = provider("tavily");
+    exa.search.mockRejectedValue(limited("1"));
+    tavily.search.mockRejectedValue(limited("10"));
+    parallel.search.mockRejectedValue(limited("20"));
+    const search = createSearch([exa, parallel, tavily], {
+      now: () => 0,
+      random: () => 0,
+    });
+    await expect(
+      search.search("first", { ...options, selection: ["exa", "tavily"] }),
+    ).rejects.toThrow("rate limited");
+    await expect(
+      search.search("second", {
+        ...options,
+        selection: ["parallel", "tavily"],
+      }),
+    ).rejects.toThrow("Try again in 10 seconds.");
+    expect(exa.search).toHaveBeenCalledTimes(1);
+  });
+
+  test("a fixed provider still ignores cooldowns set by a pool", async () => {
+    const exa = provider("exa"),
+      tavily = provider("tavily");
+    exa.search.mockRejectedValueOnce(limited());
+    const search = createSearch([exa, tavily], { random: () => 0 });
+    expect(
+      (
+        await search.search("first", {
+          ...options,
+          selection: ["exa", "tavily"],
+        })
+      ).provider,
+    ).toBe("tavily");
+    expect(
+      (await search.search("second", { ...options, selection: "exa" }))
+        .provider,
+    ).toBe("exa");
+  });
+
+  test("none disables search without calling any provider", async () => {
+    const exa = provider("exa"),
+      tavily = provider("tavily");
+    const search = createSearch([exa, tavily]);
+    await expect(
+      search.search("Pi", { ...options, selection: "none" }),
+    ).rejects.toThrow("Web search is disabled");
+    expect(exa.search).not.toHaveBeenCalled();
+    expect(tavily.search).not.toHaveBeenCalled();
+    await expect(
+      search.search("Pi", {
+        ...options,
+        selection: "none",
+        signal: AbortSignal.abort(),
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  test("reports unavailable pools instead of incorrectly reporting rate limits", async () => {
+    const exa = provider("exa");
+    const search = createSearch([exa]);
+    await expect(
+      search.search("Pi", { ...options, selection: ["tavily", "tinyfish"] }),
+    ).rejects.toThrow("No enabled web search providers are available");
+    await expect(
+      search.search("Pi", { ...options, selection: [] }),
+    ).rejects.toThrow("No enabled web search providers are available");
+    await expect(
+      search.search("Pi", { ...options, selection: "tavily" }),
+    ).rejects.toThrow("Selected web search provider is unavailable");
+    expect(exa.search).not.toHaveBeenCalled();
+  });
+
   test("validates provider configuration without echoing arbitrary environment values", () => {
     expect(selectionFromEnv({})).toBe("auto");
     expect(selectionFromEnv({ PIX_WEBSEARCH_PROVIDER: " tavily " })).toBe(

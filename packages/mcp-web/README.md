@@ -39,6 +39,30 @@ Remove old server entries exposing the same tools to avoid duplicate registratio
 No HTTP listener or browser automation is included; stdout is reserved for MCP.
 `node packages/mcp-web/dist/cli.js --help` lists CLI options.
 
+### Search provider selection
+
+Set `PIX_WEBSEARCH_PROVIDER` in the server's `env` configuration:
+
+| Value | Behavior |
+| --- | --- |
+| Unset, blank, or `auto` | All five providers enabled; automatic selection |
+| One name, such as `tavily` | Fixed provider; no fallback |
+| Comma-separated names, such as `exa,tavily` | Automatic selection and fallback within that pool only |
+| `none` | No provider requests; `websearch` reports a disabled error |
+
+Names are `exa`, `parallel`, `firecrawl`, `tavily`, and `tinyfish`. Whitespace
+around entries and duplicates are ignored; one unique name uses fixed mode.
+A list is a pool, not a priority order. Names are case-sensitive; unknown names,
+empty entries, and mixing `auto` or `none` into a list are configuration errors.
+`none` leaves `webfetch` and saved-output resources available.
+
+In automatic mode, the provider is remembered for the connection; HTTP 429
+triggers cooldown and fallback only among enabled providers. State is not shared
+between server processes. Optional credentials are `EXA_API_KEY`,
+`PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY`, and `TINYFISH_API_KEY`.
+Keys are captured when the server starts. See the
+[search contract](../pix-websearch/README.md#configuration) for endpoint details.
+
 ## Network domain allowlist
 
 For an outbound domain whitelist, allow HTTPS (TCP port 443) to these
@@ -52,8 +76,10 @@ search-provider hosts:
 | Tavily | `api.tavily.com` |
 | TinyFish | `agent.tinyfish.ai` |
 
-With `PIX_WEBSEARCH_PROVIDER=auto`, allow all five domains. With a fixed
-provider, only that provider's domain is required for search.
+With the default `auto` selection, allow all five domains. With a provider list,
+only the listed providers' domains are required for search; with a fixed
+provider, only its domain is required. With `none`, no provider domains are
+needed for search.
 
 `webfetch` additionally needs access to each requested URL's host and port,
 including any redirect destinations. Search-result websites are not covered
@@ -79,14 +105,6 @@ webfetch({ url: "https://example.com/docs", format: "text" })
   contain credentials and are limited to 8,192 serialized bytes. Fetching has a
   25-second deadline, a 1 MiB response limit, and up to five redirects.
   JavaScript is not executed.
-
-Provider selection uses `PIX_WEBSEARCH_PROVIDER`: `auto` (default), `exa`,
-`parallel`, `firecrawl`, `tavily`, or `tinyfish`. Optional credentials are
-`EXA_API_KEY`, `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY`, and
-`TINYFISH_API_KEY`. Keys are captured when the server starts. In automatic mode,
-the provider is remembered for the connection; HTTP 429 triggers cooldown and
-fallback. State is not shared between server processes. See the
-[search contract](../pix-websearch/README.md#configuration) for endpoint details.
 
 Input validation and execution failures return MCP tool results with
 `isError: true`; unknown tools return JSON-RPC errors. Cancellation and connection

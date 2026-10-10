@@ -182,6 +182,65 @@ describe("combined MCP server", () => {
     ]);
   });
 
+  it("restricts automatic search and rate-limit fallback to an environment-configured pool", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      if (url === "https://api.tavily.com/search") {
+        return new Response(null, {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        });
+      }
+      if (url !== "https://agent.tinyfish.ai/mcp")
+        throw new Error("Unexpected provider request");
+      const body = JSON.parse(String(init?.body)) as { id: number };
+      return Response.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: { content: [{ type: "text", text: '{"results":[]}' }] },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const { client } = await connect({
+      PIX_WEBSEARCH_PROVIDER: "tavily,tinyfish",
+    });
+    for (const query of ["first", "second"]) {
+      const result = await client.callTool({
+        name: "websearch",
+        arguments: { query },
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result._meta?.[META_KEY]).toMatchObject({ provider: "tinyfish" });
+    }
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.tavily.com/search",
+      "https://agent.tinyfish.ai/mcp",
+      "https://agent.tinyfish.ai/mcp",
+    ]);
+  });
+
+  it("none disables provider requests while leaving webfetch available", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response("Fetched page"),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const { client } = await connect({ PIX_WEBSEARCH_PROVIDER: "none" });
+    const search = await client.callTool({
+      name: "websearch",
+      arguments: { query: "query" },
+    });
+    expect(search.isError).toBe(true);
+    expect(text(search)).toContain("Web search is disabled");
+    expect(fetch).not.toHaveBeenCalled();
+    const page = await client.callTool({
+      name: "webfetch",
+      arguments: { url: "https://example.com" },
+    });
+    expect(page.isError).not.toBe(true);
+    expect(text(page)).toContain("Fetched page");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("fetches Markdown and text with relative links resolved after redirects", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (url) =>
       String(url).endsWith("/start")
@@ -397,18 +456,21 @@ describe("combined MCP server", () => {
     },
   );
 
-  it("reports invalid provider configuration without network access", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>();
-    vi.stubGlobal("fetch", fetch);
-    const { client } = await connect({ PIX_WEBSEARCH_PROVIDER: "invalid" });
-    const result = await client.callTool({
-      name: "websearch",
-      arguments: { query: "query" },
-    });
-    expect(result.isError).toBe(true);
-    expect(text(result)).toContain("PIX_WEBSEARCH_PROVIDER must be");
-    expect(fetch).not.toHaveBeenCalled();
-  });
+  it.each(["invalid", "exa,invalid-secret", "auto,exa", "none,exa", "tavily,"])(
+    "reports invalid provider configuration %j without network access",
+    async (selection) => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      vi.stubGlobal("fetch", fetch);
+      const { client } = await connect({ PIX_WEBSEARCH_PROVIDER: selection });
+      const result = await client.callTool({
+        name: "websearch",
+        arguments: { query: "query" },
+      });
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain("PIX_WEBSEARCH_PROVIDER must be");
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["webfetch", "websearch"])(
     "does not expose raw network errors from %s",

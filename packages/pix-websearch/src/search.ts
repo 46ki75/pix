@@ -37,30 +37,51 @@ export function createSearch(
       }
       const { signal, selection, sessionId } = options;
       signal?.throwIfAborted();
-      const auto = selection === "auto";
+      if (selection === "none") {
+        throw new SearchError(
+          "Web search is disabled (PIX_WEBSEARCH_PROVIDER=none).",
+        );
+      }
+      const auto = selection === "auto" || typeof selection !== "string";
+      const enabled =
+        typeof selection === "string"
+          ? providers.filter(
+              (provider) => selection === "auto" || provider.id === selection,
+            )
+          : providers.filter((provider) => selection.includes(provider.id));
+      if (!enabled.length) {
+        throw new SearchError(
+          auto
+            ? "No enabled web search providers are available."
+            : "Selected web search provider is unavailable.",
+        );
+      }
       const preference = preferences.get(sessionId) ?? {};
       if (auto) preferences.set(sessionId, preference);
       const attempted = new Set<ProviderId>();
 
       while (true) {
         signal?.throwIfAborted();
-        const available = providers.filter((provider) =>
-          auto
-            ? !attempted.has(provider.id) &&
-              (cooldowns.get(provider.id) ?? 0) <= now()
-            : provider.id === selection,
-        );
+        const available = auto
+          ? enabled.filter(
+              (provider) =>
+                !attempted.has(provider.id) &&
+                (cooldowns.get(provider.id) ?? 0) <= now(),
+            )
+          : enabled;
         const provider =
           available.find((item) => item.id === preference.provider) ??
           available[Math.floor(random() * available.length)];
         if (!provider) {
-          const until = Math.min(...cooldowns.values());
+          const until = Math.min(
+            ...enabled.map((provider) => cooldowns.get(provider.id) ?? 0),
+          );
           const wait = Number.isFinite(until)
             ? Math.max(0, Math.ceil((until - now()) / 1000))
             : 0;
           throw new SearchError(
             auto
-              ? `All web search providers are rate limited. ${wait ? `Try again in ${wait} seconds.` : "Try again shortly."}`
+              ? `All enabled web search providers are rate limited. ${wait ? `Try again in ${wait} seconds.` : "Try again shortly."}`
               : "Selected web search provider is unavailable.",
           );
         }

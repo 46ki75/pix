@@ -12,7 +12,8 @@ Options:
   -h, --help     Show this help
   -v, --version  Show the version
 
-PIX_WEBSEARCH_PROVIDER: auto (default), exa, parallel, firecrawl, tavily, tinyfish
+PIX_WEBSEARCH_PROVIDER: auto (default), none, a provider, or a comma-separated list
+Providers: exa, parallel, firecrawl, tavily, tinyfish
 Optional API keys: EXA_API_KEY, PARALLEL_API_KEY, FIRECRAWL_API_KEY,
                   TAVILY_API_KEY, TINYFISH_API_KEY
 `;

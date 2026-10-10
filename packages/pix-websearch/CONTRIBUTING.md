@@ -31,8 +31,9 @@ mise run test --project pix-websearch
 ```
 
 Tests mock HTTP and isolate Pi discovery from personal configuration. They cover
-provider request/response contracts, JSON and SSE handling, bounded response
-reads, cancellation, rate-limit fallback, output limits, and Pi package loading.
+provider request/response contracts, provider-list configuration and disabling,
+JSON and SSE handling, bounded response reads, cancellation, restricted-pool
+rate-limit fallback, output limits, and Pi package loading.
 
 ## Implementation references
 

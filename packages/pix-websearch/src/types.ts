@@ -7,7 +7,7 @@ export const PROVIDER_IDS = [
 ] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
-export type Selection = "auto" | ProviderId;
+export type Selection = "auto" | "none" | ProviderId | readonly ProviderId[];
 
 export const MAX_RESULTS = 8;
 export const MAX_QUERY_LENGTH = 4_000;
@@ -46,10 +46,17 @@ export class SearchError extends Error {
 
 export function selectionFromEnv(env: NodeJS.ProcessEnv): Selection {
   const value = env.PIX_WEBSEARCH_PROVIDER?.trim() || "auto";
-  if (value === "auto" || PROVIDER_IDS.some((id) => id === value)) {
-    return value as Selection;
+  if (value === "auto" || value === "none") return value;
+  const names = value.split(",").map((name) => name.trim());
+  if (
+    names.every((name): name is ProviderId =>
+      PROVIDER_IDS.some((id) => id === name),
+    )
+  ) {
+    const [first, ...rest] = new Set(names);
+    if (first !== undefined) return rest.length ? [first, ...rest] : first;
   }
   throw new SearchError(
-    `PIX_WEBSEARCH_PROVIDER must be auto or one of: ${PROVIDER_IDS.join(", ")}.`,
+    `PIX_WEBSEARCH_PROVIDER must be auto, none, a provider name, or a comma-separated list of: ${PROVIDER_IDS.join(", ")}.`,
   );
 }
