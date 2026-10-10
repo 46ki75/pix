@@ -8,7 +8,7 @@ import {
   FetchError,
   formatPage,
   MAX_URL_LENGTH,
-} from "@ikuma.cloud/pix-webfetch/core";
+} from "./webfetch/core.js";
 import {
   createProviders,
   createSearch,
@@ -16,7 +16,7 @@ import {
   MAX_QUERY_LENGTH,
   SearchError,
   selectionFromEnv,
-} from "@ikuma.cloud/pix-websearch/core";
+} from "./websearch/core.js";
 // Low-level Server is intentional; see protocol.ts for the deprecation rationale.
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {

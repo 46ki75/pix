@@ -64,8 +64,7 @@ description = "Build the standalone websearch core"
 run = "pnpm --filter @ikuma.cloud/pix-websearch run build"
 
 [tasks."mcp-web:build"]
-description = "Build the combined stdio MCP server and its web cores"
-depends = ["webfetch:build", "websearch:build"]
+description = "Build the self-contained web stdio MCP server"
 run = "pnpm --filter @ikuma.cloud/mcp-web run build"
 
 [tasks."websearch:dev"]
