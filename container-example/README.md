@@ -2,6 +2,11 @@
 
 Read [CONTRIBUTING.md](../CONTRIBUTING.md) before making changes.
 
+> **Legacy example.** This image pins Pi 0.87.1 and installs the deprecated
+> `pix-webfetch`, `pix-websearch`, and `pix-mcp` packages. For new setups, use
+> [`mcp-web`](../packages/mcp-web/README.md), native Pi MCP, and
+> [`pix-mcp-prompt`](../packages/pix-mcp-prompt/README.md) when you need prompts.
+
 Using Apple's `container` CLI, build the image from the repository root with the
 [example Dockerfile](Dockerfile):
 
@@ -19,18 +24,20 @@ container run -it --rm -e TERM -e COLORTERM pi
 Without a persistent mount, changes made inside the container are lost when it
 is removed.
 
-## MCP migration
+## Migrating the legacy image
 
-The example still installs the legacy `pix-mcp` package pending validation of
-[`pix-mcp-prompt`](../packages/pix-mcp-prompt/README.md) in the container.
-Its settings explicitly disable built-in MCP to prevent duplicate connections.
-This preserves existing prompt/resource commands; it does not adopt the new
-package's native configuration yet.
+The settings disable built-in MCP to prevent duplicate connections with the
+legacy adapter. Existing package versions remain installable, but the image has
+not been migrated or validated with the replacements.
 
-After a compatible replacement release is published and verified, replace the
-`pix-mcp` package entry with `pix-mcp-prompt`, remove `-builtin:mcp`, and migrate
-server entries to native `mcp.json` following the replacement's guide. Do not
-configure the image to install an unpublished npm package.
+To migrate, first update the Dockerfile to a Pi version supported by
+[`pix-mcp-prompt`](../packages/pix-mcp-prompt/README.md). Replace the `pix-mcp`
+package entry with `pix-mcp-prompt`, remove `-builtin:mcp`, and migrate server
+entries using its [migration guide](../packages/pix-mcp-prompt/README.md#migrating-from-pix-mcp).
+Replace the two Pi web extensions with an npm-installed `mcp-web` CLI and a
+native MCP server entry as described in its [Pi migration guide](../packages/mcp-web/README.md#pi-migration).
+Build and test the resulting image before adopting it; do not load the legacy
+adapters alongside their replacements.
 
 ## Codex credentials
 

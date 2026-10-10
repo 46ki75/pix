@@ -49,9 +49,9 @@ explicitly with repository-root-relative paths; repeated `--file` arguments are
 supported, including from package directories:
 
 ```sh
-mise run fmt --file packages/pix-websearch/src/index.ts
-mise run fmt-check --file packages/pix-websearch/src/index.ts
-mise run lint --file packages/pix-websearch/src/index.ts
+mise run fmt --file packages/pix-bg/src/index.ts
+mise run fmt-check --file packages/pix-bg/src/index.ts
+mise run lint --file packages/pix-bg/src/index.ts
 ```
 
 Verify that the expected jobs actually run; an empty selection is a skip, not
@@ -65,10 +65,11 @@ PATH and run `mise run setup` before committing.
 
 ## Adding an extension
 
-Use `packages/pix-websearch` as a reference for package layout and Pi tool registration:
+Use `packages/pix-bg` as a maintained reference for package layout and Pi tool
+registration:
 
 1. Create `packages/<unscoped-package-name>/package.json`, matching the name after
-   the scope (for example, `pix-websearch` for `@ikuma.cloud/pix-websearch`). Use a
+   the scope (for example, `pix-bg` for `@ikuma.cloud/pix-bg`). Use a
    unique `name`, `type: "module"`, and `pi.extensions` pointing to `./src/index.ts`.
    Keep new packages private while developing them.
 2. Extend `../../tsconfig.base.json` from the package's `tsconfig.json`; include
@@ -116,6 +117,27 @@ and TypeScript configuration for tests, including an isolated Pi package-discove
 check. Pi is only a development dependency when no runtime code imports it. Add
 an interactive development task when useful, then install dependencies and run
 the shared checks as described above.
+
+## Deprecating a package
+
+- Publish and smoke-test the replacement's npm artifact before directing users
+  to it. Verify migration instructions, supported host versions, and rollback.
+- Add a deprecation banner and migration link to the package README. Update
+  repository guidance and default launches; clearly label retained legacy
+  examples. Keep old source and validation until removal is planned separately.
+- Merge the migration documentation, then use an npm owner account to issue
+  [registry deprecation notices](https://docs.npmjs.com/cli/v11/commands/npm-deprecate/)
+  for every existing version. Do not unpublish packages or add a local
+  `deprecated` manifest field as a substitute. A registry notice needs no version
+  bump and does not replace READMEs embedded in already-published tarballs.
+
+```sh
+mise exec -- npm deprecate '@scope/package@*' 'Deprecated. Use @scope/replacement. See its migration guide.'
+mise exec -- npm view '@scope/package@*' version deprecated
+```
+
+Run these commands once per package; npm deprecation does not operate on the
+workspace as a whole. Include a public migration URL in the actual notice.
 
 ## Git workflow
 

@@ -38,20 +38,20 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | --- | --- |
 | `mise run setup` | Install locked dependencies and Git hooks |
 | `mise run test` | Run all Vitest projects once |
-| `mise run test --project pix-websearch` | Run one test project |
+| `mise run test --project mcp-web` | Run one test project |
 | `mise run test:watch` | Watch tests |
 | `mise run typecheck` | Check root configuration and all packages |
 | `mise run lint` | Lint tracked TypeScript and JavaScript files |
 | `mise run fmt` | Format tracked TypeScript, JavaScript, and JSON files |
 | `mise run fmt-check` | Check the same formatting scope |
 | `mise run check` | Run formatting, lint, type checking, and tests |
-| `mise run dev` | Launch Pi with all local extensions and Elmethis themes |
-| `mise run websearch:dev` | Launch Pi with @ikuma.cloud/pix-websearch |
-| `mise run webfetch:dev` | Launch Pi with @ikuma.cloud/pix-webfetch |
-| `mise run web:dev` | Launch Pi with both web tools |
+| `mise run dev` | Launch Pi with maintained local extensions and Elmethis themes |
+| `mise run websearch:dev` | Launch the deprecated pix-websearch extension |
+| `mise run webfetch:dev` | Launch the deprecated pix-webfetch extension |
+| `mise run web:dev` | Launch both deprecated Pi web extensions |
 | `mise run --silent mcp-web:build` | Build one stdio MCP server with both web tools |
 | `mise run mcp-prompt:dev` | Launch native MCP with @ikuma.cloud/pix-mcp-prompt |
-| `mise run mcp:dev` | Launch the legacy @ikuma.cloud/pix-mcp adapter |
+| `mise run mcp:dev` | Launch the deprecated pix-mcp adapter |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 | `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
@@ -61,22 +61,8 @@ New runs cancel superseded runs for the same event and branch or pull request.
 The `dev` task runs from the repository root and disables automatically loaded
 extensions. It accepts Pi arguments, for example `mise run dev --help`.
 
-[`@ikuma.cloud/pix-websearch`](packages/pix-websearch/README.md) adds a `websearch` tool with
-keyless Exa, Parallel, Firecrawl, Tavily, and TinyFish access. Run
-`mise run websearch:dev` to try it, or
-`mise run test --project pix-websearch` for its tests.
-
-[`@ikuma.cloud/pix-webfetch`](packages/pix-webfetch/README.md) adds an independent
-`webfetch` tool for reading URLs as Markdown or text, with full-output files for
-truncated previews. Run
-`mise run webfetch:dev` to try it or `mise run web:dev` to use both web tools.
-Its tests run with `mise run test --project pix-webfetch`.
-
-Web search and web fetch have separate package versions and runtime dependencies,
-so provider updates and content-extraction updates can be released independently.
-
-[`@ikuma.cloud/mcp-web`](packages/mcp-web/README.md) consolidates both tools into
-one standalone stdio MCP server with package-local search and fetch implementations.
+[`@ikuma.cloud/mcp-web`](packages/mcp-web/README.md) provides `websearch` and
+`webfetch` in one standalone stdio MCP server with package-local implementations.
 It builds and runs without either Pi web package or a Pi runtime, and exposes full
 truncated fetch output through MCP resource links.
 Run `mise run --silent mcp-web:build`,
@@ -94,12 +80,6 @@ and project trust. Prompt connections are separate and opened on first use. Run
 `mise run mcp-prompt:dev` or `mise run test --project pix-mcp-prompt`.
 The root development CLI is pinned to 1.1.0; existing packages retain their
 independently tested development versions.
-
-[`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) remains available as the legacy
-adapter until its replacement is published and verified. Run `mise run mcp:dev`
-or `mise run test --project pix-mcp` for its isolated development/tests. Do not
-load both packages in one session. See the new package's migration guide before
-changing configuration or removing the old adapter.
 
 [`@ikuma.cloud/mcp-copilot-prompts`](packages/mcp-copilot-prompts/README.md) is a
 local stdio MCP server that exposes repository `.github/prompts/*.prompt.md`
@@ -138,10 +118,28 @@ under new names. It is a theme-only package with no runtime dependencies.
 Run `mise run theme-elmethis:dev` to try automatic light/dark switching or
 `mise run test --project pix-theme-elmethis` for its validation tests.
 
+## Deprecated packages
+
+| Package | Replacement and migration |
+| --- | --- |
+| [`@ikuma.cloud/pix-webfetch`](packages/pix-webfetch/README.md) | [`@ikuma.cloud/mcp-web`](packages/mcp-web/README.md#pi-migration) |
+| [`@ikuma.cloud/pix-websearch`](packages/pix-websearch/README.md) | [`@ikuma.cloud/mcp-web`](packages/mcp-web/README.md#pi-migration) |
+| [`@ikuma.cloud/pix-mcp`](packages/pix-mcp/README.md) | Native Pi MCP tools/resources, plus [`pix-mcp-prompt`](packages/pix-mcp-prompt/README.md#migrating-from-pix-mcp) for prompts |
+
+Existing npm versions remain installable for compatibility and rollback. Legacy
+source, tests, and explicit development tasks are retained, but the default
+`dev` task no longer loads the deprecated web extensions. New development should
+target the replacements. Do not load legacy adapters alongside their replacements.
+The [container example](container-example/README.md) remains a legacy Pi 0.87.1
+setup pending separate migration and validation.
+
+Npm registry notices are a separate owner-authenticated operation; follow the
+[deprecation checklist](CONTRIBUTING.md#deprecating-a-package).
+
 ## Layout
 
 Each package lives in `packages/<unscoped-package-name>/`. Extensions, such as
-`packages/pix-websearch/`, have their own Pi manifest, source, tests, and TypeScript
+`packages/pix-bg/`, have their own Pi manifest, source, tests, and TypeScript
 configuration. Shared tooling lives at the repository root. Pi loads the
 TypeScript entry point declared by `package.json` directly. Theme-only packages
 instead declare JSON resources through `pi.themes` and need no runtime code.

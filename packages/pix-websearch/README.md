@@ -1,5 +1,11 @@
 # @ikuma.cloud/pix-websearch
 
+> **Deprecated.** Use [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) for
+> `websearch` and `webfetch` through MCP. It is a standalone server, not a Pi
+> extension. Follow the [Pi migration guide](../mcp-web/README.md#pi-migration).
+> Existing versions remain installable; the documentation below describes the
+> legacy extension.
+
 A native [Pi Coding Agent](https://pi.dev/) `websearch` tool backed by Exa,
 Parallel, Firecrawl, Tavily, and TinyFish. Keyless access works without account
 setup; optional API keys use the corresponding provider account's limits.
@@ -19,9 +25,6 @@ Ask Pi to search for something, for example:
 ```text
 Search for the latest TypeScript release and summarize the changes with sources.
 ```
-
-For other MCP clients, [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) exposes
-this tool and `webfetch` through a single standalone stdio server.
 
 ## Configuration
 

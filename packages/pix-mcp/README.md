@@ -1,18 +1,17 @@
 # @ikuma.cloud/pix-mcp
 
+> **Deprecated.** Use Pi's native MCP support for tools and resources, plus
+> [`@ikuma.cloud/pix-mcp-prompt`](../pix-mcp-prompt/README.md) when you need
+> `/mcp-prompt`. Read the [migration guide](../pix-mcp-prompt/README.md#migrating-from-pix-mcp)
+> and check its supported Pi versions before switching. Never load both adapters
+> in one session.
+
 A small Pi MCP adapter: discover tools, load their schemas on demand, call
 those tools natively, and use user-selected MCP prompts and resources. No
 scripting engine or model-provider-specific API is required.
 
-## Migration status
-
-This legacy adapter remains available while
-[`pix-mcp-prompt`](../pix-mcp-prompt/README.md) is validated for native Pi MCP.
-See its compatibility section for supported Pi versions.
-The new package uses native `mcp.json` for prompts and leaves tools/resources to
-Pi. This legacy package is not yet deprecated. Read the replacement's migration
-guide before switching, and do not load both packages in one session. Previously
-published versions will remain available.
+Previously published versions remain installable for compatibility and rollback.
+The documentation below describes the deprecated adapter, not native Pi MCP.
 
 ## Usage
 

@@ -1,5 +1,11 @@
 # @ikuma.cloud/pix-webfetch
 
+> **Deprecated.** Use [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) for
+> `webfetch` and `websearch` through MCP. It is a standalone server, not a Pi
+> extension. Follow the [Pi migration guide](../mcp-web/README.md#pi-migration).
+> Existing versions remain installable; the documentation below describes the
+> legacy extension.
+
 A native [Pi Coding Agent](https://pi.dev/) `webfetch` tool for reading a known
 HTTP(S) URL. Static HTML becomes Markdown by default, with a readable-text
 option. Other text formats retain their original formatting. Large results
@@ -34,9 +40,6 @@ with separate `-e` arguments:
 ```sh
 pi -e /absolute/path/to/pix/packages/pix-websearch -e /absolute/path/to/pix/packages/pix-webfetch
 ```
-
-For other MCP clients, [`@ikuma.cloud/mcp-web`](../mcp-web/README.md) exposes
-both tools through a single standalone stdio server.
 
 ## Tool contract
 
