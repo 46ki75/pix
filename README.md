@@ -79,7 +79,7 @@ so provider updates and content-extraction updates can be released independently
 one standalone stdio MCP server with package-local search and fetch implementations.
 It builds and runs without either Pi web package or a Pi runtime, and exposes full
 truncated fetch output through MCP resource links.
-The server is private while developing. Run `mise run --silent mcp-web:build`,
+Run `mise run --silent mcp-web:build`,
 then configure your MCP client to launch `packages/mcp-web/dist/cli.js` with Node.
 Run `mise run --silent test --project mcp-web` for protocol and built-CLI tests.
 Use [`PIX_WEBSEARCH_PROVIDER`](packages/mcp-web/README.md#search-provider-selection)

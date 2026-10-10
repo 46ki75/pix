@@ -18,6 +18,14 @@ const exec = promisify(execFile);
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
+it("is configured for public npm publication", async () => {
+  const manifest = JSON.parse(
+    await readFile(join(packageRoot, "package.json"), "utf8"),
+  ) as { private?: boolean; publishConfig?: { access?: string } };
+  expect(manifest.private).not.toBe(true);
+  expect(manifest.publishConfig?.access).toBe("public");
+});
+
 it("builds and starts without Pi or sibling workspace packages", async () => {
   const manifest = JSON.parse(
     await readFile(join(packageRoot, "package.json"), "utf8"),

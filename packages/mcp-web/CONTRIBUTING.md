@@ -44,7 +44,8 @@ mise exec -- pnpm --filter @ikuma.cloud/mcp-web pack --dry-run
 
 Also install a tarball outside the workspace and exercise both tools before
 publishing. This server no longer requires publishing any sibling packages.
-Keep its `private` flag during development.
+The scoped package uses `publishConfig.access: public`; publishing is a separate
+release step.
 
 ## Implementation references
 

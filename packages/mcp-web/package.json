@@ -1,7 +1,6 @@
 {
   "name": "@ikuma.cloud/mcp-web",
   "version": "0.0.1",
-  "private": true,
   "description": "Web search and page fetching in one stdio MCP server",
   "type": "module",
   "bin": {

@@ -5,7 +5,7 @@ One stdio [MCP](https://modelcontextprotocol.io/) server exposing `websearch` an
 this package; neither Pi nor the Pi web-extension packages are required to build,
 install, or run it. The existing Pi extensions remain independently usable.
 
-This package is private while developing. Requires Node.js 20.19 or newer.
+Requires Node.js 20.19 or newer.
 
 ## Build and configure
 
