@@ -33,7 +33,7 @@ import {
 import { ProtocolVersionServer } from "./protocol.js";
 
 export const SERVER_NAME = "mcp-web";
-export const SERVER_VERSION = "0.0.1";
+export const SERVER_VERSION = "0.0.2";
 const META_KEY = "cloud.ikuma/mcp-web";
 const MAX_RESOURCES = 64;
 
