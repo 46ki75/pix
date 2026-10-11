@@ -65,7 +65,31 @@ Use an absolute Node executable path if your client's PATH does not include a
 supported Node version. Client configuration filenames and wrappers vary.
 Remove old server entries exposing the same tools to avoid duplicate registrations.
 No HTTP listener or browser automation is included; stdout is reserved for MCP.
-`node packages/mcp-web/dist/cli.js --help` lists CLI options.
+
+## CLI options
+
+```sh
+mcp-web --help
+mcp-web --version
+mcp-web --provider tavily
+mcp-web --provider exa,tavily
+mcp-web --provider none
+```
+
+From a checkout, use `node packages/mcp-web/dist/cli.js` instead of `mcp-web`.
+`-h` and `-v` are aliases for `--help` and `--version`. Help lists the provider
+option's environment variable and the optional API-key variables, never their
+values. Help and version exit without starting the MCP server.
+
+Provider precedence is `--provider` > `PIX_WEBSEARCH_PROVIDER` > `auto`.
+Both configuration sources use the
+[same selection rules](#search-provider-selection). An explicit blank or
+whitespace-only CLI value selects `auto`, even if the environment names a provider.
+API keys remain environment-only.
+
+Malformed selections return `websearch` tool errors; the server, `webfetch`, and
+saved-output resources remain available. Unknown options, positional arguments,
+and missing option values fail at startup with errors on stderr.
 
 ## Pi migration
 
@@ -97,7 +121,8 @@ Do not load the deprecated web extensions alongside this server.
 
 ## Search provider selection
 
-Set `PIX_WEBSEARCH_PROVIDER` in the server's `env` configuration:
+Set `PIX_WEBSEARCH_PROVIDER` in the server's `env` configuration, or override it
+with `--provider <selection>`:
 
 | Value | Behavior |
 | --- | --- |

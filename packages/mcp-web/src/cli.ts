@@ -2,21 +2,9 @@
 
 import process from "node:process";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Command, CommanderError, Option } from "commander";
 import { createWebServer, SERVER_NAME, SERVER_VERSION } from "./server.js";
-
-const HELP = `Usage: mcp-web [options]
-
-Expose websearch and webfetch through one MCP server over stdio.
-
-Options:
-  -h, --help     Show this help
-  -v, --version  Show the version
-
-PIX_WEBSEARCH_PROVIDER: auto (default), none, a provider, or a comma-separated list
-Providers: exa, parallel, firecrawl, tavily, tinyfish
-Optional API keys: EXA_API_KEY, PARALLEL_API_KEY, FIRECRAWL_API_KEY,
-                  TAVILY_API_KEY, TINYFISH_API_KEY
-`;
+import { PROVIDER_IDS } from "./websearch/types.js";
 
 function report(error: unknown): void {
   const message = error instanceof Error ? error.message : "Server failed.";
@@ -26,20 +14,45 @@ function report(error: unknown): void {
 }
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
-    process.stdout.write(HELP);
-    return;
-  }
-  if (args.length === 1 && (args[0] === "--version" || args[0] === "-v")) {
-    process.stdout.write(`${SERVER_VERSION}\n`);
-    return;
-  }
-  if (args.length !== 0) {
-    throw new Error("Unsupported arguments. Use --help for usage.");
-  }
+  const program = new Command()
+    .name(SERVER_NAME)
+    .description(
+      "Expose websearch and webfetch through one MCP server over stdio.",
+    )
+    .helpOption("-h, --help", "Show this help")
+    .version(SERVER_VERSION, "-v, --version", "Show the version")
+    .addOption(
+      new Option(
+        "--provider <selection>",
+        "search provider: auto, none, a name, or a comma-separated list",
+      )
+        .env("PIX_WEBSEARCH_PROVIDER")
+        .default("auto"),
+    )
+    .addHelpText(
+      "after",
+      `
+Providers: ${PROVIDER_IDS.join(", ")}
+Blank values select auto. Lists form a pool, not a priority order.
+Precedence: --provider > PIX_WEBSEARCH_PROVIDER > auto.
+Optional API keys (environment only):
+  EXA_API_KEY, PARALLEL_API_KEY, FIRECRAWL_API_KEY,
+  TAVILY_API_KEY, TINYFISH_API_KEY
+`,
+    )
+    .allowExcessArguments(false)
+    .configureOutput({
+      // Commander may echo credentials embedded in rejected arguments.
+      outputError: () =>
+        report(new Error("Unsupported arguments. Use --help for usage.")),
+    })
+    .exitOverride();
+  program.parse();
+  const { provider } = program.opts<{ provider: string }>();
 
-  const server = createWebServer();
+  const server = createWebServer({
+    env: { ...process.env, PIX_WEBSEARCH_PROVIDER: provider },
+  });
   let closing: Promise<void> | undefined;
   const shutdown = (exitCode: number): Promise<void> => {
     if (closing) return closing;
@@ -64,6 +77,10 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (error) {
-  report(error);
-  process.exitCode = 1;
+  if (error instanceof CommanderError) {
+    process.exitCode = error.exitCode;
+  } else {
+    report(error);
+    process.exitCode = 1;
+  }
 }
