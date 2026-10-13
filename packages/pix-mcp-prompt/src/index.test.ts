@@ -248,6 +248,28 @@ test("disables and closes a prompt connection after native configuration changes
   expect(f.command.getArgumentCompletions?.("run fi")).toEqual([]);
 });
 
+test.each(["user", "custom"] as const)(
+  "reconciles native configuration before a %s-triggered run without opening connections",
+  async (messageType) => {
+    const f = await setup();
+    const connection = f.connection();
+    mocks.loadServers.mockResolvedValueOnce({ servers: [], errors: [] });
+
+    await f.emit("before_agent_start", {
+      type: "before_agent_start",
+      messageType,
+      ...(messageType === "user"
+        ? { prompt: "Review the API" }
+        : { message: { role: "custom", content: "Background task finished" } }),
+    });
+
+    expect(mocks.loadServers).toHaveBeenCalledTimes(2);
+    expect(connection.close).toHaveBeenCalledOnce();
+    expect(connection.start).not.toHaveBeenCalled();
+    expect(f.pi.sendUserMessage).not.toHaveBeenCalled();
+  },
+);
+
 test("stages guarded command-like content; removes only its own guard at message_end", async () => {
   const f = await setup();
   f.connection().getPrompt.mockResolvedValueOnce({

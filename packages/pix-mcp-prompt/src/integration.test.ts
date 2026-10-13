@@ -314,15 +314,20 @@ test("keeps native MCP tools and resources while prompts use one lazy prompt-onl
       "initialize",
       "notifications/initialized",
       "tools/list",
-      "resources/list",
-      "resources/templates/list",
     ]),
   );
+  // Pi 1.2 discovers resource capability at startup, not the resource catalogs.
+  expect(
+    methodsFor(trace, nativePid).some((method) =>
+      method.startsWith("resources/"),
+    ),
+  ).toBe(false);
   expect(methodsFor(trace, nativePid)).not.toContain("prompts/list");
   expect(session.getActiveToolNames()).toEqual(
     expect.arrayContaining([
       "mcp__project__echo",
       "list_mcp_resources",
+      "list_mcp_resource_templates",
       "read_mcp_resource",
     ]),
   );
@@ -339,6 +344,12 @@ test("keeps native MCP tools and resources while prompts use one lazy prompt-onl
     type: "text",
     text: expect.stringContaining("fixture://project"),
   });
+  const templates = await callTool("list_mcp_resource_templates", {
+    server: "project",
+  });
+  expect(templates).toMatchObject({
+    structuredContent: { server: "project", resourceTemplates: [] },
+  });
   const resource = await callTool("read_mcp_resource", {
     server: "project",
     uri: "fixture://project",
@@ -354,6 +365,13 @@ test("keeps native MCP tools and resources while prompts use one lazy prompt-onl
     "info",
   );
   trace = await readTrace(logPath);
+  expect(methodsFor(trace, nativePid)).toEqual(
+    expect.arrayContaining([
+      "resources/list",
+      "resources/templates/list",
+      "resources/read",
+    ]),
+  );
   expect(startedPids(trace)).toHaveLength(2);
   const promptPid = pidForMethod(trace, "prompts/list");
   expect(promptPid).not.toBe(nativePid);
