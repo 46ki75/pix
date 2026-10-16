@@ -255,9 +255,13 @@ value directly. Saved command values are rejected. OpenCode checks deliberately
 do not call Pi's model-auth resolver, so configured model headers and their
 commands are not resolved. Before the request, the extension reads the source and
 key twice and verifies twice that no extension has replaced `opencode-go` and
-every effective provider and model URL is a known first-party OpenCode Go URL.
-Environment, runtime, `models.json`, and extension fallback keys are refused. The
-extension does not read OpenCode's own files or forward custom model headers.
+every effective provider and model URL is a known first-party OpenCode Go URL:
+`https://opencode.ai/zen/go` for older hosts or
+`https://opencode.ai/inference/go` for Pi 1.3.0. Both roots allow an optional `/v1`
+suffix and an optional trailing slash. The quota request still uses the fixed
+`/zen/go/v1/usage` endpoint. Environment, runtime, `models.json`, and extension
+fallback keys are refused. The extension does not read OpenCode's own files or
+forward custom model headers.
 OpenCode Zen (`opencode`) remains a separate pay-as-you-go provider and does not
 activate the widget.
 

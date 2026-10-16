@@ -38,9 +38,13 @@ const OPENCODE_LOGIN_MESSAGE =
   "No Pi OpenCode Go API key; use /login opencode-go.";
 const OPENCODE_PROVIDER_MESSAGE =
   "OpenCode Go usage requires Pi's built-in opencode-go provider with its first-party endpoint.";
+// Pi 1.3.0 moved model routes to /inference/go; keep /zen/go for older hosts.
+// These model roots do not change the fixed quota endpoint.
 const OPENCODE_MODEL_URLS = new Set([
   "https://opencode.ai/zen/go",
   "https://opencode.ai/zen/go/v1",
+  "https://opencode.ai/inference/go",
+  "https://opencode.ai/inference/go/v1",
 ]);
 
 export type StoredCredentialReader = typeof readStoredCredential;
