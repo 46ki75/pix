@@ -8,6 +8,7 @@ import { UsageWidgetController } from "./widget-controller.ts";
 const CHOICES = [
   "all",
   "claude",
+  "openai",
   "codex",
   "muse",
   "opencode",
@@ -29,7 +30,7 @@ export default function subscriptionUsage(
 
   pi.registerCommand("usage", {
     description:
-      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
+      "Show subscription usage or toggle the widget: /usage [claude|openai|codex|muse|opencode|copilot|all|toggle]",
     getArgumentCompletions(prefix) {
       const items = CHOICES.filter((value) => value.startsWith(prefix)).map(
         (value) => ({ value, label: value }),
@@ -59,13 +60,14 @@ export default function subscriptionUsage(
       if (
         selection !== "all" &&
         selection !== "claude" &&
+        selection !== "openai" &&
         selection !== "codex" &&
         selection !== "muse" &&
         selection !== "opencode" &&
         selection !== "copilot"
       ) {
         ctx.ui.notify(
-          "Usage: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
+          "Usage: /usage [claude|openai|codex|muse|opencode|copilot|all|toggle]",
           "warning",
         );
         return;
@@ -78,7 +80,7 @@ export default function subscriptionUsage(
       active = controller;
       const providers: UsageProvider[] =
         selection === "all"
-          ? ["claude", "codex", "muse", "opencode", "copilot"]
+          ? ["claude", "openai", "codex", "muse", "opencode", "copilot"]
           : [selection];
       try {
         const results = await Promise.all(

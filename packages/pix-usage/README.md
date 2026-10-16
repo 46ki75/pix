@@ -1,8 +1,9 @@
 # @ikuma.cloud/pix-usage
 
-Claude, Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports and a
-current-provider widget for [Pi Coding Agent](https://pi.dev/). Uses Pi's existing
-OAuth logins and an OpenCode API key, not a separate credential store or usage SDK.
+Claude, legacy Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports,
+plus OpenAI ChatGPT usage-settings guidance and a current-provider widget for
+[Pi Coding Agent](https://pi.dev/). Uses Pi's existing logins, not a separate
+credential store or usage SDK. Tested with Pi 0.87.1 and 1.3.0.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -28,21 +29,44 @@ pi install ./packages/pix-usage
 
 ## Usage
 
-Sign in through `/login anthropic`, `/login openai-codex`, `/login meta`, or
-`/login github-copilot`, choosing the subscription/OAuth flow rather than an API
-key. Copilot currently supports github.com logins, not custom enterprise hosts.
-For OpenCode Go, use `/login opencode-go` to save its API key. Then run:
+Use `/login openai` and **Sign in with ChatGPT** for Pi's current OpenAI
+subscription flow. For quota-enabled providers, sign in through `/login anthropic`,
+`/login openai-codex` (legacy), `/login meta`, or `/login github-copilot`, choosing
+OAuth rather than an API key. Copilot currently supports github.com logins, not
+custom enterprise hosts. For OpenCode Go, use `/login opencode-go` to save its API
+key. Then run:
 
 ```text
 /usage          Check all providers
 /usage claude   Check Claude only
-/usage codex    Check Codex only
+/usage openai   Show ChatGPT usage settings (no supported quota API)
+/usage codex    Check legacy Codex only
 /usage muse     Check Meta Muse only
 /usage opencode Check OpenCode Go only
 /usage copilot  Check GitHub Copilot only
 /usage all      Check all providers
 /usage toggle   Hide or show the current-provider widget (terminal only)
 ```
+
+### OpenAI Sign in with ChatGPT
+
+Pi 1.0+ supports ChatGPT subscriptions under `openai`; `openai-codex` is now
+**OpenAI Codex (legacy)**. These are separate logins, not interchangeable provider
+IDs or tokens.
+
+The new flow targets `api.openai.com/v1` and exposes opaque authentication metadata
+rather than the account ID needed by the legacy quota endpoint. OpenAI does not
+document a quota API for this grant and instead directs integrations to
+[ChatGPT usage settings](https://chatgpt.com/settings/usage).
+`/usage openai`, `/usage all`, and the OpenAI widget show that link with an explicit
+unavailable-quota message, not a percentage or a reset estimate. This guidance is
+shown regardless of login status or whether you use an API key; it does not verify
+a subscription login or report API-key billing.
+
+OpenAI guidance never reads or refreshes credentials, sends a quota request, or
+falls back to another account's legacy Codex login. The OpenAI widget starts no
+timers. `/usage codex` still checks only `/login openai-codex`; signing in there is
+not required for the new OpenAI flow.
 
 ### Reports
 
@@ -152,16 +176,17 @@ the current session; reload or session replacement shows the widget again.
 Other extensions' widget order is not controlled.
 
 It follows the selected model's provider: `anthropic` selects Claude,
-`openai-codex` selects Codex, `meta` selects Muse, `opencode-go` selects
-OpenCode Go, and `github-copilot` selects Copilot. It shows one row per normalized
-quota window, including model-specific buckets; it does not filter those buckets
-to the selected model.
-Other providers and an absent model show an explanatory message without resolving
-credentials or making requests.
+`openai-codex` selects legacy Codex, `meta` selects Muse, `opencode-go` selects
+OpenCode Go, and `github-copilot` selects Copilot. These providers show one row per
+normalized quota window, including model-specific buckets; the widget does not
+filter those buckets to the selected model. `openai` shows the static
+[ChatGPT usage-settings guidance](#openai-sign-in-with-chatgpt) without credentials,
+requests, or timers. Other providers and an absent model show an explanatory
+message without resolving credentials or making requests.
 
-The widget fetches immediately when first shown, including at session startup,
-and whenever its provider changes while visible. Switching models within the
-same provider does not trigger a fetch.
+For quota-enabled providers, the widget fetches immediately when first shown,
+including at session startup, and whenever its provider changes while visible.
+Switching models within the same provider does not trigger a fetch.
 
 After each `turn_end`, it refreshes if at least one minute has passed since its
 last refresh attempt. A five-minute fallback poll uses the same cooldown. Failed
@@ -196,7 +221,7 @@ still use the report commands.
 The extension does not replace the footer, add model-callable tools, send model
 requests, or save quota reports in model context or session history. Reports remain
 on-demand. Automatic credential lookups and quota requests begin at terminal
-session startup and continue only while the widget is visible for a supported
+session startup and continue only while the widget is visible for a quota-enabled
 provider. RPC, JSON, and print modes never start automatic checks.
 
 Concurrent manual reports are rejected. Overlapping widget and report checks
@@ -205,7 +230,7 @@ for later reports. Repeat `/usage` for a fresh snapshot.
 
 ## Credentials and requests
 
-For Claude and Codex, the extension calls
+For Claude and legacy Codex, the extension calls
 `ctx.modelRegistry.getProviderAuth()` with `anthropic` or `openai-codex` and uses
 the resolved OAuth access token. Pi owns token refresh and persistence. API keys
 and missing logins produce a per-provider message; externally supplied tokens
@@ -254,7 +279,7 @@ auth paths are outside its scope, and Pi does not expose historical routing
 provenance after an override is removed.
 
 Quota requests target only fixed first-party HTTPS endpoints, and redirects are
-refused. Codex's account ID is decoded from the access token for the
+refused. Legacy Codex's account ID is decoded from the access token for the
 `chatgpt-account-id` routing header, matching Pi's Codex transport. OpenCode sends
 its API key only to `GET https://opencode.ai/zen/go/v1/usage`. Muse sends the
 device token only to `POST https://api.meta.ai/muse-code/key`, with an empty JSON
@@ -283,8 +308,10 @@ waiting; the extension does not interfere with Pi's refresh lock.
 - Claude displays reported 5-hour, weekly, Sonnet-weekly, and Opus-weekly buckets.
   Usage access requires the `user:profile` OAuth scope. A subscription login does
   not guarantee that the provider permits the usage endpoint.
-- Codex displays the primary and secondary windows with their reported durations.
-  It does not assume the primary window is always five hours.
+- Legacy Codex displays the primary and secondary windows with their reported
+  durations. It does not assume the primary window is always five hours. New
+  OpenAI logins have no supported quota lookup; see
+  [OpenAI Sign in with ChatGPT](#openai-sign-in-with-chatgpt).
 - Muse displays the subscription window using its reported duration and the weekly
   window as seven days. Meta can omit `subs_usage` while the five-hour window is
   idle; this appears as “No quota windows reported.” The extension does not use a
@@ -334,8 +361,9 @@ waiting; the extension does not interfere with Pi's refresh lock.
 `fetchOpenCodeUsage(apiKey, options?)`, and
 `fetchCopilotUsage(githubToken, options?)` functions accept credentials and return
 normalized `UsageSnapshot` values. Options allow an abort signal, timeout, and
-injected `fetch` for tests. Codex expects the same account-bearing JWT used by Pi;
-Muse requires the `dca:` device identity token, not an `LLM|` inference key.
+injected `fetch` for tests. Codex expects the account-bearing JWT from Pi's legacy
+`openai-codex` login, not a new `openai` access token. There is no new-OpenAI quota
+fetcher. Muse requires the `dca:` device identity token, not an `LLM|` inference key.
 OpenCode requires an API key for a workspace with a Go subscription. Copilot
 requires a github.com OAuth token, not a Copilot inference token or enterprise
 credential. Its normalized windows can carry exact or estimated amounts;

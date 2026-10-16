@@ -409,7 +409,37 @@ test("a new session restores default visibility after the user hides the widget"
   expect(vi.getTimerCount()).toBe(0);
 });
 
-test.each(["openai", undefined])(
+test("OpenAI shows usage settings without credentials, legacy quota fallback, or polling", async () => {
+  const h = harness("openai");
+  h.start();
+  expect(h.text()).toContain(" OpenAI ChatGPT plan quotas:");
+  expect(h.text()).toContain("https://chatgpt.com/settings/usage");
+  expect(h.text()).toContain("no supported quota API");
+  expect(h.text()).not.toContain("0%");
+  expect(h.text()).not.toContain("/login openai-codex");
+  h.turnEnd();
+  h.select("openai");
+  await vi.advanceTimersByTimeAsync(REFRESH * 2);
+  expect(h.getProviderAuth).not.toHaveBeenCalled();
+  expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+  expect(h.readCredential).not.toHaveBeenCalled();
+  expect(h.fetch).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  await h.toggle();
+  await h.toggle();
+  expect(h.text()).toContain("https://chatgpt.com/settings/usage");
+  h.select("openai-codex");
+  await flush();
+  expect(h.text()).toContain(" Codex 󱛡 Weekly");
+  expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith("openai-codex");
+  h.select("openai");
+  expect(h.text()).not.toContain("93%");
+  expect(h.text()).toContain("https://chatgpt.com/settings/usage");
+  expect(vi.getTimerCount()).toBe(0);
+  h.shutdown();
+});
+
+test.each(["custom-provider", undefined])(
   "startup with provider %s shows an explanatory widget without requests",
   async (provider) => {
     const h = harness(provider);
@@ -656,7 +686,7 @@ test.each(["openai", "openai-codex"])(
     await flush();
     expect(h.text()).not.toContain("Claude");
     expect(h.text()).toContain(
-      provider === "openai" ? "not supported" : "Codex",
+      provider === "openai" ? "ChatGPT plan quotas" : "Codex",
     );
     expect(h.getProviderAuth.mock.calls.map(([id]) => id)).toEqual(
       provider === "openai" ? ["anthropic"] : ["anthropic", "openai-codex"],
@@ -759,7 +789,7 @@ test.each(["openai", "openai-codex"])(
       expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith("openai-codex");
       expect(h.text()).not.toContain("Claude");
       expect(h.text()).toContain(
-        provider === "openai" ? "not supported" : "Codex",
+        provider === "openai" ? "ChatGPT plan quotas" : "Codex",
       );
       expect(vi.getTimerCount()).toBe(provider === "openai" ? 0 : 2);
       await vi.advanceTimersByTimeAsync(REFRESH);
@@ -858,7 +888,7 @@ test.each(
       expect(h.fetch).toHaveBeenCalledTimes(provider === "openai" ? 1 : 2);
       expect(h.text()).not.toContain("Claude");
       expect(h.text()).toContain(
-        provider === "openai" ? "not supported" : "Codex",
+        provider === "openai" ? "ChatGPT plan quotas" : "Codex",
       );
       expect(vi.getTimerCount()).toBe(provider === "openai" ? 0 : 2);
       release();
@@ -952,7 +982,7 @@ test("switching away discards a late OpenCode response", async () => {
 });
 
 test("unsupported providers do not resolve credentials or poll", async () => {
-  const h = harness("openai");
+  const h = harness("custom-provider");
   await h.toggle();
   expect(h.text()).toMatch(/not supported|unsupported/i);
   expect(h.text()).not.toContain("0%");

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { OPENAI_USAGE_UNAVAILABLE } from "./openai.ts";
 import type { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
 import { renderUsageWidget, type UsageWidgetState } from "./widget.ts";
@@ -47,6 +48,11 @@ export class UsageWidgetController {
     this.providerId = providerId;
     this.cancelRefresh();
     this.lastRefreshAt = undefined;
+    if (providerId === "openai") {
+      this.state = OPENAI_USAGE_UNAVAILABLE;
+      this.requestRender?.();
+      return;
+    }
     const provider =
       providerId === "anthropic"
         ? "claude"
@@ -83,7 +89,8 @@ export class UsageWidgetController {
     if (this.disposed) return;
     // A timer may fire while an earlier async model_select handler is pending.
     this.selectProvider(ctx, ctx.model?.provider);
-    if ("provider" in this.state) void this.refresh(this.state.provider);
+    if ("provider" in this.state && this.state.provider !== "openai")
+      void this.refresh(this.state.provider);
   }
 
   private async refresh(provider: UsageProvider): Promise<void> {

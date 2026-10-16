@@ -2,6 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, expect, test, vi } from "vitest";
+import { OPENAI_USAGE_UNAVAILABLE } from "./openai.ts";
 import type { UsageProvider, UsageWindow } from "./types.ts";
 import { renderUsageWidget, type UsageWidgetState } from "./widget.ts";
 
@@ -59,6 +60,26 @@ function plain(state: UsageWidgetState, now = NOW): string[] {
 }
 
 afterEach(() => vi.restoreAllMocks());
+
+test.each([1, 2, 12, 40, 80, 120])(
+  "bounds static OpenAI guidance to %s columns without inventing usage",
+  (width) => {
+    const rows = renderUsageWidget(
+      OPENAI_USAGE_UNAVAILABLE,
+      width,
+      makeTheme(),
+      NOW,
+    );
+    for (const row of rows)
+      expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+    const text = stripVTControlCharacters(rows.join("\n"));
+    expect(text).not.toContain("0%");
+    if (width >= 80) {
+      expect(text).toContain(" OpenAI");
+      expect(text).toContain("https://chatgpt.com/settings/usage");
+    }
+  },
+);
 
 test.each([
   ["claude", " Claude"],
