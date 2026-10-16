@@ -154,7 +154,14 @@ test("refuses OPENCODE_API_KEY without resolving model auth", async () => {
   expect(fetch).not.toHaveBeenCalled();
 });
 
-test("uses a literal OpenCode key saved by /login", async () => {
+test.each(
+  [
+    "https://opencode.ai/zen/go",
+    "https://opencode.ai/zen/go/v1",
+    "https://opencode.ai/inference/go",
+    "https://opencode.ai/inference/go/v1",
+  ].flatMap((url) => [url, `${url}/`]),
+)("uses a literal OpenCode key saved by /login with %s", async (url) => {
   const getProviderAuth = vi.fn<ResolveAuth>().mockResolvedValue({
     source: "stored credential",
     auth: { apiKey: "stored-opencode-key" },
@@ -189,7 +196,8 @@ test("uses a literal OpenCode key saved by /login", async () => {
   await expect(
     resolveUsage(
       openCodeRegistry(getProviderAuth, {
-        authStatus: { configured: true, source: "stored" },
+        providerBaseUrl: url,
+        modelBaseUrl: url,
       }),
       "opencode",
       signal(),
@@ -198,6 +206,10 @@ test("uses a literal OpenCode key saved by /login", async () => {
   ).resolves.toMatchObject({ provider: "opencode", status: "ok" });
   expect(getProviderAuth).not.toHaveBeenCalled();
   expect(readCredential).toHaveBeenCalledTimes(2);
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    "https://opencode.ai/zen/go/v1/usage",
+    expect.objectContaining({ method: "GET", redirect: "error" }),
+  );
   expect(fetch.mock.calls[0]?.[1]?.headers).toEqual({
     Accept: "application/json",
     Authorization: "Bearer stored-opencode-key",
@@ -345,6 +357,14 @@ test.each([
   ["provider base URL", { providerBaseUrl: "https://proxy.example/v1" }],
   ["model base URL", { modelBaseUrl: "https://proxy.example/v1" }],
   ["provider extension", { registeredProviderIds: ["opencode-go"] }],
+  [
+    "provider extension with first-party inference URLs",
+    {
+      registeredProviderIds: ["opencode-go"],
+      providerBaseUrl: "https://opencode.ai/inference/go/v1",
+      modelBaseUrl: "https://opencode.ai/inference/go/v1",
+    },
+  ],
 ] as const)(
   "refuses an OpenCode key when Pi has a custom %s",
   async (_description, options) => {
@@ -371,6 +391,47 @@ test.each([
     expect(fetch).not.toHaveBeenCalled();
   },
 );
+
+test.each([
+  "http://opencode.ai/inference/go/v1",
+  "https://opencode.ai.example/inference/go/v1",
+  "https://sub.opencode.ai/inference/go/v1",
+  "https://opencode.ai:8443/inference/go/v1",
+  "https://user@opencode.ai/inference/go/v1",
+  "https://user:password@opencode.ai/inference/go/v1",
+  "https://opencode.ai/inference/go/v1?key=secret",
+  "https://opencode.ai/inference/go/v1#fragment",
+  "https://opencode.ai/inference/go/v1/usage",
+  "https://opencode.ai/inference/go/v1/models",
+  "https://opencode.ai/inference/go/v1//",
+  "https://opencode.ai/inference",
+  "https://opencode.ai/zen/v1",
+  "not-a-url",
+])("refuses unapproved OpenCode provider and model routes: %s", async (url) => {
+  for (const location of ["providerBaseUrl", "modelBaseUrl"] as const) {
+    const getProviderAuth = vi.fn<ResolveAuth>();
+    const readCredential = vi.fn(storedOpenCodeCredential);
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      resolveUsage(
+        openCodeRegistry(getProviderAuth, { [location]: url }),
+        "opencode",
+        signal(),
+        readCredential,
+      ),
+    ).resolves.toEqual({
+      provider: "opencode",
+      status: "unavailable",
+      message:
+        "OpenCode Go usage requires Pi's built-in opencode-go provider with its first-party endpoint.",
+    });
+    expect(getProviderAuth).not.toHaveBeenCalled();
+    expect(readCredential).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  }
+});
 
 test("refuses an OpenCode key if the provider changes during checks", async () => {
   const getProviderAuth = vi.fn<ResolveAuth>().mockResolvedValue({
