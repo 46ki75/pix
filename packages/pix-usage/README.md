@@ -187,10 +187,12 @@ Manual hiding persists across provider changes and resets at the next session.
 Turning it on for a non-fetching provider acknowledges that the widget is enabled
 but will appear only for providers with usage fetching.
 
-A terminal `model_select` transition into an unsupported or unimplemented provider
-shows a warning explaining that specific state, even if the widget is manually
-hidden. Models under the same provider do not repeat the warning; turns, polling,
-and rendering never trigger it. Initial `session_start` emits no capability warning.
+Terminal `session_start` shows a warning for unsupported or unimplemented usage
+fetching when Pi starts or a session is created, resumed, forked, or reloaded.
+Switching into such a provider also warns, even if the widget is manually hidden.
+Models under the same provider do not repeat the warning; turns, polling, and
+rendering never trigger it. Supported providers and sessions without a selected
+model emit no capability warning.
 
 For supported providers, the enabled widget fetches immediately at session startup,
 when toggled on, and when switching providers, including after automatic hiding.

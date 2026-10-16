@@ -17,10 +17,10 @@ Use fake timers for widget refresh, countdown, and cleanup tests. Cover overlapp
 manual/widget requests and late results after hiding, switching providers, or
 replacing sessions. Cover all four capability states, zero-line rendering and no
 background work in non-fetching states, provider-transition warning deduplication
-(including while manually hidden), silent startup/non-terminal modes, toggle-on
-acknowledgments, preference restoration, and visible, recoverable auth/network
-errors. Live endpoint compatibility and terminal appearance require separate
-manual checks.
+(including while manually hidden), startup warnings, silent non-terminal modes,
+toggle-on acknowledgments, preference restoration, and visible, recoverable
+auth/network errors. Live endpoint compatibility and terminal appearance require
+separate manual checks.
 
 ## Design
 
@@ -38,11 +38,13 @@ manual checks.
   Non-terminal modes never start automatic capability checks, warnings, or widget
   work; manual reports remain available in terminal and RPC modes. Shutdown aborts
   outstanding work; late completions cannot update a replacement session.
-- Capability warnings are independent of widget preference. Only terminal
-  `model_select` transitions into unsupported or unimplemented providers warn,
-  explaining the specific state even while manually hidden. Do not repeat for
-  models under the same provider, turns, polling, or renders. Initial
-  `session_start` emits no capability warning.
+- Capability warnings are independent of widget preference. Terminal
+  `session_start` warns about unsupported or unimplemented usage fetching at each
+  initialization, including Pi startup, session creation/resume/fork, and reload.
+  `model_select` transitions into those providers also warn, explaining the
+  specific state even while manually hidden. Do not repeat for models under the
+  same provider, turns, polling, or renders. Supported providers and absent models
+  emit no capability warning.
 - `src/requests.ts` shares in-flight provider checks between reports and the widget.
   Each consumer has independent cancellation; only the last consumer or shutdown
   cancels the underlying request. Do not cache completed results for later reports.

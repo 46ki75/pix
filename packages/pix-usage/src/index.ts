@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { StoredCredentialReader } from "./auth.ts";
 import { getUsageCapability } from "./capabilities.ts";
 import { formatUsageReport } from "./report.ts";
@@ -19,6 +22,16 @@ const CHOICES = [
 
 interface SubscriptionUsageOptions {
   readCredential?: StoredCredentialReader;
+}
+
+function notifyUsageWarning(ctx: ExtensionContext): void {
+  if (ctx.mode !== "tui") return;
+  const capability = getUsageCapability(ctx.model?.provider);
+  if (
+    capability.status === "unsupported" ||
+    capability.status === "unimplemented"
+  )
+    ctx.ui.notify(capability.message, "warning");
 }
 
 export default function subscriptionUsage(
@@ -126,6 +139,7 @@ export default function subscriptionUsage(
     selectedProviderId = ctx.model?.provider;
     widget =
       ctx.mode === "tui" ? new UsageWidgetController(ctx, requests) : undefined;
+    notifyUsageWarning(ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
@@ -135,12 +149,7 @@ export default function subscriptionUsage(
     widget?.selectProvider(ctx, providerId);
     if (!sessionStarted || providerId === selectedProviderId) return;
     selectedProviderId = providerId;
-    const capability = getUsageCapability(providerId);
-    if (
-      capability.status === "unsupported" ||
-      capability.status === "unimplemented"
-    )
-      ctx.ui.notify(capability.message, "warning");
+    notifyUsageWarning(ctx);
   });
 
   pi.on("turn_end", (_event, ctx) => {

@@ -9,6 +9,7 @@ import {
   ExtensionRunner,
   type ExtensionUIContext,
   type ModelSelectEvent,
+  type SessionStartEvent,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
@@ -224,8 +225,8 @@ function harness(
     ctx,
     handlers,
     select,
-    start: () =>
-      handlers.get("session_start")?.({ type: "session_start" }, ctx),
+    start: (reason: SessionStartEvent["reason"] = "startup") =>
+      handlers.get("session_start")?.({ type: "session_start", reason }, ctx),
     turnEnd: () => handlers.get("turn_end")?.({ type: "turn_end" }, ctx),
     shutdown,
     getProviderAuth,
@@ -259,11 +260,14 @@ const flush = () => vi.advanceTimersByTimeAsync(0);
 test("does no work at extension load or before session_start; completes toggle", async () => {
   const h = harness();
   h.select("openai-codex");
+  h.select("openai");
+  h.select("custom-provider");
   h.turnEnd();
   await vi.advanceTimersByTimeAsync(REFRESH * 2);
   expect(h.getProviderAuth).not.toHaveBeenCalled();
   expect(h.fetch).not.toHaveBeenCalled();
   expect(h.setWidget).not.toHaveBeenCalled();
+  expect(h.notify).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
   expect(h.command.getArgumentCompletions?.("t")).toEqual([
     { value: "toggle", label: "toggle" },
@@ -409,11 +413,19 @@ test("a new session restores default visibility after the user hides the widget"
   expect(vi.getTimerCount()).toBe(0);
 });
 
-test("OpenAI hides the widget without credentials, legacy quota fallback, or polling", async () => {
+test("OpenAI warns at startup and hides the widget without credentials, legacy quota fallback, or polling", async () => {
   const h = harness("openai");
   h.start();
   expect(h.text()).toBe("");
-  expect(h.notify).not.toHaveBeenCalled();
+  expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining(
+      "Usage fetching is not supported for this OpenAI login",
+    ),
+    "warning",
+  );
+  expect(h.notify.mock.calls[0]?.[0]).toContain(
+    "https://chatgpt.com/settings/usage",
+  );
   h.turnEnd();
   h.select("openai");
   await vi.advanceTimersByTimeAsync(REFRESH * 2);
@@ -421,7 +433,7 @@ test("OpenAI hides the widget without credentials, legacy quota fallback, or pol
   expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
   expect(h.readCredential).not.toHaveBeenCalled();
   expect(h.fetch).not.toHaveBeenCalled();
-  expect(h.notify).not.toHaveBeenCalled();
+  expect(h.notify).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
   await h.toggle();
   await h.toggle();
@@ -451,18 +463,58 @@ test("OpenAI hides the widget without credentials, legacy quota fallback, or pol
 });
 
 test.each(["custom-provider", undefined])(
-  "startup with provider %s hides the widget silently without requests",
+  "startup with provider %s hides the widget without requests and warns only for an unimplemented provider",
   async (provider) => {
     const h = harness(provider);
     if (provider === undefined) h.ctx.model = undefined;
     h.start();
     expect(h.text()).toBe("");
-    expect(h.notify).not.toHaveBeenCalled();
+    if (provider) {
+      expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+        "Usage fetching is not implemented for this provider.",
+        "warning",
+      );
+    } else expect(h.notify).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(REFRESH);
     expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
     expect(h.fetch).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
     h.shutdown();
+  },
+);
+
+test.each(["openai", "custom-provider"])(
+  "each session initialization warns once for %s without repeating on turns or same-provider selections",
+  async (provider) => {
+    const h = harness(provider);
+    for (const [index, reason] of (
+      ["startup", "reload", "new", "resume", "fork"] as const
+    ).entries()) {
+      h.start(reason);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+      expect(h.notify).toHaveBeenLastCalledWith(
+        expect.stringContaining(
+          provider === "openai" ? "not supported" : "not implemented",
+        ),
+        "warning",
+      );
+      h.select(provider);
+      h.select(provider);
+      h.turnEnd();
+      expect(h.text()).toBe("");
+      await vi.advanceTimersByTimeAsync(REFRESH * 2);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+      expect(vi.getTimerCount()).toBe(0);
+      h.shutdown();
+      h.select(provider);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+    }
+    expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(h.fetch).not.toHaveBeenCalled();
   },
 );
 
@@ -557,9 +609,15 @@ test("capability notifications distinguish unsupported from unimplemented and re
   h.shutdown();
   h.start();
   expect(h.text()).toBe("");
-  expect(h.notify).toHaveBeenCalledTimes(2);
-  h.select("openai");
   expect(h.notify).toHaveBeenCalledTimes(3);
+  expect(h.notify).toHaveBeenLastCalledWith(
+    "Usage fetching is not implemented for this provider.",
+    "warning",
+  );
+  h.select("custom-provider");
+  expect(h.notify).toHaveBeenCalledTimes(3);
+  h.select("openai");
+  expect(h.notify).toHaveBeenCalledTimes(4);
   h.select("anthropic");
   await flush();
   expect(h.text()).toContain("Claude");
@@ -567,10 +625,17 @@ test("capability notifications distinguish unsupported from unimplemented and re
   h.shutdown();
 });
 
-test.each(["rpc", "json", "print"] as const)(
-  "no automatic capability notifications in %s",
-  async (mode) => {
-    const h = harness("anthropic", mode);
+test.each(
+  (["rpc", "json", "print"] as const).flatMap((mode) =>
+    ["anthropic", "openai", "custom-provider"].map((provider) => ({
+      mode,
+      provider,
+    })),
+  ),
+)(
+  "no automatic capability notifications in $mode with initial provider $provider",
+  async ({ mode, provider }) => {
+    const h = harness(provider, mode);
     h.start();
     h.select("openai");
     h.select("custom-provider");

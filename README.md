@@ -108,8 +108,8 @@ A current-provider widget is enabled by default in terminal sessions, without
 replacing the footer. It refreshes for supported providers and is entirely hidden
 for unsupported or unimplemented providers or no selected model. Automatic hiding
 preserves the enabled preference; `/usage toggle` manually hides or enables it for
-the session. Terminal provider-selection changes warn about unsupported or
-unimplemented usage fetching; session startup is silent.
+the session. Terminal initialization and provider-selection changes warn about
+unsupported or unimplemented usage fetching.
 Run `mise run usage:dev` to try it or `mise run test --project pix-usage` for its
 isolated tests.
 
