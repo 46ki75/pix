@@ -4,6 +4,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { prepareCopilotUsageAuth } from "./copilot-auth.ts";
 import { abortable } from "./http.ts";
+import { OPENAI_USAGE_UNSUPPORTED } from "./openai.ts";
 import {
   fetchClaudeUsage,
   fetchCodexUsage,
@@ -145,7 +146,7 @@ function sameCredential(
 }
 
 async function fetchUsageWithRetry(
-  provider: UsageProvider,
+  provider: Exclude<UsageProvider, "openai">,
   accessToken: string,
   signal: AbortSignal,
   beforeRetry?: () => void,
@@ -177,9 +178,11 @@ export async function resolveUsage(
   signal: AbortSignal,
   readCredential: StoredCredentialReader = readStoredCredential,
 ): Promise<UsageResult> {
-  const providerId = PROVIDER_IDS[provider];
   try {
     signal.throwIfAborted();
+    // No supported quota route is known for the new, API-audience grant.
+    if (provider === "openai") return OPENAI_USAGE_UNSUPPORTED;
+    const providerId = PROVIDER_IDS[provider];
     let token: string;
     let beforeRetry: (() => void) | undefined;
     let afterRequest: (() => void) | undefined;

@@ -103,6 +103,32 @@ test.each([
   },
 );
 
+test("OpenAI usage guidance never resolves auth, reads credentials, or queries legacy quotas", async () => {
+  const getProviderAuth = vi.fn<ResolveAuth>();
+  const getProviderAuthStatus = vi.fn();
+  const readCredential = vi.fn();
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+
+  await expect(
+    resolveUsage(
+      { getProviderAuth, getProviderAuthStatus },
+      "openai",
+      signal(),
+      readCredential,
+    ),
+  ).resolves.toEqual({
+    provider: "openai",
+    status: "unsupported",
+    message:
+      "Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
+  });
+  expect(getProviderAuth).not.toHaveBeenCalled();
+  expect(getProviderAuthStatus).not.toHaveBeenCalled();
+  expect(readCredential).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test("refuses OPENCODE_API_KEY without resolving model auth", async () => {
   const getProviderAuth = vi.fn<ResolveAuth>();
   const readCredential = vi.fn();

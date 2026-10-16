@@ -168,6 +168,31 @@ test.each(["tui", "rpc"] as const)(
   },
 );
 
+test.each(["tui", "rpc"] as const)(
+  "directs new OpenAI logins to ChatGPT usage settings in %s without touching credentials",
+  async (mode) => {
+    const h = harness(mode);
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await h.command.handler("openai", h.ctx);
+
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(" OpenAI\n\n  Usage fetching is not supported"),
+      "info",
+    );
+    const report = h.notify.mock.calls[0]?.[0] ?? "";
+    expect(report).toContain("https://chatgpt.com/settings/usage");
+    expect(report).toContain("no supported quota API");
+    expect(report).not.toContain("/login openai-codex");
+    expect(report).not.toContain("0%");
+    expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
+
 test("reports Meta Muse quota with Pi's device OAuth credential", async () => {
   const {
     command,
@@ -346,7 +371,13 @@ test.each([
     const openCodeWarning =
       "No Pi OpenCode Go API key; use /login opencode-go.";
     const width = warning
-      ? Math.max(80, visibleWidth(`  ${openCodeWarning}`))
+      ? Math.max(
+          80,
+          visibleWidth(`  ${openCodeWarning}`),
+          visibleWidth(
+            "  Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
+          ),
+        )
       : 30;
     const header = `── 󱘖 Usage ${"─".repeat(width - 11)}`;
     const footer = "─".repeat(width);
@@ -394,6 +425,11 @@ test.each([
         ["text", ""],
         ...(warning
           ? [
+              ["accent", ""],
+              [
+                "warning",
+                "Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
+              ],
               ["accent", ""],
               [
                 "warning",
@@ -500,7 +536,7 @@ test("validates arguments and completes provider names", async () => {
   const { command, ctx, getProviderAuth, notify } = harness();
   await command.handler("claude codex", ctx);
   expect(notify).toHaveBeenCalledExactlyOnceWith(
-    "Usage: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
+    "Usage: /usage [claude|openai|codex|muse|opencode|copilot|all|toggle]",
     "warning",
   );
   expect(getProviderAuth).not.toHaveBeenCalled();
@@ -513,6 +549,7 @@ test("validates arguments and completes provider names", async () => {
     { value: "muse", label: "muse" },
   ]);
   expect(command.getArgumentCompletions?.("o")).toEqual([
+    { value: "openai", label: "openai" },
     { value: "opencode", label: "opencode" },
   ]);
   expect(command.getArgumentCompletions?.("bad")).toBeNull();
@@ -540,6 +577,9 @@ test.each(["", "all"])(
     ]);
     expect(notify).toHaveBeenCalledOnce();
     expect(notify.mock.calls[0]?.[0]).toContain("󱛡 Weekly 󰓅  75%  -d --h --m");
+    expect(notify.mock.calls[0]?.[0]).toContain(
+      " OpenAI\n\n  Usage fetching is not supported for this OpenAI login",
+    );
     expect(notify.mock.calls[0]?.[0]).toContain(
       " Codex\n\n  No Pi subscription login",
     );

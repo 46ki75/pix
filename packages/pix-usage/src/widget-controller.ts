@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getUsageCapability } from "./capabilities.ts";
 import type { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
 import { renderUsageWidget, type UsageWidgetState } from "./widget.ts";
@@ -47,26 +48,13 @@ export class UsageWidgetController {
     this.providerId = providerId;
     this.cancelRefresh();
     this.lastRefreshAt = undefined;
-    const provider =
-      providerId === "anthropic"
-        ? "claude"
-        : providerId === "openai-codex"
-          ? "codex"
-          : providerId === "meta"
-            ? "muse"
-            : providerId === "opencode-go"
-              ? "opencode"
-              : providerId === "github-copilot"
-                ? "copilot"
-                : undefined;
-    if (!provider) {
-      this.state = {
-        status: providerId === undefined ? "no-model" : "unsupported",
-      };
+    const capability = getUsageCapability(providerId);
+    if (capability.status !== "supported") {
+      this.state = capability;
       this.requestRender?.();
       return;
     }
-    void this.refresh(provider);
+    void this.refresh(capability.provider);
     this.refreshTimer = setInterval(
       () => this.refreshCurrentProvider(),
       REFRESH_MS,
@@ -83,10 +71,13 @@ export class UsageWidgetController {
     if (this.disposed) return;
     // A timer may fire while an earlier async model_select handler is pending.
     this.selectProvider(ctx, ctx.model?.provider);
-    if ("provider" in this.state) void this.refresh(this.state.provider);
+    if ("provider" in this.state && this.state.provider !== "openai")
+      void this.refresh(this.state.provider);
   }
 
-  private async refresh(provider: UsageProvider): Promise<void> {
+  private async refresh(
+    provider: Exclude<UsageProvider, "openai">,
+  ): Promise<void> {
     if (this.disposed || this.active) return;
     // Use a monotonic clock and count failed attempts too, avoiding retry bursts.
     const now = performance.now();

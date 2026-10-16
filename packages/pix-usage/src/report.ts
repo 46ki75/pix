@@ -29,7 +29,7 @@ export function formatUsageReport(
     .map((result) => {
       const name = formatProviderName(result.provider, formatText);
       if (result.status !== "ok") {
-        const color = result.status === "unavailable" ? "warning" : "error";
+        const color = result.status === "error" ? "error" : "warning";
         return `${name}\n\n  ${formatText(color, result.message)}`;
       }
       if (result.usage.windows.length === 0)

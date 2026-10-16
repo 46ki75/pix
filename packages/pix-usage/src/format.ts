@@ -13,6 +13,8 @@ export function formatProviderName(
   switch (provider) {
     case "claude":
       return `${formatText("accent", "")} Claude`;
+    case "openai":
+      return `${formatText("accent", "")} OpenAI`;
     case "codex":
       return `${formatText("accent", "")} Codex`;
     case "muse":

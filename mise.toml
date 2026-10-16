@@ -108,11 +108,11 @@ raw = true
 run = "pnpm exec pi --no-extensions -e ."
 
 [tasks."usage:dev"]
-description = "Launch Pi with only @ikuma.cloud/pix-usage; accepts Pi arguments"
-dir = "{{config_root}}/packages/pix-usage"
+description = "Launch the workspace Pi with only @ikuma.cloud/pix-usage; accepts Pi arguments"
+dir = "{{config_root}}"
 raw_args = true
 raw = true
-run = "pnpm exec pi --no-extensions -e ."
+run = "pnpm exec pi --no-extensions -e ./packages/pix-usage"
 
 [tasks."theme-inspector:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-theme-inspector; accepts Pi arguments"

@@ -11,23 +11,25 @@ import {
   usageWindowColumnWidths,
   type UsageTextFormatter,
 } from "./format.ts";
+import type { UsageCapability } from "./capabilities.ts";
 import type { UsageProvider, UsageResult } from "./types.ts";
 
 export type UsageWidgetState =
   | UsageResult
   | { status: "loading"; provider: UsageProvider }
-  | { status: "unsupported" }
-  | { status: "no-model" };
+  | Exclude<UsageCapability, { status: "supported" }>;
+
+type VisibleUsageWidgetState = Exclude<
+  UsageWidgetState,
+  { status: "unsupported" | "unimplemented" | "no-model" }
+>;
 
 function renderRows(
-  state: UsageWidgetState,
+  state: VisibleUsageWidgetState,
   formatText: UsageTextFormatter,
   now: number,
   width: number,
 ): string[] {
-  if (state.status === "no-model") return ["No model selected."];
-  if (state.status === "unsupported")
-    return ["Usage is not supported for this model."];
   const name = formatProviderName(state.provider, formatText);
   if (state.status === "loading") return [`${name} Loading usage…`];
   if (state.status !== "ok") {
@@ -67,7 +69,13 @@ export function renderUsageWidget(
   theme: Pick<Theme, "fg" | "getFgAnsi">,
   now = Date.now(),
 ): string[] {
-  if (width < 1) return [];
+  if (
+    width < 1 ||
+    state.status === "unsupported" ||
+    state.status === "unimplemented" ||
+    state.status === "no-model"
+  )
+    return [];
   const heading =
     theme.fg("borderMuted", "── ") +
     `${theme.fg("muted", "󱘖")} ${theme.fg("dim", "Usage")} `;

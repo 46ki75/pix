@@ -15,17 +15,36 @@ Tests must mock network and credential resolution and isolate Pi package loading
 from personal configuration. Never use real subscription credentials in tests.
 Use fake timers for widget refresh, countdown, and cleanup tests. Cover overlapping
 manual/widget requests and late results after hiding, switching providers, or
-replacing sessions. Live endpoint compatibility and terminal appearance require
+replacing sessions. Cover all four capability states, zero-line rendering and no
+background work in non-fetching states, provider-transition warning deduplication
+(including while manually hidden), startup warnings, silent non-terminal modes,
+toggle-on acknowledgments, preference restoration, and visible, recoverable
+auth/network errors. Live endpoint compatibility and terminal appearance require
 separate manual checks.
 
 ## Design
 
+- `src/capabilities.ts` classifies providers as `supported`, `unsupported`,
+  `unimplemented`, or `no-model`, independently of authentication and request
+  success. New `openai` logins are unsupported because no supported quota API is
+  currently known for that login. Unknown/unintegrated providers are unimplemented, not assumed
+  incapable of usage fetching; an absent model is `no-model`.
 - `src/index.ts` registers `/usage`, including its terminal-only `toggle` argument,
   and owns report delivery and the widget's lifecycle. Terminal `session_start`
-  shows the widget by default; toggling can hide it until the next session.
-  Loading the extension alone starts no resources, and non-terminal sessions never
-  start automatic checks. Shutdown aborts outstanding work; late completions
-  cannot update a replacement session.
+  enables the widget preference by default. Automatic hiding preserves it; manual
+  hiding persists across provider changes until the next session. Toggle-on for a
+  non-fetching provider acknowledges that the widget is enabled but will appear
+  only for providers with usage fetching. Loading alone starts no resources.
+  Non-terminal modes never start automatic capability checks, warnings, or widget
+  work; manual reports remain available in terminal and RPC modes. Shutdown aborts
+  outstanding work; late completions cannot update a replacement session.
+- Capability warnings are independent of widget preference. Terminal
+  `session_start` warns about unsupported or unimplemented usage fetching at each
+  initialization, including Pi startup, session creation/resume/fork, and reload.
+  `model_select` transitions into those providers also warn, explaining the
+  specific state even while manually hidden. Do not repeat for models under the
+  same provider, turns, polling, or renders. Supported providers and absent models
+  emit no capability warning.
 - `src/requests.ts` shares in-flight provider checks between reports and the widget.
   Each consumer has independent cancellation; only the last consumer or shutdown
   cancels the underlying request. Do not cache completed results for later reports.
@@ -33,20 +52,30 @@ separate manual checks.
   countdown timers, and cancellation. `turn_end` triggers non-blocking checks with
   a one-minute cooldown, shared with fallback polling and measured using a
   monotonic clock. Count failed attempts too; skip throttled events without queuing
-  retries. Initial display and provider changes stay immediate; manual reports
-  bypass the widget cooldown. No timers or credential requests run while hidden
-  or for unsupported providers. Pi component disposal must also stop work.
+  retries. Initial display, toggle-on, and changes to supported providers fetch
+  immediately when enabled, including after automatic hiding; manual reports
+  bypass the widget cooldown. No timers, credential resolution, or network work
+  run while manually hidden or for unsupported, unimplemented, or absent models.
+  Authentication, missing-login, and network errors stay visible for supported
+  providers and recover through normal refreshes, not capability hiding.
+  Pi component disposal must also stop work.
 - `src/widget.ts` renders normalized state with a package-local divider, bounded
-  terminal widths, and the live theme. Rendering must never start network work.
-  `src/format.ts` keeps report/widget formatting rules consistent. Keep widget
-  rows compact; report rows align labels, percentages, relative resets, and UTC
-  timestamps by visible terminal width.
+  terminal widths, and the live theme. Unsupported, unimplemented, and `no-model`
+  states render zero lines, including no divider. Rendering must never start
+  network work or emit capability warnings. `src/format.ts` keeps report/widget
+  formatting rules consistent. Keep widget rows compact; report rows align labels,
+  percentages, relative resets, and UTC timestamps by visible terminal width.
+- `src/openai.ts` defines usage-settings guidance for the new `openai` Sign in
+  with ChatGPT flow. Explicit `/usage openai` and `/usage all` reports retain the
+  unsupported explanation and settings link with warning styling, without
+  credential resolution, refresh, network requests, or legacy Codex fallback.
+  The widget stays hidden; guidance does not verify login or billing type.
 - `src/auth.ts` adapts Pi's authentication APIs to the token-accepting fetchers.
-  Pi owns OAuth resolution, refresh, and persistence. Claude and Codex require
-  OAuth from `getProviderAuth()`. OpenCode Go accepts only a literal Pi credential
-  saved through `/login opencode-go`. Require Pi's side-effect-free auth status to
-  identify a stored credential, then read it directly and twice before
-  transmission. Reject saved credential commands and do not call the model-auth
+  Pi owns OAuth resolution, refresh, and persistence. Claude and legacy Codex
+  require OAuth from `getProviderAuth()`. OpenCode Go accepts only a literal Pi
+  credential saved through `/login opencode-go`. Require Pi's side-effect-free
+  auth status to identify a stored credential, then read it directly and twice
+  before transmission. Reject saved credential commands and do not call the model-auth
   resolver for OpenCode: that could execute unused configured-header commands.
   Also verify twice that no extension replaced `opencode-go` and every effective
   provider/model URL is a known first-party URL. Reject environment, runtime,
@@ -104,7 +133,10 @@ separate manual checks.
 - `src/report.ts` formats only normalized quota data and safe error messages. Keep
   account identity and arbitrary provider strings out of terminal output.
 
-The implementation targets Pi 0.87.1. Use the public extension APIs documented in
+The implementation is tested against Pi 0.87.1 (package development pin) and
+1.3.0 (workspace pin), including isolated real-registry OpenAI/Codex login checks.
+`mise run usage:dev` uses the workspace pin so the new OpenAI login is available.
+Use the public extension APIs documented in
 [extensions](https://pi.dev/docs/latest/extensions) and
 [packages](https://pi.dev/docs/latest/packages).
 
@@ -116,7 +148,11 @@ Request and payload references:
 [OpenCode Go endpoint](https://github.com/anomalyco/opencode/blob/7945de208964a49300d7f770d1a71d078db9a4c4/packages/console/app/src/routes/zen/go/v1/usage.ts),
 [OpenCode Go limits](https://opencode.ai/docs/go#usage-limits),
 [Pi's OpenCode Go provider](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/providers/opencode-go.ts),
-[Pi's Codex request implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/api/openai-codex-responses.ts),
+[Pi's legacy Codex request implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/api/openai-codex-responses.ts),
+[Pi's new OpenAI OAuth implementation](https://github.com/earendil-works/pi/blob/v1.3.0/packages/ai/src/auth/oauth/openai-chatgpt.ts),
+[OpenAI token claims](https://developers.openai.com/siwc/token-sharing-open-source/token-reference),
+[OpenAI supported routing](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
+[OpenAI usage-settings guidance](https://developers.openai.com/siwc/ui-ux-guidelines#link-to-chatgpt-usage),
 [Pi's Meta OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/meta.ts),
 [Pi's Copilot OAuth implementation](https://github.com/earendil-works/pi/blob/v0.87.1/packages/ai/src/auth/oauth/github-copilot.ts),
 [VS Code quota normalization](https://github.com/microsoft/vscode/blob/959031245ebb1fe077e0d512e1397c0ae82006e4/src/vs/workbench/services/chat/common/chatEntitlementService.ts#L817-L1031),

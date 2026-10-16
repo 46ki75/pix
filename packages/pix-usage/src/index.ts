@@ -1,5 +1,9 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { StoredCredentialReader } from "./auth.ts";
+import { getUsageCapability } from "./capabilities.ts";
 import { formatUsageReport } from "./report.ts";
 import { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
@@ -8,6 +12,7 @@ import { UsageWidgetController } from "./widget-controller.ts";
 const CHOICES = [
   "all",
   "claude",
+  "openai",
   "codex",
   "muse",
   "opencode",
@@ -19,17 +24,29 @@ interface SubscriptionUsageOptions {
   readCredential?: StoredCredentialReader;
 }
 
+function notifyUsageWarning(ctx: ExtensionContext): void {
+  if (ctx.mode !== "tui") return;
+  const capability = getUsageCapability(ctx.model?.provider);
+  if (
+    capability.status === "unsupported" ||
+    capability.status === "unimplemented"
+  )
+    ctx.ui.notify(capability.message, "warning");
+}
+
 export default function subscriptionUsage(
   pi: ExtensionAPI,
   options: SubscriptionUsageOptions = {},
 ): void {
   let active: AbortController | undefined;
   let widget: UsageWidgetController | undefined;
+  let sessionStarted = false;
+  let selectedProviderId: string | undefined;
   const requests = new UsageRequests(options.readCredential);
 
   pi.registerCommand("usage", {
     description:
-      "Fetch subscription quotas or toggle the widget: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
+      "Show subscription usage or toggle the widget: /usage [claude|openai|codex|muse|opencode|copilot|all|toggle]",
     getArgumentCompletions(prefix) {
       const items = CHOICES.filter((value) => value.startsWith(prefix)).map(
         (value) => ({ value, label: value }),
@@ -53,19 +70,25 @@ export default function subscriptionUsage(
         } else {
           widget = new UsageWidgetController(ctx, requests);
         }
-        ctx.ui.notify(`Usage widget ${widget ? "shown" : "hidden"}.`, "info");
+        const message = !widget
+          ? "Usage widget hidden."
+          : getUsageCapability(ctx.model?.provider).status === "supported"
+            ? "Usage widget shown."
+            : "Usage widget enabled; it will appear for providers with usage fetching.";
+        ctx.ui.notify(message, "info");
         return;
       }
       if (
         selection !== "all" &&
         selection !== "claude" &&
+        selection !== "openai" &&
         selection !== "codex" &&
         selection !== "muse" &&
         selection !== "opencode" &&
         selection !== "copilot"
       ) {
         ctx.ui.notify(
-          "Usage: /usage [claude|codex|muse|opencode|copilot|all|toggle]",
+          "Usage: /usage [claude|openai|codex|muse|opencode|copilot|all|toggle]",
           "warning",
         );
         return;
@@ -78,7 +101,7 @@ export default function subscriptionUsage(
       active = controller;
       const providers: UsageProvider[] =
         selection === "all"
-          ? ["claude", "codex", "muse", "opencode", "copilot"]
+          ? ["claude", "openai", "codex", "muse", "opencode", "copilot"]
           : [selection];
       try {
         const results = await Promise.all(
@@ -112,13 +135,21 @@ export default function subscriptionUsage(
 
   pi.on("session_start", (_event, ctx) => {
     widget?.dispose();
+    sessionStarted = true;
+    selectedProviderId = ctx.model?.provider;
     widget =
       ctx.mode === "tui" ? new UsageWidgetController(ctx, requests) : undefined;
+    notifyUsageWarning(ctx);
   });
 
   pi.on("model_select", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
     // An earlier async handler can switch models before this event reaches us.
-    if (ctx.mode === "tui") widget?.selectProvider(ctx, ctx.model?.provider);
+    const providerId = ctx.model?.provider;
+    widget?.selectProvider(ctx, providerId);
+    if (!sessionStarted || providerId === selectedProviderId) return;
+    selectedProviderId = providerId;
+    notifyUsageWarning(ctx);
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -126,6 +157,8 @@ export default function subscriptionUsage(
   });
 
   pi.on("session_shutdown", () => {
+    sessionStarted = false;
+    selectedProviderId = undefined;
     active?.abort();
     active = undefined;
     widget?.dispose();

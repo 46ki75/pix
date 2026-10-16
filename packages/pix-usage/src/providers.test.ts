@@ -547,6 +547,22 @@ test("extracts only the Codex account routing claim", () => {
   }
 });
 
+test("legacy Codex quota fetching refuses a new OpenAI token before transmission", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  const directToken = token({
+    aud: "https://api.openai.com/v1",
+    scope: "chatgpt.tokens.use.direct resource.invoke",
+    "https://api.openai.com/auth": {
+      per_user_salt: "test-salt",
+      encrypted_auth_metadata: "opaque-test-metadata",
+    },
+  });
+  await expect(fetchCodexUsage(directToken, { fetch })).rejects.toThrow(
+    "Codex account ID is unavailable",
+  );
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test("fetchers accept tokens without Pi and make the documented requests", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);

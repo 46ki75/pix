@@ -9,6 +9,7 @@ import {
   ExtensionRunner,
   type ExtensionUIContext,
   type ModelSelectEvent,
+  type SessionStartEvent,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
@@ -224,8 +225,8 @@ function harness(
     ctx,
     handlers,
     select,
-    start: () =>
-      handlers.get("session_start")?.({ type: "session_start" }, ctx),
+    start: (reason: SessionStartEvent["reason"] = "startup") =>
+      handlers.get("session_start")?.({ type: "session_start", reason }, ctx),
     turnEnd: () => handlers.get("turn_end")?.({ type: "turn_end" }, ctx),
     shutdown,
     getProviderAuth,
@@ -259,11 +260,14 @@ const flush = () => vi.advanceTimersByTimeAsync(0);
 test("does no work at extension load or before session_start; completes toggle", async () => {
   const h = harness();
   h.select("openai-codex");
+  h.select("openai");
+  h.select("custom-provider");
   h.turnEnd();
   await vi.advanceTimersByTimeAsync(REFRESH * 2);
   expect(h.getProviderAuth).not.toHaveBeenCalled();
   expect(h.fetch).not.toHaveBeenCalled();
   expect(h.setWidget).not.toHaveBeenCalled();
+  expect(h.notify).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
   expect(h.command.getArgumentCompletions?.("t")).toEqual([
     { value: "toggle", label: "toggle" },
@@ -409,18 +413,238 @@ test("a new session restores default visibility after the user hides the widget"
   expect(vi.getTimerCount()).toBe(0);
 });
 
-test.each(["openai", undefined])(
-  "startup with provider %s shows an explanatory widget without requests",
+test("OpenAI warns at startup and hides the widget without credentials, legacy quota fallback, or polling", async () => {
+  const h = harness("openai");
+  h.start();
+  expect(h.text()).toBe("");
+  expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining(
+      "Usage fetching is not supported for this OpenAI login",
+    ),
+    "warning",
+  );
+  expect(h.notify.mock.calls[0]?.[0]).toContain(
+    "https://chatgpt.com/settings/usage",
+  );
+  h.turnEnd();
+  h.select("openai");
+  await vi.advanceTimersByTimeAsync(REFRESH * 2);
+  expect(h.getProviderAuth).not.toHaveBeenCalled();
+  expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+  expect(h.readCredential).not.toHaveBeenCalled();
+  expect(h.fetch).not.toHaveBeenCalled();
+  expect(h.notify).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+  await h.toggle();
+  await h.toggle();
+  expect(h.text()).toBe("");
+  expect(h.notify).toHaveBeenLastCalledWith(
+    "Usage widget enabled; it will appear for providers with usage fetching.",
+    "info",
+  );
+  h.notify.mockClear();
+  h.select("openai-codex");
+  await flush();
+  expect(h.text()).toContain(" Codex 󱛡 Weekly");
+  expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith("openai-codex");
+  h.select("openai");
+  expect(h.text()).toBe("");
+  expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining(
+      "Usage fetching is not supported for this OpenAI login",
+    ),
+    "warning",
+  );
+  expect(h.notify.mock.calls[0]?.[0]).toContain(
+    "https://chatgpt.com/settings/usage",
+  );
+  expect(vi.getTimerCount()).toBe(0);
+  h.shutdown();
+});
+
+test.each(["custom-provider", undefined])(
+  "startup with provider %s hides the widget without requests and warns only for an unimplemented provider",
   async (provider) => {
     const h = harness(provider);
     if (provider === undefined) h.ctx.model = undefined;
     h.start();
-    expect(h.widget).toBeDefined();
-    expect(h.text()).toMatch(
-      provider === undefined ? /no model/i : /not supported/i,
-    );
+    expect(h.text()).toBe("");
+    if (provider) {
+      expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+        "Usage fetching is not implemented for this provider.",
+        "warning",
+      );
+    } else expect(h.notify).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(REFRESH);
     expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    h.shutdown();
+  },
+);
+
+test.each(["openai", "custom-provider"])(
+  "each session initialization warns once for %s without repeating on turns or same-provider selections",
+  async (provider) => {
+    const h = harness(provider);
+    for (const [index, reason] of (
+      ["startup", "reload", "new", "resume", "fork"] as const
+    ).entries()) {
+      h.start(reason);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+      expect(h.notify).toHaveBeenLastCalledWith(
+        expect.stringContaining(
+          provider === "openai" ? "not supported" : "not implemented",
+        ),
+        "warning",
+      );
+      h.select(provider);
+      h.select(provider);
+      h.turnEnd();
+      expect(h.text()).toBe("");
+      await vi.advanceTimersByTimeAsync(REFRESH * 2);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+      expect(vi.getTimerCount()).toBe(0);
+      h.shutdown();
+      h.select(provider);
+      expect(h.notify).toHaveBeenCalledTimes(index + 1);
+    }
+    expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.getProviderAuthStatus).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(h.fetch).not.toHaveBeenCalled();
+  },
+);
+
+test.each([
+  {
+    provider: "openai",
+    message: "Usage fetching is not supported for this OpenAI login",
+  },
+  {
+    provider: "custom-provider",
+    message: "Usage fetching is not implemented for this provider.",
+  },
+])(
+  "model switches warn once per entry for $provider, even with the widget manually hidden",
+  async ({ provider, message }) => {
+    const h = harness();
+    h.start();
+    await flush();
+    await h.toggle();
+    h.notify.mockClear();
+    h.select(provider);
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(message),
+      "warning",
+    );
+    expect(h.text()).toBe("");
+    h.select(provider);
+    h.turnEnd();
+    await vi.advanceTimersByTimeAsync(REFRESH * 2);
+    expect(h.notify).toHaveBeenCalledOnce();
+    expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith("anthropic");
+    expect(h.fetch).toHaveBeenCalledOnce();
+    expect(h.readCredential).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    h.select("anthropic");
+    expect(h.widget).toBeUndefined();
+    h.select(provider);
+    expect(h.notify).toHaveBeenCalledTimes(2);
+    h.shutdown();
+    h.select("anthropic");
+    h.select(provider);
+    expect(h.notify).toHaveBeenCalledTimes(2);
+  },
+);
+
+test.each(["openai", "custom-provider"])(
+  "switching to %s cancels in-flight widget work and cannot restore stale rows",
+  async (provider) => {
+    const h = harness();
+    let finish!: (response: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    h.fetch.mockImplementationOnce((_url, init) => {
+      signal = init?.signal;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    h.start();
+    await flush();
+    expect(signal?.aborted).toBe(false);
+    h.select(provider);
+    expect(h.text()).toBe("");
+    await flush();
+    expect(signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    finish(Response.json({ five_hour: { utilization: 99 } }));
+    await flush();
+    expect(h.text()).toBe("");
+    expect(h.notify).toHaveBeenCalledOnce();
+    h.select("anthropic");
+    await flush();
+    expect(h.text()).toContain("12%");
+    expect(h.text()).not.toContain("99%");
+    expect(h.fetch).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(2);
+    h.shutdown();
+  },
+);
+
+test("capability notifications distinguish unsupported from unimplemented and reset with the session", async () => {
+  const h = harness();
+  h.start();
+  await flush();
+  h.select("openai");
+  h.select("custom-provider");
+  expect(h.notify.mock.calls).toEqual([
+    [expect.stringContaining("not supported"), "warning"],
+    ["Usage fetching is not implemented for this provider.", "warning"],
+  ]);
+  expect(h.text()).toBe("");
+  expect(vi.getTimerCount()).toBe(0);
+  h.shutdown();
+  h.start();
+  expect(h.text()).toBe("");
+  expect(h.notify).toHaveBeenCalledTimes(3);
+  expect(h.notify).toHaveBeenLastCalledWith(
+    "Usage fetching is not implemented for this provider.",
+    "warning",
+  );
+  h.select("custom-provider");
+  expect(h.notify).toHaveBeenCalledTimes(3);
+  h.select("openai");
+  expect(h.notify).toHaveBeenCalledTimes(4);
+  h.select("anthropic");
+  await flush();
+  expect(h.text()).toContain("Claude");
+  expect(h.fetch).toHaveBeenCalledTimes(2);
+  h.shutdown();
+});
+
+test.each(
+  (["rpc", "json", "print"] as const).flatMap((mode) =>
+    ["anthropic", "openai", "custom-provider"].map((provider) => ({
+      mode,
+      provider,
+    })),
+  ),
+)(
+  "no automatic capability notifications in $mode with initial provider $provider",
+  async ({ mode, provider }) => {
+    const h = harness(provider, mode);
+    h.start();
+    h.select("openai");
+    h.select("custom-provider");
+    h.turnEnd();
+    await vi.advanceTimersByTimeAsync(REFRESH);
+    expect(h.notify).not.toHaveBeenCalled();
+    expect(h.setWidget).not.toHaveBeenCalled();
+    expect(h.getProviderAuth).not.toHaveBeenCalled();
+    expect(h.readCredential).not.toHaveBeenCalled();
     expect(h.fetch).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
     h.shutdown();
@@ -654,10 +878,8 @@ test.each(["openai", "openai-codex"])(
     >;
     h.turnEnd();
     await flush();
-    expect(h.text()).not.toContain("Claude");
-    expect(h.text()).toContain(
-      provider === "openai" ? "not supported" : "Codex",
-    );
+    if (provider === "openai") expect(h.text()).toBe("");
+    else expect(h.text()).toContain("Codex");
     expect(h.getProviderAuth.mock.calls.map(([id]) => id)).toEqual(
       provider === "openai" ? ["anthropic"] : ["anthropic", "openai-codex"],
     );
@@ -757,10 +979,8 @@ test.each(["openai", "openai-codex"])(
       expect(errors).not.toHaveBeenCalled();
       expect(runner.createContext().model?.provider).toBe(provider);
       expect(h.getProviderAuth).toHaveBeenCalledExactlyOnceWith("openai-codex");
-      expect(h.text()).not.toContain("Claude");
-      expect(h.text()).toContain(
-        provider === "openai" ? "not supported" : "Codex",
-      );
+      if (provider === "openai") expect(h.text()).toBe("");
+      else expect(h.text()).toContain("Codex");
       expect(vi.getTimerCount()).toBe(provider === "openai" ? 0 : 2);
       await vi.advanceTimersByTimeAsync(REFRESH);
       expect(h.getProviderAuth.mock.calls.map(([id]) => id)).toEqual(
@@ -856,13 +1076,17 @@ test.each(
         provider === "openai" ? ["anthropic"] : ["anthropic", "openai-codex"],
       );
       expect(h.fetch).toHaveBeenCalledTimes(provider === "openai" ? 1 : 2);
-      expect(h.text()).not.toContain("Claude");
-      expect(h.text()).toContain(
-        provider === "openai" ? "not supported" : "Codex",
-      );
+      if (provider === "openai") expect(h.text()).toBe("");
+      else expect(h.text()).toContain("Codex");
       expect(vi.getTimerCount()).toBe(provider === "openai" ? 0 : 2);
       release();
       await selecting;
+      if (provider === "openai") {
+        expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+          expect.stringContaining("not supported for this OpenAI login"),
+          "warning",
+        );
+      } else expect(h.notify).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(REFRESH);
       expect(h.getProviderAuth.mock.calls.map(([id]) => id)).toEqual(
         provider === "openai"
@@ -951,11 +1175,10 @@ test("switching away discards a late OpenCode response", async () => {
   h.shutdown();
 });
 
-test("unsupported providers do not resolve credentials or poll", async () => {
-  const h = harness("openai");
+test("unimplemented providers hide the widget without resolving credentials or polling", async () => {
+  const h = harness("custom-provider");
   await h.toggle();
-  expect(h.text()).toMatch(/not supported|unsupported/i);
-  expect(h.text()).not.toContain("0%");
+  expect(h.text()).toBe("");
   expect(vi.getTimerCount()).toBe(0);
   await vi.advanceTimersByTimeAsync(REFRESH);
   expect(h.getProviderAuth).not.toHaveBeenCalled();
@@ -963,18 +1186,18 @@ test("unsupported providers do not resolve credentials or poll", async () => {
   await flush();
   expect(h.text()).toContain("12%");
   h.select("custom-provider");
-  expect(h.text()).not.toContain("12%");
+  expect(h.text()).toBe("");
   expect(vi.getTimerCount()).toBe(0);
   await vi.advanceTimersByTimeAsync(REFRESH);
   expect(h.fetch).toHaveBeenCalledOnce();
   h.shutdown();
 });
 
-test("no selected model shows a distinct state without fetching", async () => {
+test("no selected model hides the widget without fetching", async () => {
   const h = harness();
   h.ctx.model = undefined;
   await h.toggle();
-  expect(h.text()).toMatch(/no model/i);
+  expect(h.text()).toBe("");
   expect(h.getProviderAuth).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
   h.shutdown();
@@ -1172,32 +1395,42 @@ test("a timed-out credential lookup renders an error and the next scheduled refr
   h.shutdown();
 });
 
-test("provider switches leave a shared report intact while moving the widget to the new provider", async () => {
-  const h = harness();
-  let finish!: (auth: Awaited<ReturnType<ResolveAuth>>) => void;
-  h.getProviderAuth.mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        finish = done;
-      }),
-  );
-  await h.toggle();
-  const report = h.command.handler("claude", h.ctx);
-  h.select("openai-codex");
-  await flush();
-  expect(h.text()).toContain("Codex");
-  finish({ source: "OAuth", auth: { apiKey: "claude-test-token" } });
-  await report;
-  expect(h.getProviderAuth).toHaveBeenCalledTimes(2);
-  expect(h.fetch).toHaveBeenCalledTimes(2);
-  expect(h.notify).toHaveBeenLastCalledWith(
-    expect.stringContaining("12%"),
-    "info",
-  );
-  expect(h.text()).toContain("93%");
-  expect(h.text()).not.toContain("Claude");
-  h.shutdown();
-});
+test.each(["openai-codex", "openai", "custom-provider"])(
+  "switching to %s leaves a shared report intact while moving or hiding the widget",
+  async (provider) => {
+    const h = harness();
+    let finish!: (auth: Awaited<ReturnType<ResolveAuth>>) => void;
+    h.getProviderAuth.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finish = done;
+        }),
+    );
+    await h.toggle();
+    const report = h.command.handler("claude", h.ctx);
+    h.select(provider);
+    await flush();
+    if (provider === "openai-codex") expect(h.text()).toContain("Codex");
+    else expect(h.text()).toBe("");
+    finish({ source: "OAuth", auth: { apiKey: "claude-test-token" } });
+    await report;
+    expect(h.getProviderAuth).toHaveBeenCalledTimes(
+      provider === "openai-codex" ? 2 : 1,
+    );
+    expect(h.fetch).toHaveBeenCalledTimes(provider === "openai-codex" ? 2 : 1);
+    expect(h.notify).toHaveBeenLastCalledWith(
+      expect.stringContaining("12%"),
+      "info",
+    );
+    if (provider === "openai-codex") expect(h.text()).toContain("93%");
+    else {
+      expect(h.text()).toBe("");
+      expect(vi.getTimerCount()).toBe(0);
+    }
+    expect(h.text()).not.toContain("Claude");
+    h.shutdown();
+  },
+);
 
 test("idle theme changes and resizing use the live theme without replacing or refetching the widget", async () => {
   const h = harness();

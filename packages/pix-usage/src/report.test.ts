@@ -11,6 +11,21 @@ function reportBody(...args: Parameters<typeof formatUsageReport>): string {
     .join("\n");
 }
 
+test("manual reports render unsupported capability guidance as a warning, not a fetch error", () => {
+  const message = "Usage fetching is not supported for this login.";
+  const formatText = vi.fn((_color: string, text: string) => text);
+  const report = formatUsageReport(
+    [{ provider: "openai", status: "unsupported", message }],
+    formatText,
+    NOW,
+  );
+  expect(report).toContain(` OpenAI\n\n  ${message}`);
+  expect(formatText).toHaveBeenCalledWith("warning", message);
+  expect(formatText.mock.calls.some(([color]) => color === "error")).toBe(
+    false,
+  );
+});
+
 test("frames an empty report with enough room for the title", () => {
   expect(formatUsageReport([])).toBe("── 󱘖 Usage ─\n\n────────────");
 });
