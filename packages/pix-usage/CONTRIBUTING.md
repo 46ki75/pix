@@ -15,17 +15,34 @@ Tests must mock network and credential resolution and isolate Pi package loading
 from personal configuration. Never use real subscription credentials in tests.
 Use fake timers for widget refresh, countdown, and cleanup tests. Cover overlapping
 manual/widget requests and late results after hiding, switching providers, or
-replacing sessions. Live endpoint compatibility and terminal appearance require
-separate manual checks.
+replacing sessions. Cover all four capability states, zero-line rendering and no
+background work in non-fetching states, provider-transition warning deduplication
+(including while manually hidden), silent startup/non-terminal modes, toggle-on
+acknowledgments, preference restoration, and visible, recoverable auth/network
+errors. Live endpoint compatibility and terminal appearance require separate
+manual checks.
 
 ## Design
 
+- `src/capabilities.ts` classifies providers as `supported`, `unsupported`,
+  `unimplemented`, or `no-model`, independently of authentication and request
+  success. New `openai` logins are unsupported because no supported quota API is
+  currently known for that login. Unknown/unintegrated providers are unimplemented, not assumed
+  incapable of usage fetching; an absent model is `no-model`.
 - `src/index.ts` registers `/usage`, including its terminal-only `toggle` argument,
   and owns report delivery and the widget's lifecycle. Terminal `session_start`
-  shows the widget by default; toggling can hide it until the next session.
-  Loading the extension alone starts no resources, and non-terminal sessions never
-  start automatic checks. Shutdown aborts outstanding work; late completions
-  cannot update a replacement session.
+  enables the widget preference by default. Automatic hiding preserves it; manual
+  hiding persists across provider changes until the next session. Toggle-on for a
+  non-fetching provider acknowledges that the widget is enabled but will appear
+  only for providers with usage fetching. Loading alone starts no resources.
+  Non-terminal modes never start automatic capability checks, warnings, or widget
+  work; manual reports remain available in terminal and RPC modes. Shutdown aborts
+  outstanding work; late completions cannot update a replacement session.
+- Capability warnings are independent of widget preference. Only terminal
+  `model_select` transitions into unsupported or unimplemented providers warn,
+  explaining the specific state even while manually hidden. Do not repeat for
+  models under the same provider, turns, polling, or renders. Initial
+  `session_start` emits no capability warning.
 - `src/requests.ts` shares in-flight provider checks between reports and the widget.
   Each consumer has independent cancellation; only the last consumer or shutdown
   cancels the underlying request. Do not cache completed results for later reports.
@@ -33,19 +50,24 @@ separate manual checks.
   countdown timers, and cancellation. `turn_end` triggers non-blocking checks with
   a one-minute cooldown, shared with fallback polling and measured using a
   monotonic clock. Count failed attempts too; skip throttled events without queuing
-  retries. Initial display and provider changes stay immediate; manual reports
-  bypass the widget cooldown. No timers or credential requests run while hidden
-  or for unsupported providers. Pi component disposal must also stop work.
+  retries. Initial display, toggle-on, and changes to supported providers fetch
+  immediately when enabled, including after automatic hiding; manual reports
+  bypass the widget cooldown. No timers, credential resolution, or network work
+  run while manually hidden or for unsupported, unimplemented, or absent models.
+  Authentication, missing-login, and network errors stay visible for supported
+  providers and recover through normal refreshes, not capability hiding.
+  Pi component disposal must also stop work.
 - `src/widget.ts` renders normalized state with a package-local divider, bounded
-  terminal widths, and the live theme. Rendering must never start network work.
-  `src/format.ts` keeps report/widget formatting rules consistent. Keep widget
-  rows compact; report rows align labels, percentages, relative resets, and UTC
-  timestamps by visible terminal width.
-- `src/openai.ts` defines static usage-settings guidance for the new `openai`
-  Sign in with ChatGPT flow. No quota route is documented for this API-audience
-  grant, whose auth metadata is opaque. Both reports and the widget must avoid
-  credential resolution, refresh, HTTP requests, and legacy Codex fallback. The
-  OpenAI widget starts no timers; guidance does not verify login or billing type.
+  terminal widths, and the live theme. Unsupported, unimplemented, and `no-model`
+  states render zero lines, including no divider. Rendering must never start
+  network work or emit capability warnings. `src/format.ts` keeps report/widget
+  formatting rules consistent. Keep widget rows compact; report rows align labels,
+  percentages, relative resets, and UTC timestamps by visible terminal width.
+- `src/openai.ts` defines usage-settings guidance for the new `openai` Sign in
+  with ChatGPT flow. Explicit `/usage openai` and `/usage all` reports retain the
+  unsupported explanation and settings link with warning styling, without
+  credential resolution, refresh, network requests, or legacy Codex fallback.
+  The widget stays hidden; guidance does not verify login or billing type.
 - `src/auth.ts` adapts Pi's authentication APIs to the token-accepting fetchers.
   Pi owns OAuth resolution, refresh, and persistence. Claude and legacy Codex
   require OAuth from `getProviderAuth()`. OpenCode Go accepts only a literal Pi

@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { StoredCredentialReader } from "./auth.ts";
+import { getUsageCapability } from "./capabilities.ts";
 import { formatUsageReport } from "./report.ts";
 import { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
@@ -26,6 +27,8 @@ export default function subscriptionUsage(
 ): void {
   let active: AbortController | undefined;
   let widget: UsageWidgetController | undefined;
+  let sessionStarted = false;
+  let selectedProviderId: string | undefined;
   const requests = new UsageRequests(options.readCredential);
 
   pi.registerCommand("usage", {
@@ -54,7 +57,12 @@ export default function subscriptionUsage(
         } else {
           widget = new UsageWidgetController(ctx, requests);
         }
-        ctx.ui.notify(`Usage widget ${widget ? "shown" : "hidden"}.`, "info");
+        const message = !widget
+          ? "Usage widget hidden."
+          : getUsageCapability(ctx.model?.provider).status === "supported"
+            ? "Usage widget shown."
+            : "Usage widget enabled; it will appear for providers with usage fetching.";
+        ctx.ui.notify(message, "info");
         return;
       }
       if (
@@ -114,13 +122,25 @@ export default function subscriptionUsage(
 
   pi.on("session_start", (_event, ctx) => {
     widget?.dispose();
+    sessionStarted = true;
+    selectedProviderId = ctx.model?.provider;
     widget =
       ctx.mode === "tui" ? new UsageWidgetController(ctx, requests) : undefined;
   });
 
   pi.on("model_select", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
     // An earlier async handler can switch models before this event reaches us.
-    if (ctx.mode === "tui") widget?.selectProvider(ctx, ctx.model?.provider);
+    const providerId = ctx.model?.provider;
+    widget?.selectProvider(ctx, providerId);
+    if (!sessionStarted || providerId === selectedProviderId) return;
+    selectedProviderId = providerId;
+    const capability = getUsageCapability(providerId);
+    if (
+      capability.status === "unsupported" ||
+      capability.status === "unimplemented"
+    )
+      ctx.ui.notify(capability.message, "warning");
   });
 
   pi.on("turn_end", (_event, ctx) => {
@@ -128,6 +148,8 @@ export default function subscriptionUsage(
   });
 
   pi.on("session_shutdown", () => {
+    sessionStarted = false;
+    selectedProviderId = undefined;
     active?.abort();
     active = undefined;
     widget?.dispose();

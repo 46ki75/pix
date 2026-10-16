@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { OPENAI_USAGE_UNAVAILABLE } from "./openai.ts";
+import { getUsageCapability } from "./capabilities.ts";
 import type { UsageRequests } from "./requests.ts";
 import type { UsageProvider } from "./types.ts";
 import { renderUsageWidget, type UsageWidgetState } from "./widget.ts";
@@ -48,31 +48,13 @@ export class UsageWidgetController {
     this.providerId = providerId;
     this.cancelRefresh();
     this.lastRefreshAt = undefined;
-    if (providerId === "openai") {
-      this.state = OPENAI_USAGE_UNAVAILABLE;
+    const capability = getUsageCapability(providerId);
+    if (capability.status !== "supported") {
+      this.state = capability;
       this.requestRender?.();
       return;
     }
-    const provider =
-      providerId === "anthropic"
-        ? "claude"
-        : providerId === "openai-codex"
-          ? "codex"
-          : providerId === "meta"
-            ? "muse"
-            : providerId === "opencode-go"
-              ? "opencode"
-              : providerId === "github-copilot"
-                ? "copilot"
-                : undefined;
-    if (!provider) {
-      this.state = {
-        status: providerId === undefined ? "no-model" : "unsupported",
-      };
-      this.requestRender?.();
-      return;
-    }
-    void this.refresh(provider);
+    void this.refresh(capability.provider);
     this.refreshTimer = setInterval(
       () => this.refreshCurrentProvider(),
       REFRESH_MS,
@@ -93,7 +75,9 @@ export class UsageWidgetController {
       void this.refresh(this.state.provider);
   }
 
-  private async refresh(provider: UsageProvider): Promise<void> {
+  private async refresh(
+    provider: Exclude<UsageProvider, "openai">,
+  ): Promise<void> {
     if (this.disposed || this.active) return;
     // Use a monotonic clock and count failed attempts too, avoiding retry bursts.
     const now = performance.now();

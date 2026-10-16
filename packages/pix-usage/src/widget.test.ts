@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, expect, test, vi } from "vitest";
-import { OPENAI_USAGE_UNAVAILABLE } from "./openai.ts";
+import { OPENAI_USAGE_UNSUPPORTED } from "./openai.ts";
 import type { UsageProvider, UsageWindow } from "./types.ts";
 import { renderUsageWidget, type UsageWidgetState } from "./widget.ts";
 
@@ -61,25 +61,21 @@ function plain(state: UsageWidgetState, now = NOW): string[] {
 
 afterEach(() => vi.restoreAllMocks());
 
-test.each([1, 2, 12, 40, 80, 120])(
-  "bounds static OpenAI guidance to %s columns without inventing usage",
-  (width) => {
-    const rows = renderUsageWidget(
-      OPENAI_USAGE_UNAVAILABLE,
-      width,
-      makeTheme(),
-      NOW,
-    );
-    for (const row of rows)
-      expect(visibleWidth(row)).toBeLessThanOrEqual(width);
-    const text = stripVTControlCharacters(rows.join("\n"));
-    expect(text).not.toContain("0%");
-    if (width >= 80) {
-      expect(text).toContain(" OpenAI");
-      expect(text).toContain("https://chatgpt.com/settings/usage");
-    }
-  },
-);
+test.each([
+  OPENAI_USAGE_UNSUPPORTED,
+  {
+    status: "unimplemented",
+    message: "Usage fetching is not implemented for this provider.",
+  } as const,
+  { status: "no-model" } as const,
+])("hides the $status widget without rendering a divider", (state) => {
+  const theme = makeTheme();
+  for (const width of [-1, 0, 1, 2, 12, 40, 80, 120]) {
+    expect(renderUsageWidget(state, width, theme, NOW)).toEqual([]);
+  }
+  expect(theme.fg).not.toHaveBeenCalled();
+  expect(theme.getFgAnsi).not.toHaveBeenCalled();
+});
 
 test.each([
   ["claude", " Claude"],
@@ -325,51 +321,44 @@ const otherStates: {
   state: UsageWidgetState;
   text: string;
   color?: "warning" | "error";
-}[] = [
-  { state: { status: "no-model" }, text: "No model selected." },
-  {
-    state: { status: "unsupported" },
-    text: "Usage is not supported for this model.",
-  },
-  ...(["claude", "codex", "muse", "opencode"] as const).flatMap((provider) => {
-    const name =
-      provider === "claude"
-        ? " Claude"
-        : provider === "codex"
-          ? " Codex"
-          : provider === "muse"
-            ? "󰛤 Muse"
-            : "󰨔 OpenCode Go";
-    return [
-      {
-        state: { provider, status: "loading" } as const,
-        text: `${name} Loading usage…`,
-      },
-      {
-        state: success(provider, []),
-        text: `${name} No quota windows reported.`,
-      },
-      {
-        state: {
-          provider,
-          status: "unavailable",
-          message: "No Pi subscription login; use /login with OAuth.",
-        } as const,
-        text: `${name} No Pi subscription login; use /login with OAuth.`,
-        color: "warning" as const,
-      },
-      {
-        state: {
-          provider,
-          status: "error",
-          message: "Usage request timed out.",
-        } as const,
-        text: `${name} Usage request timed out.`,
-        color: "error" as const,
-      },
-    ];
-  }),
-];
+}[] = (["claude", "codex", "muse", "opencode"] as const).flatMap((provider) => {
+  const name =
+    provider === "claude"
+      ? " Claude"
+      : provider === "codex"
+        ? " Codex"
+        : provider === "muse"
+          ? "󰛤 Muse"
+          : "󰨔 OpenCode Go";
+  return [
+    {
+      state: { provider, status: "loading" } as const,
+      text: `${name} Loading usage…`,
+    },
+    {
+      state: success(provider, []),
+      text: `${name} No quota windows reported.`,
+    },
+    {
+      state: {
+        provider,
+        status: "unavailable",
+        message: "No Pi subscription login; use /login with OAuth.",
+      } as const,
+      text: `${name} No Pi subscription login; use /login with OAuth.`,
+      color: "warning" as const,
+    },
+    {
+      state: {
+        provider,
+        status: "error",
+        message: "Usage request timed out.",
+      } as const,
+      text: `${name} Usage request timed out.`,
+      color: "error" as const,
+    },
+  ];
+});
 
 test.each(otherStates)(
   "shows an explicit $state.status state: $text",

@@ -34,6 +34,7 @@ export interface UsageSnapshot {
 
 export type UsageResult =
   | { provider: UsageProvider; status: "ok"; usage: UsageSnapshot }
+  | { provider: UsageProvider; status: "unsupported"; message: string }
   | {
       provider: UsageProvider;
       status: "unavailable" | "error";

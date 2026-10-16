@@ -119,9 +119,9 @@ test("OpenAI usage guidance never resolves auth, reads credentials, or queries l
     ),
   ).resolves.toEqual({
     provider: "openai",
-    status: "unavailable",
+    status: "unsupported",
     message:
-      "ChatGPT plan quotas: https://chatgpt.com/settings/usage (no supported quota API).",
+      "Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
   });
   expect(getProviderAuth).not.toHaveBeenCalled();
   expect(getProviderAuthStatus).not.toHaveBeenCalled();

@@ -100,12 +100,16 @@ Git-aware directory segments. Run `mise run statusline:dev` to try it or
 
 [`@ikuma.cloud/pix-usage`](packages/pix-usage/README.md) adds on-demand `/usage`
 reports for Claude, legacy Codex, Meta Muse, OpenCode Go, and GitHub Copilot quotas
-using Pi-managed credentials. New OpenAI Sign in with ChatGPT logins show a
-usage-settings link instead: that flow has no supported quota API. Copilot shows
-used/total credits when available, with explicit estimated or unknown-limit states.
-A current-provider widget appears by default in terminal sessions, without
-replacing the footer. It refreshes quotas while visible for quota-enabled providers;
-OpenAI guidance is static. `/usage toggle` hides or shows it.
+using Pi-managed credentials. New OpenAI Sign in with ChatGPT (`openai`) reports
+show an unsupported explanation and usage-settings link: no supported quota API
+is currently known for that login. Copilot shows used/total credits when available,
+with explicit estimated or unknown-limit states.
+A current-provider widget is enabled by default in terminal sessions, without
+replacing the footer. It refreshes for supported providers and is entirely hidden
+for unsupported or unimplemented providers or no selected model. Automatic hiding
+preserves the enabled preference; `/usage toggle` manually hides or enables it for
+the session. Terminal provider-selection changes warn about unsupported or
+unimplemented usage fetching; session startup is silent.
 Run `mise run usage:dev` to try it or `mise run test --project pix-usage` for its
 isolated tests.
 

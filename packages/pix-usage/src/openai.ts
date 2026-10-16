@@ -4,9 +4,9 @@
 // to the legacy backend-api/wham/usage endpoint or substitute another login.
 // https://developers.openai.com/siwc/token-sharing-open-source/token-reference
 // https://developers.openai.com/siwc/ui-ux-guidelines#link-to-chatgpt-usage
-export const OPENAI_USAGE_UNAVAILABLE = {
+export const OPENAI_USAGE_UNSUPPORTED = {
   provider: "openai",
-  status: "unavailable",
+  status: "unsupported",
   message:
-    "ChatGPT plan quotas: https://chatgpt.com/settings/usage (no supported quota API).",
+    "Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
 } as const;

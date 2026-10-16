@@ -39,7 +39,7 @@ key. Then run:
 ```text
 /usage          Check all providers
 /usage claude   Check Claude only
-/usage openai   Show ChatGPT usage settings (no supported quota API)
+/usage openai   Show ChatGPT usage settings (quota fetching unsupported)
 /usage codex    Check legacy Codex only
 /usage muse     Check Meta Muse only
 /usage opencode Check OpenCode Go only
@@ -54,19 +54,17 @@ Pi 1.0+ supports ChatGPT subscriptions under `openai`; `openai-codex` is now
 **OpenAI Codex (legacy)**. These are separate logins, not interchangeable provider
 IDs or tokens.
 
-The new flow targets `api.openai.com/v1` and exposes opaque authentication metadata
-rather than the account ID needed by the legacy quota endpoint. OpenAI does not
-document a quota API for this grant and instead directs integrations to
-[ChatGPT usage settings](https://chatgpt.com/settings/usage).
-`/usage openai`, `/usage all`, and the OpenAI widget show that link with an explicit
-unavailable-quota message, not a percentage or a reset estimate. This guidance is
-shown regardless of login status or whether you use an API key; it does not verify
-a subscription login or report API-key billing.
+No supported quota API is currently known for the new `openai` login, so pix-usage
+classifies usage fetching as `unsupported`. `/usage openai` and `/usage all` show
+that explanation and a [ChatGPT usage-settings link](https://chatgpt.com/settings/usage)
+with warning styling, not a percentage or reset estimate. This guidance is shown
+regardless of login status or whether you use an API key; it does not verify a
+subscription login or report API-key billing. The widget is hidden for this
+provider.
 
-OpenAI guidance never reads or refreshes credentials, sends a quota request, or
-falls back to another account's legacy Codex login. The OpenAI widget starts no
-timers. `/usage codex` still checks only `/login openai-codex`; signing in there is
-not required for the new OpenAI flow.
+OpenAI guidance never reads or refreshes credentials, sends network requests, or
+falls back to a legacy Codex login. `/usage codex` still checks only
+`/login openai-codex`; signing in there is not required for the new OpenAI flow.
 
 ### Reports
 
@@ -90,9 +88,9 @@ the `󱘖 Usage` heading. Their width does not depend on terminal size; Pi may w
 long reports on narrow terminals. Reports always use an informational notification,
 so provider failures do not add a `Warning: ` prefix or recolor the whole report.
 Missing-login and error messages appear on an indented line beneath the provider
-heading, like quota rows. In terminal mode, missing logins use `warning` and failed
-requests or credential resolution use `error`; other providers keep their normal
-colors.
+heading, like quota rows. In terminal mode, missing logins and unsupported quota
+guidance use `warning`; failed requests or credential resolution use `error`.
+Other providers keep their normal colors.
 
 Quota labels, usage values, relative resets, and UTC timestamps are column-aligned
 across successful rows in a report. Percent-only values have a minimum width of
@@ -164,29 +162,40 @@ indicator.
 
 ### Current-provider widget
 
-A compact widget appears above the editor by default in terminal sessions:
+A compact current-provider widget is enabled by default in terminal sessions and
+appears above the editor for providers with usage fetching:
 
 ```text
 ── 󱘖 Usage ─────────────────────────────────────────────────────────────────────
   Codex 󱛡 Weekly 󰓅  93%  9h 39m 2026-09-30 22:59:59 (UTC)
 ```
 
-Run `/usage toggle` to hide it, or again to show it. This choice applies only to
-the current session; reload or session replacement shows the widget again.
-Other extensions' widget order is not controlled.
+Usage fetching is `supported` for `anthropic` (Claude), `openai-codex` (legacy
+Codex), `meta` (Muse), `opencode-go` (OpenCode Go), and `github-copilot` (Copilot).
+These providers show one row per normalized quota window, including model-specific
+buckets; the widget does not filter those buckets to the selected model.
 
-It follows the selected model's provider: `anthropic` selects Claude,
-`openai-codex` selects legacy Codex, `meta` selects Muse, `opencode-go` selects
-OpenCode Go, and `github-copilot` selects Copilot. These providers show one row per
-normalized quota window, including model-specific buckets; the widget does not
-filter those buckets to the selected model. `openai` shows the static
-[ChatGPT usage-settings guidance](#openai-sign-in-with-chatgpt) without credentials,
-requests, or timers. Other providers and an absent model show an explanatory
-message without resolving credentials or making requests.
+`openai` is `unsupported` because no supported quota API is currently known for
+that login. Other, unintegrated providers are `unimplemented`, not assumed
+incapable of usage fetching. With no selected model, capability is `no-model`.
+In all three non-fetching states, the widget renders zero lines, including no
+divider, and performs no credential or network work and starts no timers.
 
-For quota-enabled providers, the widget fetches immediately when first shown,
-including at session startup, and whenever its provider changes while visible.
+Automatic hiding preserves the enabled preference, so the widget reappears when
+switching to a supported provider. `/usage toggle` manually hides or enables it.
+Manual hiding persists across provider changes and resets at the next session.
+Turning it on for a non-fetching provider acknowledges that the widget is enabled
+but will appear only for providers with usage fetching.
+
+A terminal `model_select` transition into an unsupported or unimplemented provider
+shows a warning explaining that specific state, even if the widget is manually
+hidden. Models under the same provider do not repeat the warning; turns, polling,
+and rendering never trigger it. Initial `session_start` emits no capability warning.
+
+For supported providers, the enabled widget fetches immediately at session startup,
+when toggled on, and when switching providers, including after automatic hiding.
 Switching models within the same provider does not trigger a fetch.
+Other extensions' widget order is not controlled.
 
 After each `turn_end`, it refreshes if at least one minute has passed since its
 last refresh attempt. A five-minute fallback poll uses the same cooldown. Failed
@@ -200,9 +209,11 @@ labels, percentages, countdowns, and timestamps by visible width. A past reset i
 not proof that the provider has refreshed the quota.
 
 Loading, missing-login, empty-quota, and error states appear in the widget, not as
-repeated notifications or fabricated zero usage. A failed refresh replaces the old
-quota display. Hiding the widget stops automatic refreshes and cancels requests
-unless an overlapping manual report still needs them.
+repeated notifications or fabricated zero usage. Authentication, missing-login,
+and network errors do not change a supported capability or hide the widget; normal
+refreshes can recover. A failed refresh replaces the old quota display. Hiding the
+widget stops automatic refreshes and timers and cancels requests unless an
+overlapping manual report still needs them.
 
 Precise resets show the relative countdown followed by `YYYY-MM-DD HH:mm:ss (UTC)`
 when the entire row fits. On narrower terminals, the absolute timestamp is omitted
@@ -210,19 +221,19 @@ as a unit, keeping the countdown. Calendar-only resets show
 `YYYY-MM-DD (time unknown)` instead of a countdown. Each row adapts independently
 when resized; unknown resets never add a date.
 
-The divider fills the available terminal width; content rows have a one-space
-indent. If a row is still too long without its timestamp, it is truncated. The
-widget uses the current theme on every render,
-including after an idle theme change. It requires terminal mode; RPC users can
-still use the report commands.
+When visible, the divider fills the available terminal width; content rows have a
+one-space indent. If a row is still too long without its timestamp, it is truncated.
+The widget uses the current theme on every render, including after an idle theme
+change. It requires terminal mode; RPC users can still use the report commands.
 
 ## Behavior
 
 The extension does not replace the footer, add model-callable tools, send model
 requests, or save quota reports in model context or session history. Reports remain
-on-demand. Automatic credential lookups and quota requests begin at terminal
-session startup and continue only while the widget is visible for a quota-enabled
-provider. RPC, JSON, and print modes never start automatic checks.
+on-demand in terminal and RPC UI modes. Automatic credential lookups and quota
+requests run only when the widget is enabled for a supported provider in terminal
+mode. Non-terminal modes (RPC, JSON, and print) never start automatic capability
+checks, warnings, or widget work.
 
 Concurrent manual reports are rejected. Overlapping widget and report checks
 share in-flight work for the same provider, but completed results are not cached
@@ -309,8 +320,8 @@ waiting; the extension does not interfere with Pi's refresh lock.
   Usage access requires the `user:profile` OAuth scope. A subscription login does
   not guarantee that the provider permits the usage endpoint.
 - Legacy Codex displays the primary and secondary windows with their reported
-  durations. It does not assume the primary window is always five hours. New
-  OpenAI logins have no supported quota lookup; see
+  durations. It does not assume the primary window is always five hours. No
+  supported quota API is currently known for new OpenAI logins; see
   [OpenAI Sign in with ChatGPT](#openai-sign-in-with-chatgpt).
 - Muse displays the subscription window using its reported duration and the weekly
   window as seven days. Meta can omit `subs_usage` while the five-hour window is

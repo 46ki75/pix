@@ -83,6 +83,45 @@ test.each(hosts)(
       assert.ok(!reports[0].includes('/login openai-codex'));
       assert.equal(calls, 0);
       assert.deepEqual(authCalls, []);
+      const notices = [];
+      let widget;
+      const tuiCtx = {
+        ...ctx,
+        mode: 'tui',
+        model: { provider: 'openai', id: 'test-model' },
+        ui: {
+          notify: (text, severity) => notices.push({ text, severity }),
+          setWidget: (_key, factory) => {
+            widget?.dispose?.();
+            widget = factory?.({ requestRender() {} });
+          }
+        }
+      };
+      const emit = async (name) => {
+        for (const handler of extension.handlers.get(name) ?? []) await handler({ type: name }, tuiCtx);
+      };
+      await emit('session_start');
+      assert.deepEqual(widget.render(120), []);
+      assert.deepEqual(notices, []);
+      tuiCtx.model = { provider: 'custom-provider', id: 'test-model' };
+      await emit('model_select');
+      assert.deepEqual(widget.render(120), []);
+      assert.ok(notices[0].text.includes('not implemented'));
+      assert.equal(notices[0].severity, 'warning');
+      tuiCtx.model = { provider: 'openai', id: 'test-model' };
+      await emit('model_select');
+      assert.deepEqual(widget.render(120), []);
+      assert.ok(notices[1].text.includes('not supported'));
+      assert.ok(notices[1].text.includes('https://chatgpt.com/settings/usage'));
+      assert.equal(notices[1].severity, 'warning');
+      tuiCtx.model = { provider: 'openai', id: 'another-test-model' };
+      await emit('model_select');
+      await emit('turn_end');
+      assert.equal(notices.length, 2);
+      assert.equal(calls, 0);
+      assert.deepEqual(authCalls, []);
+      await emit('session_shutdown');
+      assert.equal(widget, undefined);
       await command.handler('codex', ctx);
       assert.equal(calls, 1);
       assert.deepEqual(authCalls, ['openai-codex']);

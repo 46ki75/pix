@@ -178,7 +178,7 @@ test.each(["tui", "rpc"] as const)(
     await h.command.handler("openai", h.ctx);
 
     expect(h.notify).toHaveBeenCalledExactlyOnceWith(
-      expect.stringContaining(" OpenAI\n\n  ChatGPT plan quotas:"),
+      expect.stringContaining(" OpenAI\n\n  Usage fetching is not supported"),
       "info",
     );
     const report = h.notify.mock.calls[0]?.[0] ?? "";
@@ -375,7 +375,7 @@ test.each([
           80,
           visibleWidth(`  ${openCodeWarning}`),
           visibleWidth(
-            "  ChatGPT plan quotas: https://chatgpt.com/settings/usage (no supported quota API).",
+            "  Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
           ),
         )
       : 30;
@@ -428,7 +428,7 @@ test.each([
               ["accent", ""],
               [
                 "warning",
-                "ChatGPT plan quotas: https://chatgpt.com/settings/usage (no supported quota API).",
+                "Usage fetching is not supported for this OpenAI login; no supported quota API is currently known. https://chatgpt.com/settings/usage",
               ],
               ["accent", ""],
               [
@@ -578,7 +578,7 @@ test.each(["", "all"])(
     expect(notify).toHaveBeenCalledOnce();
     expect(notify.mock.calls[0]?.[0]).toContain("󱛡 Weekly 󰓅  75%  -d --h --m");
     expect(notify.mock.calls[0]?.[0]).toContain(
-      " OpenAI\n\n  ChatGPT plan quotas: https://chatgpt.com/settings/usage",
+      " OpenAI\n\n  Usage fetching is not supported for this OpenAI login",
     );
     expect(notify.mock.calls[0]?.[0]).toContain(
       " Codex\n\n  No Pi subscription login",
