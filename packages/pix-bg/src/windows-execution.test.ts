@@ -77,6 +77,19 @@ function create() {
   };
 }
 
+test.each([
+  {
+    shell: "C:\\Windows\\System32\\bash.exe",
+    args: ["-s"],
+    commandTransport: "stdin" as const,
+  },
+  { shell: "C:\\Windows\\System32\\bash.exe", args: ["-c"] },
+  { shell: "C:\\Windows\\Sysnative\\bash.exe", args: ["-c"] },
+])("rejects an unsupported WSL shell before spawning: %j", (shell) => {
+  expect(() => new WindowsExecutor({ shell })).toThrow("Git for Windows Bash");
+  expect(spawn).not.toHaveBeenCalled();
+});
+
 test("returns the supervisor PID but acknowledges only a job-contained command", async () => {
   const h = create();
   expect(h.execution.pid).toBe(12345);
@@ -124,17 +137,28 @@ test("separates PowerShell helper configuration from the original command enviro
   vi.stubEnv("PSExecutionPolicyPreference", "RemoteSigned");
   const h = create();
   const payload = JSON.parse(h.child.stdin.end.mock.calls[0]![0] as string);
-  expect(payload.environment).toContain("PSModulePath=C:\\custom modules 界");
-  expect(payload.environment).toContain(
-    "PSExecutionPolicyPreference=RemoteSigned",
+  const environment = Object.fromEntries(
+    (payload.environment as string[]).map((entry) => {
+      const separator = entry.indexOf("=");
+      return [
+        entry.slice(0, separator).toUpperCase(),
+        entry.slice(separator + 1),
+      ];
+    }),
   );
+  expect(environment.PSMODULEPATH).toBe("C:\\custom modules 界");
+  expect(environment.PSEXECUTIONPOLICYPREFERENCE).toBe("RemoteSigned");
   const options = vi.mocked(spawn).mock.calls[0]![2]!;
   expect(
     Object.keys(options.env ?? {}).some(
       (key) => key.toUpperCase() === "PSMODULEPATH",
     ),
   ).toBe(false);
-  expect(options.env?.PSExecutionPolicyPreference).toBe("RemoteSigned");
+  expect(
+    Object.entries(options.env ?? {}).find(
+      ([key]) => key.toUpperCase() === "PSEXECUTIONPOLICYPREFERENCE",
+    )?.[1],
+  ).toBe("RemoteSigned");
   h.connect();
   h.socket.emit("data", "ready\nexit:0\n");
   await h.execution.ready;

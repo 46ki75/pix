@@ -273,11 +273,22 @@ namespace PixBg
             // argv[0] follows special CRT rules and is a pathname (quotes are rejected above).
             StringBuilder result = new StringBuilder();
             result.Append('"').Append(shell).Append('"');
+            string fileName = shell.Replace('\\', '/');
+            fileName = fileName.Substring(fileName.LastIndexOf('/') + 1);
+            bool msys = fileName.Equals("bash.exe", StringComparison.OrdinalIgnoreCase) ||
+                fileName.Equals("sh.exe", StringComparison.OrdinalIgnoreCase);
             foreach (string argument in args)
             {
                 ValidateText(argument, "args entry", true);
                 result.Append(' ');
-                AppendQuotedArgument(result, argument);
+                if (msys)
+                {
+                    AppendMsysArgument(result, argument);
+                }
+                else
+                {
+                    AppendQuotedArgument(result, argument);
+                }
             }
             // CreateProcessW's limit includes the terminating UTF-16 NUL.
             if (result.Length > 32766)
@@ -285,6 +296,23 @@ namespace PixBg
                 throw new ArgumentException("The Windows command line exceeds 32,767 UTF-16 code units including NUL.");
             }
             return result;
+        }
+
+        private static void AppendMsysArgument(StringBuilder result, string argument)
+        {
+            // MSYS' startup glob parser consumes paired backslashes ANYWHERE in
+            // a quoted argument, unlike the CRT. Encode Bash text for that parser.
+            // https://github.com/msys2/msys2-runtime/blob/master/winsup/cygwin/dcrt0.cc
+            result.Append('"');
+            foreach (char character in argument)
+            {
+                if (character == '\\' || character == '"')
+                {
+                    result.Append('\\');
+                }
+                result.Append(character);
+            }
+            result.Append('"');
         }
 
         private static void AppendQuotedArgument(StringBuilder result, string argument)

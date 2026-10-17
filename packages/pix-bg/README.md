@@ -24,7 +24,8 @@ and `/bg`. Do not load them together.
 The initial Windows target is Windows 11 x64 and Windows Server 2025. Install
 Git for Windows so Pi can discover Bash. Commands use Bash syntax, not PowerShell
 syntax; the extension keeps Pi's shell discovery rather than selecting a new
-command language.
+command language. WSL shells are rejected because Job Objects do not supervise
+Linux processes inside WSL.
 
 Windows also requires the built-in Windows PowerShell 5.1 in full-language mode,
 .NET Framework, and a local fixed NTFS volume for logs. The extension loads a
@@ -232,8 +233,8 @@ live registry is not reconstructed from history.
   tmux backend or persistent daemon.
 - A task ends with its shell. When the shell exits, remaining processes in its
   group/job are terminated, including children that still hold output pipes open.
-  Commands must not daemonize, call `setsid`, use WMI to create unrelated processes,
-  or otherwise escape supervision.
+  Commands must not daemonize, call `setsid`, launch WSL/VM work, use WMI to create
+  unrelated processes, or otherwise escape supervision.
 - Every shutdown, reload, new session, resume, or fork stops current tasks.
   Shutdown suppresses completion notifications. Tasks do not survive `/reload`.
   Tree navigation within the same runtime does not recreate or rewind processes.

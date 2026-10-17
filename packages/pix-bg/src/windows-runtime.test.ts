@@ -16,9 +16,12 @@ import { Registry } from "./registry.ts";
 import { WindowsExecutor } from "./windows-execution.ts";
 import { windowsPowerShell } from "./windows.ts";
 
+function bashQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function node(code: string): string {
-  const executable = process.execPath.replaceAll("\\", "/");
-  return `'${executable.replaceAll("'", "'\\''")}' -e '${code.replaceAll("'", "'\\''")}'`;
+  return `${bashQuote(process.execPath.replaceAll("\\", "/"))} -e ${bashQuote(code)}`;
 }
 
 function running(pid: number): boolean {
@@ -187,6 +190,28 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
         modulePath: modulePath ?? null,
         policy: "RemoteSigned",
       });
+    },
+  );
+
+  test.each([
+    String.raw`a\b a\\b a\\\b a\\\\b`,
+    String.raw`C:\Users\space ' " 界\file`,
+    String.raw`\\\" \' \"`,
+    "line one\nline two",
+    "trailing \\\\",
+  ])(
+    "preserves Git Bash command text through MSYS argument decoding: %j",
+    async (value) => {
+      const h = await create();
+      const task = await h.registry.start({
+        command: `printf '%s' ${bashQuote(value)}`,
+        cwd: h.cwd,
+      });
+      expect((await h.registry.wait(task.id)).outcome).toEqual({
+        kind: "exited",
+        code: 0,
+      });
+      expect(await readFile(task.outputPath, "utf8")).toBe(value);
     },
   );
 
@@ -390,7 +415,10 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.Security
     )
       .trim()
       .split(/\r?\n/);
-    expect(owner).toBe(result.userId);
+    // Elevated tokens default file ownership to Administrators; the inherited
+    // DACL, not that privileged owner, must still grant only this user/SYSTEM.
+    // https://learn.microsoft.com/windows/win32/secauthz/owner-of-a-new-object
+    expect([result.userId, "S-1-5-32-544"]).toContain(owner);
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
       const [sid, rights, inherited, type] = rule.split("|");

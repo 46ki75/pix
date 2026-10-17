@@ -14,12 +14,23 @@ import {
 } from "./windows.ts";
 
 export interface WindowsExecutorOptions {
-  shell: { shell: string; args: string[] };
+  shell: { shell: string; args: string[]; commandTransport?: "argv" | "stdin" };
   startupMs?: number;
 }
 
 export class WindowsExecutor implements Executor {
-  constructor(private options: WindowsExecutorOptions) {}
+  constructor(private options: WindowsExecutorOptions) {
+    if (
+      options.shell.commandTransport === "stdin" ||
+      /(?:^|[\\/])(?:system32|sysnative)[\\/]bash\.exe$/i.test(
+        options.shell.shell,
+      )
+    ) {
+      throw new Error(
+        "Windows background tasks require Git for Windows Bash; WSL is not supported",
+      );
+    }
+  }
 
   start(command: string, cwd: string, observer: ExecutionObserver): Execution {
     return new WindowsExecution(this.options, command, cwd, observer);
