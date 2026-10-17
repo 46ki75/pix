@@ -293,19 +293,22 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
     // Use Node's source transform, not Vitest's resolver, so asset URLs must
     // resolve beside the actual packaged source in a path with spaces/Unicode.
     const script = `
-      const { WindowsExecutor } = await import(process.env.PIX_BG_PACK_URL);
-      let finish, outcome, failure, output = "";
-      const done = new Promise(resolve => finish = resolve);
-      const execution = new WindowsExecutor({ shell: JSON.parse(process.env.PIX_BG_PACK_SHELL) }).start("printf packed; exit 7", process.cwd(), {
-        onData(source, chunk) { if (source === "stdout") output += chunk.toString("utf8"); },
-        onOutputError(error) { failure = error.message; },
-        onSpawnError(error) { failure = error.message; },
-        onExit(value) { outcome = value; },
-        onComplete() { finish(); }
-      });
-      await execution.ready;
-      await done;
-      process.stdout.write(JSON.stringify({ pid: execution.pid, outcome, output, failure }));
+      const { readFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const source = process.env.PIX_BG_PACK_URL;
+      const { WindowsExecutor } = await import(source);
+      const { Registry } = await import(new URL("./registry.ts", source));
+      const { privateWindowsDirectory, windowsUserId } = await import(new URL("./windows-directory.ts", source));
+      const outputDir = join(process.cwd(), "packed logs 界");
+      const registry = new Registry({ executor: new WindowsExecutor({ shell: JSON.parse(process.env.PIX_BG_PACK_SHELL) }), outputDir, maxOutputBytes: 1000 });
+      try {
+        const task = await registry.start({ command: "printf packed; exit 7", cwd: process.cwd() });
+        const { outcome } = await registry.wait(task.id);
+        privateWindowsDirectory(outputDir);
+        process.stdout.write(JSON.stringify({ pid: task.pid, outcome, outputPath: task.outputPath, output: readFileSync(task.outputPath, "utf8"), userId: windowsUserId() }));
+      } finally {
+        await registry.disposeAll();
+      }
     `;
     const result = JSON.parse(
       execFileSync(
@@ -330,7 +333,36 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
       pid: expect.any(Number),
       outcome: { kind: "exited", code: 7 },
       output: "packed",
+      outputPath: expect.stringContaining("packed logs 界"),
+      userId: expect.stringMatching(/^S-1-\d+(?:-\d+){1,15}$/),
     });
+    const inspect = `$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(result.outputPath as string, "utf8").toString("base64")}'))
+$acl = [IO.File]::GetAccessControl($path)
+[Console]::WriteLine($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value)
+foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+  [Console]::WriteLine('{0}|{1}|{2}|{3}' -f $rule.IdentityReference.Value, [int]$rule.FileSystemRights, $rule.IsInherited, [int]$rule.AccessControlType)
+}`;
+    const [owner, ...rules] = execFileSync(
+      windowsPowerShell(),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        Buffer.from(inspect, "utf16le").toString("base64"),
+      ],
+      { encoding: "utf8", timeout: 15_000 },
+    )
+      .trim()
+      .split(/\r?\n/);
+    expect(owner).toBe(result.userId);
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      const [sid, rights, inherited, type] = rule.split("|");
+      expect([result.userId, "S-1-5-18"]).toContain(sid);
+      expect(Number(rights)).toBe(0x1f01ff);
+      expect(inherited).toBe("True");
+      expect(type).toBe("0");
+    }
     expect(result.pid).toBeGreaterThan(0);
     await assertGone([result.pid as number]);
   });

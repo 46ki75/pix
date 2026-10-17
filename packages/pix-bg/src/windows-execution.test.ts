@@ -209,6 +209,36 @@ test("queues shutdown during launch and force-stops only after acknowledgment", 
   expect(h.observer.onComplete).toHaveBeenCalledOnce();
 });
 
+test.each(["emitted", "thrown"])(
+  "reports a deferred %s stop failure without an uncaught error and permits retry",
+  async (kind) => {
+    const h = create();
+    const error = Object.assign(new Error("access denied"), { code: "EPERM" });
+    h.execution.stop();
+    h.child.kill.mockImplementation(() => {
+      if (kind === "thrown") throw error;
+      h.child.emit("error", error);
+      return false;
+    });
+    // Registry error observers request stop themselves; reporting must not turn
+    // a persistent delivery failure into recursive signaling or an uncaught error.
+    h.observer.onOutputError.mockImplementation(() => h.execution.stop());
+    h.connect();
+    expect(() => h.socket.emit("data", "ready\n")).not.toThrow();
+    await h.execution.ready;
+    expect(h.observer.onOutputError).toHaveBeenCalledExactlyOnceWith(error);
+    expect(h.child.kill).toHaveBeenCalledOnce();
+    h.child.kill.mockImplementation(() => {
+      h.child.killed = true;
+      return true;
+    });
+    h.execution.stop();
+    expect(h.child.kill).toHaveBeenCalledTimes(2);
+    h.close();
+    expect(h.observer.onComplete).toHaveBeenCalledOnce();
+  },
+);
+
 test("surfaces signal-delivery errors synchronously and permits retry", async () => {
   const h = create();
   h.connect();

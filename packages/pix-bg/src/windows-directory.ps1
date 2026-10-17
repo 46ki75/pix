@@ -35,8 +35,9 @@ function Assert-PrivateAcl([string]$Path, [Security.Principal.SecurityIdentifier
         $null -eq $raw.DiscretionaryAcl) {
         throw 'Expected a protected, non-null directory DACL'
     }
-    $inherit = [Security.AccessControl.AceFlags]::ContainerInherit -bor
-        [Security.AccessControl.AceFlags]::ObjectInherit
+    # Windows PowerShell 5.1 cannot bitwise-OR byte-backed enum instances.
+    $inherit = [int][Security.AccessControl.AceFlags]::ContainerInherit -bor
+        [int][Security.AccessControl.AceFlags]::ObjectInherit
     $ownerCanInherit = $false
     foreach ($ace in $raw.DiscretionaryAcl) {
         # Deliberately accept only simple, unconditional, fully inheritable
@@ -45,7 +46,7 @@ function Assert-PrivateAcl([string]$Path, [Security.Principal.SecurityIdentifier
         if ($ace -isnot [Security.AccessControl.CommonAce] -or
             $ace.IsCallback -or
             $ace.AceQualifier -ne [Security.AccessControl.AceQualifier]::AccessAllowed -or
-            $ace.AceFlags -ne $inherit -or
+            [int]$ace.AceFlags -ne $inherit -or
             $ace.AccessMask -ne [int][Security.AccessControl.FileSystemRights]::FullControl -or
             ($ace.SecurityIdentifier.Value -ne $User.Value -and
              $ace.SecurityIdentifier.Value -ne 'S-1-5-18')) {

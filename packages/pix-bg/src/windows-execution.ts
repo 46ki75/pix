@@ -38,6 +38,7 @@ class WindowsExecution implements Execution {
   private completed = false;
   private stopping = false;
   private signaling = false;
+  private reportingError = false;
   private signalError?: Error;
   private outcome?: ExecutionOutcome;
   private resolveReady!: () => void;
@@ -137,7 +138,7 @@ class WindowsExecution implements Execution {
     this.stopping = true;
     // Startup must either acknowledge a job-contained command or fail. Queuing
     // an early stop also preserves the registry's shutdown-during-launch ordering.
-    if (this.acknowledged) this.kill();
+    if (this.acknowledged && !this.reportingError) this.kill();
   }
 
   private kill(): void {
@@ -150,6 +151,27 @@ class WindowsExecution implements Execution {
       this.signaling = false;
     }
     if (this.signalError) throw this.signalError;
+  }
+
+  private stopFromEvent(): void {
+    try {
+      this.kill();
+    } catch (error) {
+      this.reportOutputError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+
+  private reportOutputError(error: Error): void {
+    // Registry error observers request stop themselves. This asynchronous
+    // attempt owns signaling; a later explicit stop must still be retryable.
+    this.reportingError = true;
+    try {
+      this.observer.onOutputError(error);
+    } finally {
+      this.reportingError = false;
+    }
   }
 
   private connect(socket: Socket): void {
@@ -191,7 +213,7 @@ class WindowsExecution implements Execution {
       this.acknowledged = true;
       clearTimeout(this.startupTimer);
       this.resolveReady();
-      if (this.stopping) this.kill();
+      if (this.stopping) this.stopFromEvent();
     } else if (/^exit:\d+$/.test(line) && this.acknowledged && !this.outcome) {
       const code = Number(line.slice(5));
       if (!Number.isSafeInteger(code) || code > 0xffff_ffff) {
@@ -217,11 +239,11 @@ class WindowsExecution implements Execution {
       this.observer.onSpawnError(error);
       this.rejectReady(error);
     } else {
-      this.observer.onOutputError(error);
+      this.reportOutputError(error);
     }
     this.closeServer();
     if (!this.control && this.helperClosed) this.controlClosed = true;
-    this.kill();
+    this.stopFromEvent();
     this.finish();
   }
 
