@@ -9,6 +9,12 @@ import type {
 } from "./execution.ts";
 import { Registry } from "./registry.ts";
 
+// Fixtures use mkdtemp; these policy tests must not depend on POSIX ownership
+// checks. directory.test.ts and extension integration retain real validation.
+vi.mock("./directory.ts", () => ({
+  privateDirectory: (path: string) => path,
+}));
+
 function fakeExecutor() {
   const attempts: ReturnType<typeof attempt>[] = [];
   function attempt(command: string, cwd: string, observer: ExecutionObserver) {

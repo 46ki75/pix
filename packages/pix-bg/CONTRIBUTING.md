@@ -26,10 +26,11 @@ through Pi's loader with isolated configuration.
 
 `bg:test-portable` selects the fake-executor registry, formatting, notification,
 and UI tests through an explicit allowlist in the root `mise.toml`. It runs on
-Windows CI without loading a process backend. Add new platform-independent tests
-to that allowlist when appropriate; do not use it instead of the full suite on
-macOS or Linux. The Windows job verifies development infrastructure only, not
-Windows execution, log security, or extension integration.
+Windows CI without loading a process backend. Its registry fixtures also mock
+POSIX directory validation; the full suite retains real directory-security tests.
+Add new platform-independent tests to that allowlist when appropriate; do not use
+it instead of the full suite on macOS or Linux. The Windows job verifies development
+infrastructure only, not Windows execution, log security, or extension integration.
 
 Before release, check in interactive Pi that a short task wakes the agent,
 `kill -KILL $$` reports signal 137, killing from `/bg` does not start a turn,
