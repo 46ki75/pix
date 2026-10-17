@@ -6,6 +6,7 @@ node = "24.20.0"
 [settings]
 idiomatic_version_file_enable_tools = ["pnpm"]
 auto_install = false
+lockfile_platforms = ["macos-arm64", "linux-x64", "linux-arm64", "windows-x64"]
 
 [tool_config]
 locked = true
@@ -92,6 +93,11 @@ dir = "{{config_root}}/packages/pix-mcp"
 raw_args = true
 raw = true
 run = "pnpm exec pi --no-extensions -e ."
+
+# Explicit allowlist: the full pix-bg suite still requires POSIX processes and permissions.
+[tasks."bg:test-portable"]
+description = "Run pix-bg policy and UI tests without a platform process backend"
+run = "pnpm exec vitest run --project pix-bg packages/pix-bg/src/registry-executor.test.ts packages/pix-bg/src/format.test.ts packages/pix-bg/src/notify.test.ts packages/pix-bg/src/ui.test.ts packages/pix-bg/src/task-list.test.ts packages/pix-bg/src/output-view.test.ts"
 
 [tasks."bg:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-bg; accepts Pi arguments"

@@ -15,6 +15,7 @@ pi-background-tasks. No default keyboard shortcut is registered.
 
 ```sh
 mise run test --project pix-bg
+mise run bg:test-portable
 mise run check
 ```
 
@@ -22,6 +23,13 @@ Tests launch local processes, never models. Process tests use temporary logs and
 short cleanup grace periods. Keep the registry independent of Pi APIs; test
 notification policy separately with fake timers. Extension integration tests load
 through Pi's loader with isolated configuration.
+
+`bg:test-portable` selects the fake-executor registry, formatting, notification,
+and UI tests through an explicit allowlist in the root `mise.toml`. It runs on
+Windows CI without loading a process backend. Add new platform-independent tests
+to that allowlist when appropriate; do not use it instead of the full suite on
+macOS or Linux. The Windows job verifies development infrastructure only, not
+Windows execution, log security, or extension integration.
 
 Before release, check in interactive Pi that a short task wakes the agent,
 `kill -KILL $$` reports signal 137, killing from `/bg` does not start a turn,

@@ -17,8 +17,9 @@ mise run check
 ```
 
 Tool versions come from `mise.toml` and the root `package.json`. Tool downloads
-are locked for macOS ARM64, Linux x64, and Linux ARM64. `pnpm-lock.yaml` locks
-workspace dependencies.
+are locked for macOS ARM64, Linux x64, Linux ARM64, and Windows x64.
+`pnpm-lock.yaml` locks workspace dependencies. Windows currently has an
+infrastructure-only CI check; pix-bg runtime support remains macOS and Linux.
 
 ## Continuous integration
 
@@ -27,6 +28,12 @@ workspace dependencies.
 `Check` job uses Ubuntu 24.04, installs the pinned tools through mise, and runs
 `mise run setup` followed by `mise run check` for formatting, lint, type checking,
 and all workspace tests.
+
+The `Windows infrastructure` job uses Windows Server 2025 to verify locked tool
+and dependency installation, workspace type checking, and pix-bg's portable policy
+and UI tests (`mise run bg:test-portable`). It does not run the POSIX execution,
+log-permission, or extension integration tests and does not establish Windows
+runtime support.
 
 Tool downloads and pnpm dependencies are cached. Dependency cache keys include
 the manifests, lockfiles, workspace configuration, and dependency patches.
@@ -53,6 +60,7 @@ New runs cancel superseded runs for the same event and branch or pull request.
 | `mise run mcp-prompt:dev` | Launch native MCP with @ikuma.cloud/pix-mcp-prompt |
 | `mise run mcp:dev` | Launch the deprecated pix-mcp adapter |
 | `mise run bg:dev` | Launch Pi with only @ikuma.cloud/pix-bg |
+| `mise run bg:test-portable` | Run pix-bg policy and UI tests without a process backend |
 | `mise run statusline:dev` | Launch Pi with only @ikuma.cloud/pix-statusline |
 | `mise run usage:dev` | Launch Pi with only @ikuma.cloud/pix-usage |
 | `mise run theme-inspector:dev` | Launch Pi with only @ikuma.cloud/pix-theme-inspector |
