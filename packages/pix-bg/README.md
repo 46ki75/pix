@@ -2,8 +2,8 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.12 targets macOS and Linux and is developed against Pi 0.87.1.
-This working tree adds experimental Windows support; it is not in that release.
+Version 0.0.13 (unreleased) targets macOS and Linux, adds experimental Windows
+support, and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -255,12 +255,10 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- The released v0.0.12 does not support Windows. The Windows implementation in
-  this working tree is experimental. Reload survival is unsupported on every OS.
+- Windows support is experimental. Reload survival is unsupported on every OS.
 
 ## Release
 
-Before publishing Windows support, complete the normal-user Windows smoke test and
-bump the package version from 0.0.12. After merging reviewed release changes, tag
-`bg-v<package-version>` and publish from `packages/pix-bg` manually. The repository
-has no automated publish workflow.
+Before publishing Windows support, complete the normal-user Windows smoke test.
+After merging reviewed release changes, tag `bg-v<package-version>` and publish
+from `packages/pix-bg` manually. The repository has no automated publish workflow.
