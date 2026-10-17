@@ -160,7 +160,8 @@ class WindowsExecution implements Execution {
     this.stopping = true;
     // Startup must either acknowledge a job-contained command or fail. Queuing
     // an early stop also preserves the registry's shutdown-during-launch ordering.
-    if (this.acknowledged && !this.reportingError) this.kill();
+    if ((this.acknowledged || this.launchFailed) && !this.reportingError)
+      this.kill();
   }
 
   private kill(): void {

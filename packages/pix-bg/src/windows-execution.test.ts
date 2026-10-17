@@ -290,6 +290,38 @@ test.each(["emitted", "thrown"])(
   },
 );
 
+test.each(["emitted", "thrown"])(
+  "retries a %s denied supervisor stop after startup failure without acknowledgment",
+  async (kind) => {
+    const h = create();
+    const failed = expect(h.execution.ready).rejects.toThrow("acknowledge");
+    const error = Object.assign(new Error("access denied"), { code: "EPERM" });
+    h.connect();
+    h.child.kill.mockImplementation(() => {
+      if (kind === "thrown") throw error;
+      h.child.emit("error", error);
+      return false;
+    });
+    h.observer.onOutputError.mockImplementation(() => h.execution.stop());
+    await vi.advanceTimersByTimeAsync(1000);
+    await failed;
+    expect(h.child.kill).toHaveBeenCalledOnce();
+    expect(h.observer.onOutputError).toHaveBeenCalledExactlyOnceWith(error);
+    h.child.kill.mockImplementation(() => {
+      h.child.killed = true;
+      return true;
+    });
+    h.execution.stop();
+    h.execution.stop();
+    expect(h.child.kill).toHaveBeenCalledTimes(2);
+    h.socket.emit("data", "ready\n");
+    expect(h.observer.onComplete).not.toHaveBeenCalled();
+    h.close();
+    expect(h.observer.onSpawnError).toHaveBeenCalledOnce();
+    expect(h.observer.onComplete).toHaveBeenCalledOnce();
+  },
+);
+
 test("surfaces signal-delivery errors synchronously and permits retry", async () => {
   const h = create();
   h.connect();

@@ -57,8 +57,10 @@ promise. Observer callbacks must run after that return so the registry can own a
 still-launching task during shutdown. `ready` resolves only after launch is
 acknowledged; spawn failures are reported to the observer before it rejects.
 
-Shell exit and execution completion are separate events. Output can arrive after
-exit, and stdout/stderr must remain distinct for incremental decoding. Completion
+Shell exit and execution completion are separate events. Failed launches disappear
+from public tasks immediately but remain shutdown-owned until completion; repeated
+disposal must permit retrying failed stop delivery. Output can arrive after exit,
+and stdout/stderr must remain distinct for incremental decoding. Completion
 is reported once, only after output closure and descendant cleanup, including
 output closure after a failed launch. The registry can then close the log and
 resolve stop/shutdown requests without closing a log still receiving output.
@@ -85,6 +87,8 @@ Git Bash requires MSYS argument encoding rather than CRT encoding; retain native
 literal-backslash/quote regressions and reject WSL shell configurations.
 `windows-runtime.test.ts` uses IPC-ready process trees to prove descendant cleanup,
 including natural shell exit, timeout, output cap, shutdown, and supervisor death.
+Its negative control verifies that descendants survive root exit without pix-bg,
+so libuv's own child cleanup cannot conceal a broken backend.
 Keep `.ps1`/`.cs` helpers in the packed artifact and verify them on native Windows.
 Filesystem security is independent: the Windows directory helper creates private
 ACLs atomically and rejects unsafe existing paths without modifying them.

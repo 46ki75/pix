@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
 import {
   mkdtemp,
   mkdir,
@@ -36,24 +37,36 @@ function running(pid: number): boolean {
 
 // IPC readiness travels up the fixture tree before its root exits or floods
 // output. This proves the descendants existed, without scheduling-based sleeps.
-function tree(marker: string, mode: "wait" | "exit" | "cap"): string {
+function treeCode(marker: string, mode: "wait" | "exit" | "cap"): string {
+  // Avoid libuv's own parent-exit job cleanup, but not pix-bg's outer job.
+  // The negative control below proves these descendants survive without it.
+  // https://github.com/libuv/libuv/blob/v1.x/src/win/process.c
+  const options = JSON.stringify({
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+    detached: process.platform === "win32",
+    windowsHide: true,
+  });
   const grandchild = `process.send("ready"); setInterval(() => {}, 1000);`;
   const child = `
     const { spawn } = require("node:child_process");
-    const grandchild = spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
+    const grandchild = spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], ${options});
     grandchild.once("message", () => process.send([process.pid, grandchild.pid]));
     setInterval(() => {}, 1000);
   `;
-  return node(`
+  return `
     const { spawn } = require("node:child_process");
     const { writeFileSync } = require("node:fs");
-    const child = spawn(process.execPath, ["-e", ${JSON.stringify(child)}], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
+    const child = spawn(process.execPath, ["-e", ${JSON.stringify(child)}], ${options});
     child.once("message", (pids) => {
       writeFileSync(${JSON.stringify(marker)}, JSON.stringify([process.pid, ...pids]));
       ${mode === "exit" ? "process.exit(0);" : mode === "cap" ? 'process.stdout.write("x".repeat(10000));' : ""}
     });
     setInterval(() => {}, 1000);
-  `);
+  `;
+}
+
+function tree(marker: string, mode: "wait" | "exit" | "cap"): string {
+  return node(treeCode(marker, mode));
 }
 
 describe.runIf(process.platform === "win32")("native Windows runtime", () => {
@@ -127,6 +140,21 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
     for (const pid of ids)
       await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
   }
+
+  test("process-tree fixture descendants survive root exit without pix-bg supervision", async () => {
+    const h = await create();
+    const child = spawn(process.execPath, ["-e", treeCode(h.marker, "exit")], {
+      cwd: h.cwd,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (child.pid) descendants.add(child.pid);
+    await once(child, "close");
+    expect(child.exitCode).toBe(0);
+    const ids = await pids(h.marker);
+    expect(ids[0]).toBe(child.pid);
+    expect(ids.slice(1).map((pid) => running(pid))).toEqual([true, true]);
+  });
 
   test.each([0, 7, 137])(
     "captures raw streams and reports native exit %i without invented signals",
