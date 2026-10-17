@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   discoverAndLoadExtensions,
@@ -8,6 +8,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
+import { outputUserId } from "./directory.ts";
 import type { Task } from "./registry.ts";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -50,7 +51,8 @@ test.each([
   },
 );
 
-test.each([
+// Native Windows ACL/reparse-point rejection is covered in windows-directory.test.ts.
+test.skipIf(process.platform === "win32").each([
   ["permissive", "parent"],
   ["symlink", "parent"],
   ["permissive", "session"],
@@ -111,7 +113,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
   "loads and manages tasks in %s mode without model requests",
   async (mode) => {
     const directory = await mkdtemp(join(tmpdir(), "pix-bg-load-"));
-    const sessionId = `pix-bg-test-${directory.split("/").pop()}`;
+    const sessionId = `pix-bg-test-${basename(directory)}`;
     let outputDir: string | undefined;
     const ctx = {
       mode,
@@ -223,9 +225,13 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       outputDir = dirname(task.outputPath);
       // A private shared /tmp/pi-bg parent would exclude every other OS user.
       expect(dirname(outputDir)).toBe(
-        join(tmpdir(), `pi-bg-${userInfo().uid}`),
+        join(
+          tmpdir(),
+          `pi-bg-${process.platform === "win32" ? outputUserId() : userInfo().uid}`,
+        ),
       );
-      expect((await stat(dirname(outputDir))).mode & 0o777).toBe(0o700);
+      if (process.platform !== "win32")
+        expect((await stat(dirname(outputDir))).mode & 0o777).toBe(0o700);
       expect(task.pid).toBeGreaterThan(0);
       expect(result.content[0]).toMatchObject({
         text: expect.stringContaining(task.outputPath),
@@ -248,14 +254,17 @@ test.each(["print", "json", "rpc", "tui"] as const)(
           "info",
         );
       }
-      const natural = (await tool("bg_run")({ command: "kill -KILL $$" }))
-        .details.task as Task;
+      const natural = (
+        await tool("bg_run")({
+          command: process.platform === "win32" ? "exit 7" : "kill -KILL $$",
+        })
+      ).details.task as Task;
       await expect.poll(() => send.mock.calls.length).toBe(1);
-      expect(send.mock.calls[0]?.[0].details.tasks[0].outcome).toEqual({
-        kind: "signaled",
-        signal: "SIGKILL",
-        code: 137,
-      });
+      expect(send.mock.calls[0]?.[0].details.tasks[0].outcome).toEqual(
+        process.platform === "win32"
+          ? { kind: "exited", code: 7 }
+          : { kind: "signaled", signal: "SIGKILL", code: 137 },
+      );
       expect(send.mock.calls[0]?.[1]).toEqual({
         deliverAs: mode === "tui" || mode === "rpc" ? "followUp" : "nextTurn",
         triggerTurn: mode === "tui" || mode === "rpc",

@@ -18,8 +18,9 @@ mise run check
 
 Tool versions come from `mise.toml` and the root `package.json`. Tool downloads
 are locked for macOS ARM64, Linux x64, Linux ARM64, and Windows x64.
-`pnpm-lock.yaml` locks workspace dependencies. Windows currently has an
-infrastructure-only CI check; pix-bg runtime support remains macOS and Linux.
+`pnpm-lock.yaml` locks workspace dependencies. Windows CI covers pix-bg's
+experimental Windows runtime; other workspace packages are not thereby certified
+for Windows.
 
 ## Continuous integration
 
@@ -30,10 +31,11 @@ infrastructure-only CI check; pix-bg runtime support remains macOS and Linux.
 and all workspace tests.
 
 The `Windows infrastructure` job uses Windows Server 2025 to verify locked tool
-and dependency installation, workspace type checking, and pix-bg's portable policy
-and UI tests (`mise run bg:test-portable`). It does not run the POSIX execution,
-log-permission, or extension integration tests and does not establish Windows
-runtime support.
+and dependency installation, workspace type checking, pix-bg's portable policy
+and UI tests (`mise run bg:test-portable`), and its native Windows execution,
+log-security, and extension-integration tests (`mise run test --project pix-bg`).
+The full workspace test suite remains on Ubuntu. Windows desktop release
+qualification still requires the package's normal-user interactive smoke test.
 
 Tool downloads and pnpm dependencies are cached. Dependency cache keys include
 the manifests, lockfiles, workspace configuration, and dependency patches.

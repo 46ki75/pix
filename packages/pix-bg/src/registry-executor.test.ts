@@ -213,6 +213,36 @@ test("shutdown owns still-launching executions and joins their completion", asyn
   });
 });
 
+test.each(["before", "after"])(
+  "shutdown %s launch failure still owns cleanup and permits disposal retries",
+  async (when) => {
+    const h = await create();
+    const starting = h.registry.start({ command: "fixture", cwd: "/" });
+    const pending = h.attempts[0]!;
+    const failed = expect(starting).rejects.toThrow("launch failed");
+    const firstDisposal =
+      when === "before" ? h.registry.disposeAll() : undefined;
+    pending.fail(new Error("launch failed"));
+    await failed;
+    expect(h.registry.list()).toEqual([]);
+    const disposing = h.registry.disposeAll();
+    if (firstDisposal) expect(disposing).toBe(firstDisposal);
+    let disposed = false;
+    void disposing.then(() => {
+      disposed = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    const calls = pending.execution.stop.mock.calls.length;
+    const completeBeforeClosure = disposed;
+    pending.complete();
+    await disposing;
+    expect(calls).toBe(when === "before" ? 2 : 1);
+    expect(completeBeforeClosure).toBe(false);
+    expect(disposed).toBe(true);
+  },
+);
+
 test("an executor's asynchronous launch failure is not retained as a task", async () => {
   const h = await create();
   const changed = vi.fn();

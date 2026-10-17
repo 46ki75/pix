@@ -46,6 +46,23 @@ test("formats all terminal reasons explicitly", () => {
   );
 });
 
+test("reports internal errors without changing the outcome or allowing terminal controls", () => {
+  const failedStop: Task = {
+    ...task,
+    outcome: { kind: "timed_out" },
+    lastError: "\u001b[31maccess\ndenied\u001b[0m",
+  };
+  for (const text of [
+    taskDetail(failedStop),
+    taskList([failedStop]),
+    completionText(failedStop),
+  ]) {
+    expect(text).toContain("timed out");
+    expect(text).toContain("Last error: access denied");
+    expect(text).not.toContain("\u001b");
+  }
+});
+
 test("reads only a bounded tail and limits completion previews", () => {
   const directory = mkdtempSync(join(tmpdir(), "pix-bg-format-"));
   const path = join(directory, "output.log");

@@ -95,3 +95,6 @@ jobs:
 
       - name: Check portable pix-bg policy and UI
         run: mise run bg:test-portable
+
+      - name: Check Windows execution, log security, and integration
+        run: mise run test --project pix-bg
