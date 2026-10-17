@@ -10,6 +10,7 @@ vi.mock("node:net", () => ({ createServer: vi.fn() }));
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
+  vi.stubEnv("MSYS", undefined);
 });
 afterEach(() => {
   vi.clearAllTimers();
@@ -17,7 +18,10 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function create() {
+function create(
+  shell = { shell: "C:\\Git Bash\\bash.exe", args: ["-c"] },
+  onSpawn?: () => void,
+) {
   const server = Object.assign(new EventEmitter(), {
     listening: true,
     listen: vi.fn(),
@@ -41,7 +45,10 @@ function create() {
     }),
   });
   vi.mocked(createServer).mockReturnValue(server as unknown as Server);
-  vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+  vi.mocked(spawn).mockImplementation(() => {
+    onSpawn?.();
+    return child as unknown as ChildProcess;
+  });
   const observer = {
     onData: vi.fn(),
     onOutputError: vi.fn(),
@@ -50,7 +57,7 @@ function create() {
     onComplete: vi.fn(),
   };
   const executor = new WindowsExecutor({
-    shell: { shell: "C:\\Git Bash\\bash.exe", args: ["-c"] },
+    shell,
     startupMs: 1000,
   });
   const execution = executor.start("printf '界'", "C:\\work space", observer);
@@ -88,6 +95,88 @@ test.each([
 ])("rejects an unsupported WSL shell before spawning: %j", (shell) => {
   expect(() => new WindowsExecutor({ shell })).toThrow("Git for Windows Bash");
   expect(spawn).not.toHaveBeenCalled();
+});
+
+test.each([
+  "noglob",
+  "-glob",
+  "glob:",
+  "glob=",
+  '"noglob"',
+  'noglo"b"',
+  '"ignored"noglo"b"',
+  '"noglob"ignored',
+  "NoGlOb:ignorecase",
+  "winsymlinks:native\t noglob",
+  "noglob glob",
+  "glob:ignorecase",
+  "glob",
+])(
+  "rejects explicit MSYS glob configuration before acquiring resources: %j",
+  (settings) => {
+    vi.stubEnv("MSYS", settings);
+    expect(() => create()).toThrow("MSYS glob");
+    expect(spawn).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+  },
+);
+
+test("rejects quoted MSYS settings instead of guessing their runtime token boundaries", () => {
+  vi.stubEnv("MSYS", 'winsymlinks:"native"');
+  expect(() => create()).toThrow("MSYS glob");
+  expect(spawn).not.toHaveBeenCalled();
+  expect(createServer).not.toHaveBeenCalled();
+});
+
+test("preserves unrelated MSYS options and rechecks configuration for each launch", async () => {
+  vi.stubEnv("MSYS", "winsymlinks:native");
+  const h = create();
+  const payload = JSON.parse(h.child.stdin.end.mock.calls[0]![0] as string);
+  expect(
+    (payload.environment as string[])
+      .find((entry) => /^MSYS=/i.test(entry))
+      ?.slice(5),
+  ).toBe("winsymlinks:native");
+  h.connect();
+  h.socket.emit("data", "ready\nexit:0\n");
+  await h.execution.ready;
+  h.close();
+  vi.stubEnv("MSYS", "noglob");
+  expect(() => h.executor.start("printf ok", "C:\\work", h.observer)).toThrow(
+    "MSYS glob",
+  );
+  expect(spawn).toHaveBeenCalledOnce();
+});
+
+test("uses one environment snapshot for validation, helper startup, and command launch", async () => {
+  vi.stubEnv("MSYS", "winsymlinks:native");
+  const h = create(undefined, () => vi.stubEnv("MSYS", "noglob"));
+  const payload = JSON.parse(h.child.stdin.end.mock.calls[0]![0] as string);
+  expect(
+    (payload.environment as string[])
+      .find((entry) => /^MSYS=/i.test(entry))
+      ?.slice(5),
+  ).toBe("winsymlinks:native");
+  const environment = vi.mocked(spawn).mock.calls[0]![2]!.env!;
+  expect(
+    Object.entries(environment).find(
+      ([key]) => key.toUpperCase() === "MSYS",
+    )?.[1],
+  ).toBe("winsymlinks:native");
+  h.connect();
+  h.socket.emit("data", "ready\nexit:0\n");
+  await h.execution.ready;
+  h.close();
+});
+
+test("does not apply MSYS parser restrictions to a native executable", async () => {
+  vi.stubEnv("MSYS", "noglob");
+  const h = create({ shell: "C:\\node.exe", args: ["-e"] });
+  h.connect();
+  h.socket.emit("data", "ready\nexit:0\n");
+  await h.execution.ready;
+  h.close();
+  expect(spawn).toHaveBeenCalledOnce();
 });
 
 test("returns the supervisor PID but acknowledges only a job-contained command", async () => {

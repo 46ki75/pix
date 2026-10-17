@@ -8,6 +8,7 @@ import type {
   Executor,
 } from "./execution.ts";
 import {
+  windowsCommandEnvironment,
   windowsHelperEnvironment,
   windowsPowerShell,
   windowsScriptArgs,
@@ -67,6 +68,7 @@ class WindowsExecution implements Execution {
     cwd: string,
     private observer: ExecutionObserver,
   ) {
+    const environment = windowsCommandEnvironment(options.shell.shell);
     this.ready = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
@@ -89,7 +91,7 @@ class WindowsExecution implements Execution {
         {
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
-          env: windowsHelperEnvironment(),
+          env: windowsHelperEnvironment(environment),
         },
       );
     } catch (error) {
@@ -147,7 +149,7 @@ class WindowsExecution implements Execution {
         args: [...options.shell.args, command],
         cwd,
         pipe,
-        environment: Object.entries(process.env)
+        environment: Object.entries(environment)
           .filter(([, value]) => value !== undefined)
           .map(([key, value]) => `${key}=${value}`),
       }),

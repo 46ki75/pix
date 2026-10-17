@@ -25,7 +25,11 @@ The initial Windows target is Windows 11 x64 and Windows Server 2025. Install
 Git for Windows so Pi can discover Bash. Commands use Bash syntax, not PowerShell
 syntax; the extension keeps Pi's shell discovery rather than selecting a new
 command language. WSL shells are rejected because Job Objects do not supervise
-Linux processes inside WSL.
+Linux processes inside WSL. Explicit `MSYS` startup-glob options (including
+`noglob`, `-glob`, and `glob:...`) and quoted `MSYS` option strings are currently
+rejected because startup parsing differs from the supported mode. Remove those
+options or quotes from `MSYS`; other unquoted settings are kept. This restriction
+does not affect Bash's own `set -f` or wildcard expansion.
 
 Windows also requires the built-in Windows PowerShell 5.1 in full-language mode,
 .NET Framework, and a local fixed NTFS volume for logs. The extension loads a

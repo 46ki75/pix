@@ -24,12 +24,36 @@ export function windowsScriptArgs(name: string, args: string[]): string[] {
   ];
 }
 
-export function windowsHelperEnvironment(): NodeJS.ProcessEnv {
+export function windowsCommandEnvironment(shell: string): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  if (/(?:^|[\\/])(?:bash|sh)\.exe$/i.test(shell)) {
+    // MSYS noglob strips quotes WITHOUT decoding our backslash escapes. Reject
+    // glob overrides and quoted option strings (whose token boundaries are
+    // runtime-specific) instead of guessing a parser and changing commands.
+    // https://github.com/git-for-windows/msys2-runtime/blob/81d9bd3d1c3680aa611ff2e5d1950787ffc95c6a/winsup/cygwin/dcrt0.cc#L155-L169
+    const incompatible = Object.entries(environment).some(
+      ([key, value]) =>
+        key.toUpperCase() === "MSYS" &&
+        (value?.includes('"') ||
+          /(?:^|[ \t])(?:no|-)?glob(?:[=: \t]|$)/i.test(value ?? "")),
+    );
+    if (incompatible) {
+      throw new Error(
+        "Windows background tasks do not support MSYS glob options or quoted MSYS settings; remove those options or quotes from MSYS",
+      );
+    }
+  }
+  return environment;
+}
+
+export function windowsHelperEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   // WinPS launched through Node otherwise inherits incompatible PowerShell 7
   // module paths. The command receives its own original environment snapshot.
   // https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_psmodulepath#starting-windows-powershell-from-powershell-7
   return Object.fromEntries(
-    Object.entries(process.env).filter(
+    Object.entries(environment).filter(
       ([key]) => key.toUpperCase() !== "PSMODULEPATH",
     ),
   );

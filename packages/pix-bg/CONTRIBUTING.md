@@ -84,11 +84,16 @@ must reach the error observer without escaping an event callback or preventing a
 later retry. Pass the original command environment explicitly so the PowerShell
 helper's module search path and execution policy do not leak into commands.
 Git Bash requires MSYS argument encoding rather than CRT encoding; retain native
-literal-backslash/quote regressions and reject WSL shell configurations.
+literal-backslash/quote regressions and reject WSL shell configurations. Snapshot
+the command environment before acquiring supervisor resources and reject explicit
+`MSYS` startup-glob options and quoted option strings rather than guessing their
+runtime-specific token boundaries. The no-glob startup parser does not decode our
+backslash escapes; never silently rewrite commands.
 `windows-runtime.test.ts` uses IPC-ready process trees to prove descendant cleanup,
 including natural shell exit, timeout, output cap, shutdown, and supervisor death.
 Its negative control verifies that descendants survive root exit without pix-bg,
-so libuv's own child cleanup cannot conceal a broken backend.
+so libuv's own child cleanup cannot conceal a broken backend. Fallback cleanup
+must join process exit before deleting working directories on Windows.
 Keep `.ps1`/`.cs` helpers in the packed artifact and verify them on native Windows.
 Filesystem security is independent: the Windows directory helper creates private
 ACLs atomically and rejects unsafe existing paths without modifying them.

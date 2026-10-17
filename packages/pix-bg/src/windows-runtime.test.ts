@@ -81,9 +81,10 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
       for (const pid of descendants) {
         if (running(pid)) process.kill(pid, "SIGKILL");
       }
+      await assertGone([...descendants]);
       descendants.clear();
       for (const { root } of fixtures.splice(0))
-        await rm(root, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true, maxRetries: 5 });
       vi.unstubAllEnvs();
     }
   });
