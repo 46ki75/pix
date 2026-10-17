@@ -221,6 +221,31 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
     },
   );
 
+  test("never silently rewrites command text with MSYS=noglob", async () => {
+    vi.stubEnv("MSYS", "noglob");
+    const h = await create();
+    const value = String.raw`a\b`;
+    // Supporting this parser mode or explicitly refusing it is acceptable;
+    // acknowledging a command whose literal text was changed is not.
+    const task = await h.registry
+      .start({
+        command: `printf '%s' ${bashQuote(value)}`,
+        cwd: h.cwd,
+      })
+      .catch((error: Error) => {
+        expect(error.message).toContain("MSYS glob");
+      });
+    if (!task) {
+      expect(h.registry.list()).toEqual([]);
+      return;
+    }
+    expect((await h.registry.wait(task.id)).outcome).toEqual({
+      kind: "exited",
+      code: 0,
+    });
+    expect(await readFile(task.outputPath, "utf8")).toBe(value);
+  });
+
   test.each([
     String.raw`a\b a\\b a\\\b a\\\\b`,
     String.raw`C:\Users\space ' " 界\file`,
