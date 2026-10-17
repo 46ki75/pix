@@ -109,6 +109,7 @@ function powershell<T>(parent: string, source: string, path: string): T {
   writeFileSync(
     script,
     `param([string]$Payload)\n$ErrorActionPreference = 'Stop'\n` +
+      `Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Utility.psd1'))\n` +
       `$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload))\n` +
       source,
     "utf8",
@@ -146,7 +147,7 @@ interface Acl {
 function acl(parent: string, path: string): Acl {
   return powershell<Acl>(
     parent,
-    `$acl = Get-Acl -LiteralPath $path
+    `$acl = if ([IO.Directory]::Exists($path)) { [IO.Directory]::GetAccessControl($path) } else { [IO.File]::GetAccessControl($path) }
 @{
   owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
   protected = $acl.AreAccessRulesProtected

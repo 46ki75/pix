@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, realpath, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -272,14 +279,17 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
     const { version } = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as { version: string };
+    // Windows' tar can lose Unicode argv through its ANSI runtime. Move the
+    // extracted tree with Node before testing the actual Unicode asset paths.
+    const staging = join(h.root, "unpacked");
+    await mkdir(staging);
+    execFileSync(
+      join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"),
+      ["-xf", join(h.root, `ikuma.cloud-pix-bg-${version}.tgz`), "-C", staging],
+      { encoding: "utf8" },
+    );
     const unpacked = join(h.cwd, "unpacked");
-    await mkdir(unpacked);
-    execFileSync("tar.exe", [
-      "-xf",
-      join(h.root, `ikuma.cloud-pix-bg-${version}.tgz`),
-      "-C",
-      unpacked,
-    ]);
+    await rename(staging, unpacked);
     // Use Node's source transform, not Vitest's resolver, so asset URLs must
     // resolve beside the actual packaged source in a path with spaces/Unicode.
     const script = `

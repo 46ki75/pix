@@ -133,7 +133,8 @@ try {
         [Console]::Out.WriteLine('ok')
     }
 } catch {
-    [Console]::Error.WriteLine('Unsafe background output directory: ' + $_.Exception.Message)
+    [Console]::Error.WriteLine('Unsafe background output directory: ' + $_.Exception.ToString())
+    [Console]::Error.WriteLine($_.ScriptStackTrace)
     exit 1
 } finally {
     if ($null -ne $identity) {
