@@ -1,7 +1,15 @@
 import { lstatSync, mkdirSync } from "node:fs";
+import { privateWindowsDirectory, windowsUserId } from "./windows-directory.ts";
+
+export function outputUserId(): string {
+  return process.platform === "win32"
+    ? windowsUserId()
+    : String(process.geteuid?.());
+}
 
 // The parent must be trusted: the OS temp directory or a validated private one.
 export function privateDirectory(path: string): string {
+  if (process.platform === "win32") return privateWindowsDirectory(path);
   try {
     mkdirSync(path, { mode: 0o700 });
   } catch (error) {

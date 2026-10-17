@@ -5,12 +5,13 @@ import {
   type ExtensionAPI,
   getShellConfig,
 } from "@earendil-works/pi-coding-agent";
-import { privateDirectory } from "./directory.ts";
+import { outputUserId, privateDirectory } from "./directory.ts";
 import { taskDetail, taskList } from "./format.ts";
 import { Notifier } from "./notify.ts";
 import { PosixExecutor } from "./posix-execution.ts";
 import { outputLimit, Registry } from "./registry.ts";
 import { TaskUI } from "./ui.ts";
+import { WindowsExecutor } from "./windows-execution.ts";
 
 export default function backgroundTasks(pi: ExtensionAPI): void {
   let runtime:
@@ -33,12 +34,14 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     await shutdown();
-    // Linux /tmp is shared: a 0700 parent must be namespaced per OS user.
+    // Shared temp roots need an OS identity namespace: UID on POSIX, SID on Windows.
     const outputRoot = privateDirectory(
-      join(tmpdir(), `pi-bg-${process.geteuid?.()}`),
+      join(tmpdir(), `pi-bg-${outputUserId()}`),
     );
+    const LocalExecutor =
+      process.platform === "win32" ? WindowsExecutor : PosixExecutor;
     const tasks = new Registry({
-      executor: new PosixExecutor({ shell: getShellConfig() }),
+      executor: new LocalExecutor({ shell: getShellConfig() }),
       outputDir: join(outputRoot, ctx.sessionManager.getSessionId()),
       maxOutputBytes: outputLimit(process.env),
     });
@@ -133,7 +136,7 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     name: "bg_kill",
     label: "Background Kill",
     description: "Stop a running background task and return its final state.",
-    promptSnippet: "Stop a background task and its process group.",
+    promptSnippet: "Stop a background task and its process tree.",
     parameters: Type.Object({
       id: Type.String({ minLength: 1, description: "Exact task ID" }),
     }),

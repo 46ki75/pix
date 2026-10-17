@@ -3,6 +3,7 @@
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
 Version 0.0.12 targets macOS and Linux and is developed against Pi 0.87.1.
+This working tree adds experimental Windows support; it is not in that release.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -17,6 +18,31 @@ mise run bg:dev
 This launches Pi with only pix-bg. Before enabling it in normal sessions, remove
 pi-background-tasks: both extensions register `bg_run`, `bg_status`, `bg_kill`,
 and `/bg`. Do not load them together.
+
+## Windows (unreleased, experimental)
+
+The initial Windows target is Windows 11 x64 and Windows Server 2025. Install
+Git for Windows so Pi can discover Bash. Commands use Bash syntax, not PowerShell
+syntax; the extension keeps Pi's shell discovery rather than selecting a new
+command language.
+
+Windows also requires the built-in Windows PowerShell 5.1 in full-language mode,
+.NET Framework, and a local fixed NTFS volume for logs. The extension loads a
+small bundled C# supervisor through PowerShell; no npm native addon or separate
+compiler installation is needed. Policies that prohibit `Add-Type` or native API
+access will prevent launch rather than fall back to weaker cleanup. Cold startup
+can take several seconds.
+
+The supervisor atomically creates the command inside a Windows Job Object before
+it can execute. Shell exit terminates remaining job members, including descendants
+holding output pipes. The returned PID identifies the **supervisor**, not the
+Bash process. Killing that PID closes the job and terminates its processes.
+Windows stops are forceful; the POSIX SIGTERM/grace-period behavior does not apply.
+Native Windows exit codes are reported as numeric exits, not invented Unix signals.
+
+Native Windows CI exercises process-tree cleanup, directory ACLs, portable policy,
+and Pi's extension loader. A normal-user Windows 11 terminal smoke test is still
+required before treating the Windows implementation as release-qualified.
 
 ## Tools
 
@@ -36,8 +62,8 @@ work or end the turn; do not use blocking sleeps or poll status/logs to wait.
 In interactive and RPC modes, natural exits, timeouts, and output-cap stops deliver
 a follow-up message and start a turn without user input.
 Completions within 250 ms are batched. Messages include outcomes, duration, log
-paths, and bounded output tails. Signal termination is distinct from success:
-`kill -KILL $$` reports `SIGKILL (exit code 137)`.
+paths, and bounded output tails. On macOS/Linux, signal termination is distinct
+from success: `kill -KILL $$` reports `SIGKILL (exit code 137)`.
 
 Stopping with `bg_kill` returns the outcome directly without another notification.
 Stopping from `/bg` queues a next-turn message without waking the agent.
@@ -184,11 +210,15 @@ it stops the task with an `output_capped` outcome. ANSI escape sequences and
 unsafe control characters are stripped before storage. The byte cap may split
 a final UTF-8 character.
 
-Logs are stored with owner-only file permissions under
-`os.tmpdir()/pi-bg-<uid>/<session-id>/<task-id>.log`. The private parent is
-namespaced by OS user so that Linux users sharing `/tmp` do not block one another.
-Existing parent and session directories must belong to that user, have no group
-or other permissions, and not be symlinks; unsafe paths are rejected, not repaired.
+Logs are stored under `os.tmpdir()/pi-bg-<identity>/<session-id>/<task-id>.log`.
+The identity is the effective UID on macOS/Linux and the user SID on Windows, so
+users sharing a temp directory do not block one another. POSIX directories/files
+use owner-only permissions. Windows directories use protected, inheritable ACLs
+restricted to the current user and SYSTEM; new log files inherit those ACLs.
+Existing parent and session directories must satisfy the platform's ownership and
+access checks. Symlinks, Windows junctions, and other reparse points are rejected;
+unsafe paths are never repaired. Windows log paths must be absolute local paths
+on a fixed NTFS volume; UNC/device paths and reparse-point ancestors are unsupported.
 Logs remain after tasks finish and after reload so that result paths stay useful.
 Remove old logs yourself; they may contain sensitive command output. Task metadata
 in tool results and completion-message `details` remains in the session, but the
@@ -196,11 +226,14 @@ live registry is not reconstructed from history.
 
 ## Lifecycle and limits
 
-- Pi owns detached process groups directly. There is no tmux backend or daemon.
-  Stopping sends SIGTERM, then SIGKILL after a two-second grace period if needed.
+- On macOS/Linux, Pi owns detached process groups directly. Stopping sends
+  SIGTERM, then SIGKILL after a two-second grace period if needed. On Windows, a
+  per-task supervisor owns a Job Object and stopping is forceful. There is no
+  tmux backend or persistent daemon.
 - A task ends with its shell. When the shell exits, remaining processes in its
-  group are terminated, including children that still hold output pipes open.
-  Commands must not daemonize, call `setsid`, or otherwise escape their group.
+  group/job are terminated, including children that still hold output pipes open.
+  Commands must not daemonize, call `setsid`, use WMI to create unrelated processes,
+  or otherwise escape supervision.
 - Every shutdown, reload, new session, resume, or fork stops current tasks.
   Shutdown suppresses completion notifications. Tasks do not survive `/reload`.
   Tree navigation within the same runtime does not recreate or rewind processes.
@@ -211,9 +244,12 @@ live registry is not reconstructed from history.
 - Commands inherit Pi's environment and working directory and run through Pi's
   default shell configuration, with stdin disconnected. There is no sandbox,
   interactive prompt handling, concurrency limit, or automatic log retention.
-- Windows and reload survival are not supported in v0.0.12.
+- The released v0.0.12 does not support Windows. The Windows implementation in
+  this working tree is experimental. Reload survival is unsupported on every OS.
 
 ## Release
 
-After merging the reviewed changes, tag `bg-v0.0.12` and publish the package from
-`packages/pix-bg` manually. The repository has no automated publish workflow.
+Before publishing Windows support, complete the normal-user Windows smoke test and
+bump the package version from 0.0.12. After merging reviewed release changes, tag
+`bg-v<package-version>` and publish from `packages/pix-bg` manually. The repository
+has no automated publish workflow.

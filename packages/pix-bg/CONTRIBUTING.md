@@ -29,12 +29,17 @@ and UI tests through an explicit allowlist in the root `mise.toml`. It runs on
 Windows CI without loading a process backend. Its registry fixtures also mock
 POSIX directory validation; the full suite retains real directory-security tests.
 Add new platform-independent tests to that allowlist when appropriate; do not use
-it instead of the full suite on macOS or Linux. The Windows job verifies development
-infrastructure only, not Windows execution, log security, or extension integration.
+it instead of the full suite. Windows CI also runs `mise run test --project pix-bg`
+for native Job Object execution, directory ACLs, and shared extension integration.
+POSIX-only regression files remain enabled on macOS/Linux; Windows substitutes
+native backend and ACL coverage rather than changing their assertions.
 
 Before release, check in interactive Pi that a short task wakes the agent,
 `kill -KILL $$` reports signal 137, killing from `/bg` does not start a turn,
-and `/reload` and quit leave no task processes. Check the output viewer at narrow
+and `/reload` and quit leave no task processes. On Windows, check a nonzero native
+exit instead of a POSIX signal, and verify that killing the reported supervisor PID
+also removes descendants. Run the Windows smoke test as a normal user in Windows
+Terminal; hosted CI runs as an administrator. Check the output viewer at narrow
 widths and after resizing.
 
 ## Execution boundary
@@ -42,8 +47,10 @@ widths and after resizing.
 `src/execution.ts` defines the internal executor contract. `Registry` owns task
 IDs, snapshots, stop reasons, timeouts, output decoding, capped logs, and completion
 notifications to subscribers. `PosixExecutor` owns shell spawning, process-group
-signaling, escalation, and pipe draining; neither layer imports Pi APIs. The
-extension entry point selects the executor and passes it to the registry.
+signaling, escalation, and pipe draining. `WindowsExecutor` coordinates a bundled
+PowerShell/C# supervisor with a kill-on-close Windows Job Object; its reported PID
+belongs to that supervisor. Neither backend imports Pi APIs. The extension entry
+point selects the executor and passes Pi's discovered Bash configuration to it.
 
 An executor returns a handle synchronously, including its PID and a `ready`
 promise. Observer callbacks must run after that return so the registry can own a
@@ -64,14 +71,28 @@ retains deterministic OS-event ordering and signaling regressions. The real-proc
 and extension integration suites remain the end-to-end checks. New backends must
 satisfy the contract; changing lifecycle guarantees requires a separate decision.
 
+On Windows, `windows-runner.cs` atomically associates the command with its job at
+creation using `PROC_THREAD_ATTRIBUTE_JOB_LIST`; never replace this with a racy
+spawn-then-assign sequence. Job handles are not inherited by commands. Control
+frames travel over a private named pipe, independently of raw stdout/stderr.
+`ready` means the command is job-contained, not merely that PowerShell started.
+Windows cancellation is forceful and must not be represented as POSIX signals.
+`windows-runtime.test.ts` uses IPC-ready process trees to prove descendant cleanup,
+including natural shell exit, timeout, output cap, shutdown, and supervisor death.
+Keep `.ps1`/`.cs` helpers in the packed artifact and verify them on native Windows.
+Filesystem security is independent: the Windows directory helper creates private
+ACLs atomically and rejects unsafe existing paths without modifying them.
+
 ## Implementation references
 
 - [Pi extensions](https://pi.dev/docs/latest/extensions): lifecycle, messages, tools.
 - [Pi TUI](https://pi.dev/docs/latest/tui): rendering and custom-component disposal.
 - [Pi bash tool](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts): signal exit codes and bounded output.
+- [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects): ownership, inheritance, and kill-on-close cleanup.
+- [Windows process attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute): atomic job association and restricted handle inheritance.
 - [Node child processes](https://nodejs.org/api/child_process.html): `exit` versus
   `close`, detached process groups, and pipe ownership.
 
 Unlike daemon-oriented task systems, a task's shell owns its lifetime. Its exit
-triggers process-group cleanup even when descendants still hold stdout/stderr.
+triggers group/job cleanup even when descendants still hold stdout/stderr.
 Record a stop reason before signaling; a null exit code is never success.
