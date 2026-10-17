@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO.Pipes;
@@ -34,7 +35,7 @@ namespace PixBg
 
         // The return value describes the helper, not the shell. The shell's unsigned DWORD exit
         // status travels only in the exit frame; it is never translated to a POSIX signal.
-        public static int Run(string shell, string[] args, string cwd, string pipeName)
+        public static int Run(string shell, string[] args, string cwd, string pipeName, string[] environment)
         {
             NamedPipeClientStream control = null;
             try
@@ -50,7 +51,7 @@ namespace PixBg
                 // https://learn.microsoft.com/en-us/dotnet/api/system.io.pipes.namedpipeclientstream.-ctor
                 control = new NamedPipeClientStream(".", pipeName, PipeDirection.Out);
                 control.Connect(ConnectTimeoutMilliseconds);
-                RunJob(control, shell, args, cwd);
+                RunJob(control, shell, args, cwd, environment);
                 return 0;
             }
             catch (Exception error)
@@ -69,7 +70,7 @@ namespace PixBg
             }
         }
 
-        private static void RunJob(NamedPipeClientStream control, string shell, string[] args, string cwd)
+        private static void RunJob(NamedPipeClientStream control, string shell, string[] args, string cwd, string[] environment)
         {
             ValidateText(shell, "shell", false);
             ValidateText(cwd, "cwd", false);
@@ -83,6 +84,7 @@ namespace PixBg
             }
 
             StringBuilder commandLine = BuildCommandLine(shell, args);
+            string environmentBlock = BuildEnvironment(environment);
             IntPtr job = IntPtr.Zero;
             IntPtr stdout = IntPtr.Zero;
             IntPtr stderr = IntPtr.Zero;
@@ -90,6 +92,7 @@ namespace PixBg
             IntPtr attributes = IntPtr.Zero;
             IntPtr jobList = IntPtr.Zero;
             IntPtr handleList = IntPtr.Zero;
+            IntPtr environmentMemory = IntPtr.Zero;
             bool attributesInitialized = false;
             PROCESS_INFORMATION process = new PROCESS_INFORMATION();
 
@@ -167,12 +170,14 @@ namespace PixBg
                 startup.lpAttributeList = attributes;
 
                 // Explicit application name prevents executable-path ambiguity. StringBuilder
-                // supplies the mutable UTF-16 command line required by CreateProcessW. A NULL
-                // environment inherits the helper's environment; cwd is passed without rewriting.
+                // supplies the mutable UTF-16 command line required by CreateProcessW. Restore
+                // Pi's environment, not PowerShell's modified module path/execution policy.
+                // cwd is passed without rewriting.
                 // https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+                environmentMemory = Marshal.StringToHGlobalUni(environmentBlock);
                 if (!CreateProcessW(shell, commandLine, IntPtr.Zero, IntPtr.Zero, true,
                     ExtendedStartupInfoPresent | CreateNoWindow | CreateUnicodeEnvironment,
-                    IntPtr.Zero, cwd, ref startup, out process))
+                    environmentMemory, cwd, ref startup, out process))
                 {
                     throw NativeError("CreateProcessW");
                 }
@@ -214,6 +219,7 @@ namespace PixBg
                 Marshal.FreeHGlobal(attributes);
                 Marshal.FreeHGlobal(jobList);
                 Marshal.FreeHGlobal(handleList);
+                Marshal.FreeHGlobal(environmentMemory);
 
                 // Closing the LAST job handle kills every remaining member, including on any
                 // startup/protocol failure. Never give this handle to a child. Forced helper
@@ -228,6 +234,38 @@ namespace PixBg
                 CloseOwnedHandle(stdout);
                 CloseOwnedHandle(stderr);
             }
+        }
+
+        private static string BuildEnvironment(string[] environment)
+        {
+            if (environment == null)
+            {
+                throw new ArgumentNullException("environment");
+            }
+            // Windows requires Unicode, case-insensitive ordering by variable NAME,
+            // not by the complete name=value entry (e.g. A must precede A0).
+            var entries = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string entry in environment)
+            {
+                ValidateText(entry, "environment entry", false);
+                int separator = entry.IndexOf('=');
+                if (separator <= 0)
+                {
+                    throw new ArgumentException("An environment entry must contain a nonempty name and '='.");
+                }
+                entries.Add(entry.Substring(0, separator), entry);
+            }
+            StringBuilder result = new StringBuilder();
+            foreach (string entry in entries.Values)
+            {
+                result.Append(entry).Append('\0');
+            }
+            result.Append('\0');
+            if (entries.Count == 0)
+            {
+                result.Append('\0');
+            }
+            return result.ToString();
         }
 
         private static StringBuilder BuildCommandLine(string shell, string[] args)

@@ -87,20 +87,32 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
 
   async function pids(marker: string): Promise<number[]> {
     let result: number[] = [];
-    await expect
-      .poll(
-        async () => {
-          try {
-            result = JSON.parse(await readFile(marker, "utf8")) as number[];
-            return result.length;
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
-            throw error;
-          }
-        },
-        { timeout: 15_000 },
-      )
-      .toBe(3);
+    try {
+      await expect
+        .poll(
+          async () => {
+            try {
+              result = JSON.parse(await readFile(marker, "utf8")) as number[];
+              return result.length;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+              throw error;
+            }
+          },
+          { timeout: 15_000 },
+        )
+        .toBe(3);
+    } catch (cause) {
+      const logs = await Promise.all(
+        fixtures
+          .flatMap(({ registry }) => registry.list())
+          .map((task) => readFile(task.outputPath, "utf8")),
+      );
+      throw new Error(
+        `Process-tree fixture did not become ready: ${logs.join("\n").slice(-8192)}`,
+        { cause },
+      );
+    }
     for (const pid of result) {
       expect(pid).toBeGreaterThan(0);
       descendants.add(pid);
@@ -155,6 +167,29 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
     expect(result.input).toBe("");
   });
 
+  test.each([undefined, "", "C:\\custom PowerShell modules 界"])(
+    "preserves the original PowerShell-specific environment: %j",
+    async (modulePath) => {
+      const h = await create();
+      vi.stubEnv("PSModulePath", modulePath);
+      vi.stubEnv("PSExecutionPolicyPreference", "RemoteSigned");
+      const task = await h.registry.start({
+        command: node(
+          "process.stdout.write(JSON.stringify({ modulePath: process.env.PSModulePath ?? null, policy: process.env.PSExecutionPolicyPreference }))",
+        ),
+        cwd: h.cwd,
+      });
+      expect((await h.registry.wait(task.id)).outcome).toEqual({
+        kind: "exited",
+        code: 0,
+      });
+      expect(JSON.parse(await readFile(task.outputPath, "utf8"))).toEqual({
+        modulePath: modulePath ?? null,
+        policy: "RemoteSigned",
+      });
+    },
+  );
+
   test("preserves split UTF-8 independently on stdout and stderr", async () => {
     const h = await create();
     const task = await h.registry.start({
@@ -200,7 +235,8 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
       command: tree(h.marker, "exit"),
       cwd: h.cwd,
     });
-    expect((await h.registry.wait(task.id)).outcome).toEqual({
+    const done = await h.registry.wait(task.id);
+    expect(done.outcome, await readFile(task.outputPath, "utf8")).toEqual({
       kind: "exited",
       code: 0,
     });
@@ -340,7 +376,7 @@ describe.runIf(process.platform === "win32")("native Windows runtime", () => {
 $acl = [IO.File]::GetAccessControl($path)
 [Console]::WriteLine($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value)
 foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
-  [Console]::WriteLine('{0}|{1}|{2}|{3}' -f $rule.IdentityReference.Value, [int]$rule.FileSystemRights, $rule.IsInherited, [int]$rule.AccessControlType)
+  [Console]::WriteLine(('{0}|{1}|{2}|{3}' -f $rule.IdentityReference.Value, [int]$rule.FileSystemRights, $rule.IsInherited, [int]$rule.AccessControlType))
 }`;
     const [owner, ...rules] = execFileSync(
       windowsPowerShell(),

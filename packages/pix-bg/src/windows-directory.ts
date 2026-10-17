@@ -1,5 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { windowsPowerShell, windowsScriptArgs } from "./windows.ts";
+import {
+  windowsHelperEnvironment,
+  windowsPowerShell,
+  windowsScriptArgs,
+} from "./windows.ts";
 
 let userId: string | undefined;
 
@@ -16,6 +20,7 @@ function invoke(action: "identity" | "directory", path?: string): string {
       {
         encoding: "utf8",
         windowsHide: true,
+        env: windowsHelperEnvironment(),
         timeout: 15_000,
         maxBuffer: 64 * 1024,
         stdio: ["ignore", "pipe", "pipe"],

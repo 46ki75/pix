@@ -57,6 +57,16 @@ try {
         }
     }
     [string[]] $shellArgs = $argsProperty.Value
+    $environmentProperty = $payload.PSObject.Properties['environment']
+    if ($null -eq $environmentProperty -or $environmentProperty.Value -isnot [System.Array]) {
+        throw 'The runner payload field environment must be an array of strings.'
+    }
+    foreach ($entry in $environmentProperty.Value) {
+        if ($entry -isnot [string]) {
+            throw 'Every runner environment entry must be a string.'
+        }
+    }
+    [string[]] $commandEnvironment = $environmentProperty.Value
 
     # Escape wildcard syntax in installation paths; no command text is embedded in source code.
     # NamedPipeClientStream lives in the framework's System.Core.dll, not System.dll.
@@ -64,7 +74,7 @@ try {
         (Join-Path -Path $PSScriptRoot -ChildPath 'windows-runner.cs'))
     Add-Type -Path $sourcePath -ReferencedAssemblies 'System.dll', 'System.Core.dll' `
         -ErrorAction Stop -WarningAction SilentlyContinue | Out-Null
-    $helperExitCode = [PixBg.WindowsRunner]::Run($payload.shell, $shellArgs, $payload.cwd, $pipeName)
+    $helperExitCode = [PixBg.WindowsRunner]::Run($payload.shell, $shellArgs, $payload.cwd, $pipeName, $commandEnvironment)
     exit $helperExitCode
 }
 catch {

@@ -23,3 +23,14 @@ export function windowsScriptArgs(name: string, args: string[]): string[] {
     ...args,
   ];
 }
+
+export function windowsHelperEnvironment(): NodeJS.ProcessEnv {
+  // WinPS launched through Node otherwise inherits incompatible PowerShell 7
+  // module paths. The command receives its own original environment snapshot.
+  // https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_psmodulepath#starting-windows-powershell-from-powershell-7
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => key.toUpperCase() !== "PSMODULEPATH",
+    ),
+  );
+}

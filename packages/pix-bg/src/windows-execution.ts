@@ -7,7 +7,11 @@ import type {
   ExecutionOutcome,
   Executor,
 } from "./execution.ts";
-import { windowsPowerShell, windowsScriptArgs } from "./windows.ts";
+import {
+  windowsHelperEnvironment,
+  windowsPowerShell,
+  windowsScriptArgs,
+} from "./windows.ts";
 
 export interface WindowsExecutorOptions {
   shell: { shell: string; args: string[] };
@@ -71,7 +75,11 @@ class WindowsExecution implements Execution {
       this.child = spawn(
         windowsPowerShell(),
         windowsScriptArgs("windows-runner.ps1", []),
-        { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+        {
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+          env: windowsHelperEnvironment(),
+        },
       );
     } catch (error) {
       this.server.close();
@@ -128,6 +136,9 @@ class WindowsExecution implements Execution {
         args: [...options.shell.args, command],
         cwd,
         pipe,
+        environment: Object.entries(process.env)
+          .filter(([, value]) => value !== undefined)
+          .map(([key, value]) => `${key}=${value}`),
       }),
       "utf8",
     );

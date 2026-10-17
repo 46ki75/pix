@@ -77,6 +77,10 @@ spawn-then-assign sequence. Job handles are not inherited by commands. Control
 frames travel over a private named pipe, independently of raw stdout/stderr.
 `ready` means the command is job-contained, not merely that PowerShell started.
 Windows cancellation is forceful and must not be represented as POSIX signals.
+Direct stop-delivery errors remain synchronous; queued launch-time stop failures
+must reach the error observer without escaping an event callback or preventing a
+later retry. Pass the original command environment explicitly so the PowerShell
+helper's module search path and execution policy do not leak into commands.
 `windows-runtime.test.ts` uses IPC-ready process trees to prove descendant cleanup,
 including natural shell exit, timeout, output cap, shutdown, and supervisor death.
 Keep `.ps1`/`.cs` helpers in the packed artifact and verify them on native Windows.

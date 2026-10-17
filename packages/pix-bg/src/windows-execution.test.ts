@@ -14,6 +14,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 function create() {
@@ -103,7 +104,11 @@ test("returns the supervisor PID but acknowledges only a job-contained command",
   expect(spawn).toHaveBeenCalledWith(
     expect.stringContaining("powershell.exe"),
     expect.arrayContaining(["-NoProfile", "-NonInteractive", "-File"]),
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+      env: expect.any(Object),
+    },
   );
   h.connect();
   h.socket.emit("data", "rea");
@@ -111,6 +116,28 @@ test("returns the supervisor PID but acknowledges only a job-contained command",
   h.socket.emit("data", "dy\n");
   await h.execution.ready;
   expect(ready).toBe(true);
+  h.close();
+});
+
+test("separates PowerShell helper configuration from the original command environment", async () => {
+  vi.stubEnv("PSModulePath", "C:\\custom modules 界");
+  vi.stubEnv("PSExecutionPolicyPreference", "RemoteSigned");
+  const h = create();
+  const payload = JSON.parse(h.child.stdin.end.mock.calls[0]![0] as string);
+  expect(payload.environment).toContain("PSModulePath=C:\\custom modules 界");
+  expect(payload.environment).toContain(
+    "PSExecutionPolicyPreference=RemoteSigned",
+  );
+  const options = vi.mocked(spawn).mock.calls[0]![2]!;
+  expect(
+    Object.keys(options.env ?? {}).some(
+      (key) => key.toUpperCase() === "PSMODULEPATH",
+    ),
+  ).toBe(false);
+  expect(options.env?.PSExecutionPolicyPreference).toBe("RemoteSigned");
+  h.connect();
+  h.socket.emit("data", "ready\nexit:0\n");
+  await h.execution.ready;
   h.close();
 });
 
