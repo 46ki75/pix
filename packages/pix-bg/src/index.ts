@@ -8,6 +8,7 @@ import {
 import { privateDirectory } from "./directory.ts";
 import { taskDetail, taskList } from "./format.ts";
 import { Notifier } from "./notify.ts";
+import { PosixExecutor } from "./posix-execution.ts";
 import { outputLimit, Registry } from "./registry.ts";
 import { TaskUI } from "./ui.ts";
 
@@ -37,7 +38,7 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
       join(tmpdir(), `pi-bg-${process.geteuid?.()}`),
     );
     const tasks = new Registry({
-      shell: getShellConfig(),
+      executor: new PosixExecutor({ shell: getShellConfig() }),
       outputDir: join(outputRoot, ctx.sessionManager.getSessionId()),
       maxOutputBytes: outputLimit(process.env),
     });

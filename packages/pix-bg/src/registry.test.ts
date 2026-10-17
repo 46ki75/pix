@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
+import { PosixExecutor } from "./posix-execution.ts";
 import { DEFAULT_MAX_OUTPUT_BYTES, outputLimit, Registry } from "./registry.ts";
 
 const registries: Registry[] = [];
@@ -22,10 +23,12 @@ async function create(maxOutputBytes = 1024 * 1024, shell = "/bin/sh") {
   const outputDir = await mkdtemp(join(tmpdir(), "pix-bg-test-"));
   directories.push(outputDir);
   const registry = new Registry({
-    shell: { shell, args: ["-c"] },
+    executor: new PosixExecutor({
+      shell: { shell, args: ["-c"] },
+      graceMs: 100,
+    }),
     outputDir,
     maxOutputBytes,
-    graceMs: 100,
   });
   registries.push(registry);
   return registry;

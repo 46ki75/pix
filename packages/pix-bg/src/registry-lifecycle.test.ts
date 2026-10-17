@@ -1,7 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { closeSync } from "node:fs";
+import { closeSync, writeSync } from "node:fs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { PosixExecutor } from "./posix-execution.ts";
 import { Registry } from "./registry.ts";
 
 // Control OS event ordering without depending on macOS's zombie-reaping window.
@@ -30,7 +31,7 @@ function signalError(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`kill ${code}`), { code, syscall: "kill" });
 }
 
-async function create(timeout?: number) {
+function launch(timeout?: number) {
   const stdout = Object.assign(new EventEmitter(), { destroy: vi.fn() });
   const stderr = Object.assign(new EventEmitter(), { destroy: vi.fn() });
   const child = Object.assign(new EventEmitter(), {
@@ -40,10 +41,12 @@ async function create(timeout?: number) {
   });
   vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
   const registry = new Registry({
-    shell: { shell: "/bin/sh", args: ["-c"] },
+    executor: new PosixExecutor({
+      shell: { shell: "/bin/sh", args: ["-c"] },
+      graceMs: 100,
+    }),
     outputDir: "/fake/bg",
     maxOutputBytes: 1024,
-    graceMs: 100,
   });
   const changed = vi.fn();
   registry.subscribe(changed);
@@ -52,20 +55,115 @@ async function create(timeout?: number) {
     cwd: "/",
     ...(timeout === undefined ? {} : { timeout }),
   });
+  return { registry, child, starting, stdout, stderr, changed };
+}
+
+async function create(timeout?: number) {
+  const h = launch(timeout);
+  const { child } = h;
   child.emit("spawn");
-  const task = await starting;
+  const task = await h.starting;
   return {
-    registry,
+    ...h,
     task,
-    stdout,
-    stderr,
-    changed,
     kill: vi.mocked(process.kill),
     exit: (code: number | null = 0, signal: NodeJS.Signals | null = null) =>
       child.emit("exit", code, signal),
     close: () => child.emit("close"),
   };
 }
+
+test("launch waits for spawn acknowledgment before returning a task", async () => {
+  const h = launch();
+  let started = false;
+  void h.starting.then(() => {
+    started = true;
+  });
+  await Promise.resolve();
+  expect(started).toBe(false);
+  expect(h.changed).not.toHaveBeenCalled();
+  expect(spawn).toHaveBeenCalledExactlyOnceWith("/bin/sh", ["-c", "fixture"], {
+    cwd: "/",
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  h.child.emit("spawn");
+  const task = await h.starting;
+  expect(task.pid).toBe(h.child.pid);
+  expect(task.status).toBe("running");
+  expect(h.changed).toHaveBeenCalledExactlyOnceWith(task);
+  vi.mocked(process.kill).mockImplementation(() => {
+    throw signalError("ESRCH");
+  });
+  h.child.emit("exit", 0, null);
+  h.child.emit("close");
+  await h.registry.disposeAll();
+});
+
+test("a synchronous spawn failure closes its log without retaining a task", async () => {
+  const error = new Error("invalid spawn arguments");
+  vi.mocked(spawn).mockImplementationOnce(() => {
+    throw error;
+  });
+  const h = launch();
+  await expect(h.starting).rejects.toBe(error);
+  expect(h.registry.list()).toEqual([]);
+  expect(closeSync).toHaveBeenCalledExactlyOnceWith(42);
+  expect(h.changed).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test("failed launch disappears but shutdown still waits for close", async () => {
+  const h = launch();
+  const task = h.registry.list()[0]!;
+  const failed = expect(h.starting).rejects.toThrow("spawn failed");
+  const disposing = h.registry.disposeAll();
+  let disposed = false;
+  void disposing.then(() => {
+    disposed = true;
+  });
+  h.child.emit("error", new Error("spawn failed"));
+  await failed;
+  expect(h.registry.list()).toEqual([]);
+  expect(disposed).toBe(false);
+  expect(closeSync).not.toHaveBeenCalled();
+  h.child.emit("close");
+  await disposing;
+  expect(disposed).toBe(true);
+  expect(closeSync).toHaveBeenCalledExactlyOnceWith(42);
+  expect(h.changed).not.toHaveBeenCalled();
+  expect(() => h.registry.get(task.id)).toThrow("Unknown");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test("a shell without an exit code or signal is never successful", async () => {
+  const h = await create();
+  h.kill.mockImplementation(() => {
+    throw signalError("ESRCH");
+  });
+  h.exit(null, null);
+  h.close();
+  expect((await h.registry.wait(h.task.id)).outcome).toEqual({
+    kind: "failed",
+    message: "Command terminated without an exit code",
+  });
+});
+
+test("retains post-exit output and decodes stdout and stderr independently", async () => {
+  const h = await create();
+  h.stdout.emit("data", Buffer.from([0xe7]));
+  h.stderr.emit("data", Buffer.from("err"));
+  h.exit(0);
+  h.stdout.emit("data", Buffer.from([0x95, 0x8c]));
+  h.close();
+  expect(closeSync).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(100);
+  expect((await h.registry.wait(h.task.id)).outputBytes).toBe(6);
+  expect(writeSync).toHaveBeenCalledTimes(2);
+  expect(writeSync).toHaveBeenNthCalledWith(1, 42, Buffer.from("err"), 0);
+  expect(writeSync).toHaveBeenNthCalledWith(2, 42, Buffer.from("界"), 0);
+  expect(closeSync).toHaveBeenCalledExactlyOnceWith(42);
+});
 
 test("concurrent stops share signaling and preserve the first reason", async () => {
   const h = await create();
