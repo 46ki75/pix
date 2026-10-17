@@ -25,6 +25,8 @@ export interface Task {
   endedAt?: number;
   status: "running" | "stopping" | "finished";
   outcome?: Outcome;
+  // Historical diagnostics do not replace the first stop reason or imply completion.
+  lastError?: string;
 }
 
 interface Entry {
@@ -43,6 +45,7 @@ export interface RegistryOptions {
   outputDir: string;
   maxOutputBytes: number;
   now?: () => number;
+  onError?: (error: Error, task: Task) => void;
 }
 
 export const DEFAULT_MAX_OUTPUT_BYTES = 100 * 1024 * 1024;
@@ -160,8 +163,14 @@ export class Registry {
       execution = this.options.executor.start(params.command, params.cwd, {
         onData: (source, chunk) =>
           this.output(entry, decoders[source].decode(chunk)),
-        onOutputError: (error) =>
-          this.terminate(entry, { kind: "failed", message: error.message }),
+        onOutputError: (error) => {
+          this.reportError(entry, error);
+          this.terminate(
+            entry,
+            { kind: "failed", message: error.message },
+            "event",
+          );
+        },
         onExit: (outcome) => {
           entry.exit = outcome;
           clearTimeout(entry.timeout);
@@ -205,7 +214,7 @@ export class Registry {
     this.pending.add(entry);
     if (params.timeout !== undefined) {
       entry.timeout = setTimeout(
-        () => this.terminate(entry, { kind: "timed_out" }),
+        () => this.terminate(entry, { kind: "timed_out" }, "event"),
         params.timeout * 1000,
       );
     }
@@ -264,20 +273,43 @@ export class Registry {
         offset += writeSync(entry.fd, portion, offset);
       entry.task.outputBytes += portion.length;
     } catch (error) {
-      this.terminate(entry, { kind: "failed", message: String(error) });
+      this.reportError(entry, error);
+      this.terminate(
+        entry,
+        { kind: "failed", message: String(error) },
+        "event",
+      );
       return;
     }
     if (data.length > remaining)
-      this.terminate(entry, { kind: "output_capped" });
+      this.terminate(entry, { kind: "output_capped" }, "event");
   }
 
-  private terminate(entry: Entry, reason: Outcome): void {
+  private reportError(entry: Entry, error: unknown): void {
+    if (entry.task.status === "finished") return;
+    const failure = error instanceof Error ? error : new Error(String(error));
+    entry.task.lastError = failure.message;
+    this.options.onError?.(failure, snapshot(entry.task));
+  }
+
+  private terminate(
+    entry: Entry,
+    reason: Outcome,
+    mode: "explicit" | "event" = "explicit",
+  ): void {
     if (entry.task.status === "finished") return;
     // First cause wins even if another stop request arrives during escalation.
     entry.reason ??= reason;
     entry.task.status = "stopping";
     clearTimeout(entry.timeout);
-    entry.execution.stop();
+    try {
+      entry.execution.stop();
+    } catch (error) {
+      // Timer/IO callbacks cannot return delivery errors to a caller. Report
+      // them without abandoning cleanup; explicit stop/shutdown still throw.
+      if (mode === "explicit") throw error;
+      this.reportError(entry, error);
+    }
     this.emit(entry);
   }
 

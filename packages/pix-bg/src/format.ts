@@ -29,7 +29,7 @@ export function duration(task: Task, now = Date.now()): string {
 }
 
 export function statusLine(task: Task, now = Date.now()): string {
-  return `${task.id} | ${oneLine(task.name)} | ${task.outcome ? outcomeText(task.outcome) : task.status} | ${duration(task, now)}`;
+  return `${task.id} | ${oneLine(task.name)} | ${task.outcome ? outcomeText(task.outcome) : task.status} | ${duration(task, now)}${task.lastError ? ` | Last error: ${oneLine(task.lastError).slice(0, 1024)}` : ""}`;
 }
 
 export function taskDetail(task: Task, now = Date.now()): string {

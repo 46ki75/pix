@@ -73,6 +73,12 @@ from success: `kill -KILL $$` reports `SIGKILL (exit code 137)`.
 Stopping with `bg_kill` returns the outcome directly without another notification.
 Stopping from `/bg` queues a next-turn message without waking the agent.
 
+If an automatic stop cannot be delivered, the task stays `stopping` and cleanup
+remains retryable. Task details retain the most recent internally reported error
+as `lastError`, shown in formatted status too; UI clients also receive an error
+notice without waking the agent. Errors do not declare completion or replace the
+first timeout/output-cap reason. Explicit stop errors are still returned to callers.
+
 ## Background Pi subagents
 
 By default, `bg_run`'s prompt guidelines suggest delegating independent tasks to

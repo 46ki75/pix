@@ -65,13 +65,20 @@ is reported once, only after output closure and descendant cleanup, including
 output closure after a failed launch. The registry can then close the log and
 resolve stop/shutdown requests without closing a log still receiving output.
 Stopping initiates cleanup; it does not imply completion. Signal-delivery errors
-must remain visible and cleanup must remain retryable.
+must remain visible and cleanup must remain retryable. Registry-triggered timeout,
+output-cap, and output-error stops must contain delivery exceptions at the callback
+boundary; explicit stop/shutdown calls still surface them. Internal errors are
+retained as `Task.lastError` and sent to the error reporter without replacing the
+first stop reason or closing logs before executor completion.
 
 `registry-executor.test.ts` checks registry policy with an injected executor.
 `posix-execution.test.ts` checks the backend contract; `registry-lifecycle.test.ts`
-retains deterministic OS-event ordering and signaling regressions. The real-process
-and extension integration suites remain the end-to-end checks. New backends must
-satisfy the contract; changing lifecycle guarantees requires a separate decision.
+retains deterministic OS-event ordering and signaling regressions.
+`registry-windows.test.ts` integrates the real Registry and Windows executor with
+mocked OS events to verify emitted/thrown delivery failures across automatic and
+explicit stop routes. The real-process and extension integration suites remain
+the end-to-end checks. New backends must satisfy the contract; changing lifecycle
+guarantees requires a separate decision.
 
 On Windows, `windows-runner.cs` atomically associates the command with its job at
 creation using `PROC_THREAD_ATTRIBUTE_JOB_LIST`; never replace this with a racy

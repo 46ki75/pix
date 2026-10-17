@@ -6,7 +6,7 @@ import {
   getShellConfig,
 } from "@earendil-works/pi-coding-agent";
 import { outputUserId, privateDirectory } from "./directory.ts";
-import { taskDetail, taskList } from "./format.ts";
+import { oneLine, taskDetail, taskList } from "./format.ts";
 import { Notifier } from "./notify.ts";
 import { PosixExecutor } from "./posix-execution.ts";
 import { outputLimit, Registry } from "./registry.ts";
@@ -44,6 +44,11 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
       executor: new LocalExecutor({ shell: getShellConfig() }),
       outputDir: join(outputRoot, ctx.sessionManager.getSessionId()),
       maxOutputBytes: outputLimit(process.env),
+      onError: (error, task) =>
+        ctx.ui.notify(
+          `Background task ${task.id} (PID ${task.pid}): ${oneLine(error.message).slice(0, 1024)}`,
+          "error",
+        ),
     });
     const notifier = new Notifier(
       (message, options) => pi.sendMessage(message, options),

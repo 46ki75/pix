@@ -40,7 +40,9 @@ function launch(timeout?: number) {
     stderr,
   });
   vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+  const errors = vi.fn();
   const registry = new Registry({
+    onError: errors,
     executor: new PosixExecutor({
       shell: { shell: "/bin/sh", args: ["-c"] },
       graceMs: 100,
@@ -55,7 +57,7 @@ function launch(timeout?: number) {
     cwd: "/",
     ...(timeout === undefined ? {} : { timeout }),
   });
-  return { registry, child, starting, stdout, stderr, changed };
+  return { registry, child, starting, stdout, stderr, changed, errors };
 }
 
 async function create(timeout?: number) {
@@ -304,6 +306,36 @@ test.each(["present", "EPERM"])(
       [-h.task.pid, "SIGKILL"],
     ]);
     expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+test.each(["cap", "timeout"])(
+  "automatic %s delivery errors are reported without escaping the callback",
+  async (route) => {
+    const h = await create(route === "timeout" ? 0.1 : undefined);
+    const error = signalError("EPERM");
+    h.kill.mockImplementation(() => {
+      throw error;
+    });
+    if (route === "cap")
+      expect(() =>
+        h.stdout.emit("data", Buffer.alloc(1025, "x")),
+      ).not.toThrow();
+    else expect(() => vi.advanceTimersByTime(100)).not.toThrow();
+    expect(h.errors).toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({ status: "stopping", lastError: "kill EPERM" }),
+    );
+    expect(closeSync).not.toHaveBeenCalled();
+    h.kill.mockReturnValue(true);
+    const retried = h.registry.stop(h.task.id, "agent");
+    h.exit(null, "SIGTERM");
+    h.close();
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await retried).outcome).toEqual({
+      kind: route === "cap" ? "output_capped" : "timed_out",
+    });
+    expect(closeSync).toHaveBeenCalledExactlyOnceWith(42);
   },
 );
 
