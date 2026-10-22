@@ -74,7 +74,7 @@ function transportContext(
 }
 
 test("loads native global and trusted project MCP configuration", async () => {
-  expect(VERSION).toBe("1.3.0");
+  expect(VERSION).toBe("1.4.0");
   const { agentDir, cwd } = await sandbox();
   const globalPath = join(agentDir, "mcp.json");
   const projectPath = join(cwd, ".pi", "mcp.json");
@@ -120,6 +120,34 @@ test("loads native global and trusted project MCP configuration", async () => {
     config: { command: "project-shared" },
   });
   expect(trusted.servers[2]?.config.enabled).toBe(false);
+});
+
+test("delegates BOM-prefixed MCP configuration to Pi without bypassing project trust", async () => {
+  const { agentDir, cwd } = await sandbox();
+  const globalPath = join(agentDir, "mcp.json");
+  const projectPath = join(cwd, ".pi", "mcp.json");
+  await mkdir(dirname(projectPath), { recursive: true });
+  await writeFile(
+    globalPath,
+    `\uFEFF${JSON.stringify({ mcpServers: { shared: { command: "global-command" } } })}`,
+  );
+  await writeFile(
+    projectPath,
+    `\uFEFF${JSON.stringify({ mcpServers: { shared: { command: "project-command" } } })}`,
+  );
+
+  for (const trusted of [false, true]) {
+    const loaded = await loadServers(loadContext(cwd, trusted), []);
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.servers).toEqual([
+      {
+        name: "shared",
+        source: trusted ? projectPath : globalPath,
+        scope: trusted ? "project" : "global",
+        config: { command: trusted ? "project-command" : "global-command" },
+      },
+    ]);
+  }
 });
 
 test("applies trusted project state-only overrides while preserving global credentials", async () => {

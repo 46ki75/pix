@@ -3,7 +3,7 @@
 Claude, legacy Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports,
 plus OpenAI ChatGPT usage-settings guidance and a current-provider widget for
 [Pi Coding Agent](https://pi.dev/). Uses Pi's existing logins, not a separate
-credential store or usage SDK. Tested with Pi 0.87.1 and 1.3.0.
+credential store or usage SDK. Tested with Pi 0.87.1 and 1.4.0.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -257,8 +257,8 @@ commands are not resolved. Before the request, the extension reads the source an
 key twice and verifies twice that no extension has replaced `opencode-go` and
 every effective provider and model URL is a known first-party OpenCode Go URL:
 `https://opencode.ai/zen/go` for older hosts or
-`https://opencode.ai/inference/go` for Pi 1.3.0. Both roots allow an optional `/v1`
-suffix and an optional trailing slash. The quota request still uses the fixed
+`https://opencode.ai/inference/go` for Pi 1.3.0 and 1.4.0. Both roots allow an
+optional `/v1` suffix and an optional trailing slash. The quota request still uses the fixed
 `/zen/go/v1/usage` endpoint. Environment, runtime, `models.json`, and extension
 fallback keys are refused. The extension does not read OpenCode's own files or
 forward custom model headers.
