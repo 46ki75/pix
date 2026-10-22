@@ -10,14 +10,14 @@ const exec = promisify(execFile);
 const packagePath = fileURLToPath(new URL("../", import.meta.url));
 const hosts = [
   ["0.87.1", new URL("../package.json", import.meta.url)],
-  ["1.3.0", new URL("../../../package.json", import.meta.url)],
+  ["1.4.0", new URL("../../../package.json", import.meta.url)],
 ] as const;
 
 // Use each host's real catalog so endpoint migrations cannot be hidden by mocks.
 // Subprocesses isolate SDK module mappings and use only synthetic credentials.
 test.each(hosts)(
   "OpenCode Go report accepts the built-in catalog under Pi %s",
-  async (_version, manifest) => {
+  async (version, manifest) => {
     const sdk = fileURLToPath(
       new URL(
         "./node_modules/@earendil-works/pi-coding-agent/dist/index.js",
@@ -54,7 +54,8 @@ test.each(hosts)(
           monthly: { status: 'ok', percent: 10, resetsAt: '2026-10-29T00:00:00Z' }
         }});
       };
-      const { discoverAndLoadExtensions, ModelRegistry, ModelRuntime } = await import(pathToFileURL(${JSON.stringify(sdk)}).href);
+      const { discoverAndLoadExtensions, ModelRegistry, ModelRuntime, VERSION } = await import(pathToFileURL(${JSON.stringify(sdk)}).href);
+      assert.equal(VERSION, ${JSON.stringify(version)});
       const runtime = await ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, allowModelNetwork: false });
       const registry = new ModelRegistry(runtime);
       assert.equal(registry.getProviderAuthStatus('opencode-go').source, 'stored');

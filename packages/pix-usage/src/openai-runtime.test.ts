@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const packagePath = fileURLToPath(new URL("../", import.meta.url));
 const hosts = [
   ["0.87.1", new URL("../package.json", import.meta.url)],
-  ["1.3.0", new URL("../../../package.json", import.meta.url)],
+  ["1.4.0", new URL("../../../package.json", import.meta.url)],
 ] as const;
 
 // Subprocesses isolate Pi's module mappings, environment, and credential store.
@@ -57,10 +57,11 @@ test.each(hosts)(
         calls++;
         return Response.json({ rate_limit: { primary_window: { used_percent: 25, limit_window_seconds: 18000 } } });
       };
-      const { discoverAndLoadExtensions, ModelRegistry, ModelRuntime } = await import(pathToFileURL(${JSON.stringify(sdk)}).href);
+      const { discoverAndLoadExtensions, ModelRegistry, ModelRuntime, VERSION } = await import(pathToFileURL(${JSON.stringify(sdk)}).href);
+      assert.equal(VERSION, ${JSON.stringify(version)});
       const runtime = await ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, allowModelNetwork: false });
       const registry = new ModelRegistry(runtime);
-      if (${JSON.stringify(version)} === '1.3.0') {
+      if (${JSON.stringify(version)} === '1.4.0') {
         assert.ok(registry.getProvider('openai').auth.oauth, 'New host must support Sign in with ChatGPT');
       }
       const originalAuth = registry.getProviderAuth.bind(registry);
