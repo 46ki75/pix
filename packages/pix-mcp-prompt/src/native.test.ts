@@ -74,7 +74,7 @@ function transportContext(
 }
 
 test("loads native global and trusted project MCP configuration", async () => {
-  expect(VERSION).toBe("1.4.0");
+  expect(VERSION).toBe("1.5.0");
   const { agentDir, cwd } = await sandbox();
   const globalPath = join(agentDir, "mcp.json");
   const projectPath = join(cwd, ".pi", "mcp.json");
@@ -444,9 +444,16 @@ test("delegates legacy OAuth credential migration to Pi for only the first accou
   });
 });
 
-test.each(["dcr", "cimd"] as const)(
-  "refreshes native OAuth tokens using the configured metadata URL and %s registration",
-  async (clientRegistration) => {
+test.each([
+  [undefined, false],
+  ["auto", false],
+  ["dcr", false],
+  ["cimd", false],
+  [undefined, true],
+  ["auto", true],
+] as const)(
+  "refreshes native OAuth tokens with %s registration and existing client %s",
+  async (clientRegistration, registeredClient) => {
     const { agentDir, cwd } = await sandbox();
     const url = "https://oauth.example.test/mcp";
     const resourceMetadataUrl =
@@ -457,6 +464,9 @@ test.each(["dcr", "cimd"] as const)(
     await writeJson(authPath, {
       [`mcp__oauth|${url}`]: {
         serverUrl: url,
+        ...(registeredClient
+          ? { clientInformation: { client_id: "fixture-client" } }
+          : {}),
         tokens: {
           access_token: "stale-token",
           refresh_token: "refresh-token",
@@ -464,20 +474,25 @@ test.each(["dcr", "cimd"] as const)(
         },
       },
     });
-    const { transport, settled } = await createNativeTransport(
-      {
-        name: "oauth",
-        source: "test",
-        config: {
+    await writeJson(join(agentDir, "mcp.json"), {
+      mcpServers: {
+        oauth: {
           url,
           oauth: {
+            ...(clientRegistration === undefined ? {} : { clientRegistration }),
             ...(clientRegistration === "dcr"
               ? { clientId: "fixture-client" }
-              : { clientRegistration }),
+              : {}),
             authServerMetadataUrl: metadataUrl,
           },
         },
       },
+    });
+    const loaded = await loadServers(loadContext(cwd, false), []);
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.servers).toHaveLength(1);
+    const { transport, settled } = await createNativeTransport(
+      loaded.servers[0]!,
       transportContext(cwd),
     );
     const authProvider = (transport as StreamableHttpTransport).options
@@ -509,7 +524,7 @@ test.each(["dcr", "cimd"] as const)(
         expect(body.get("grant_type")).toBe("refresh_token");
         expect(body.get("refresh_token")).toBe("refresh-token");
         expect(body.get("client_id")).toBe(
-          clientRegistration === "dcr"
+          clientRegistration === "dcr" || registeredClient
             ? "fixture-client"
             : "https://pi.dev/oauth/client.json",
         );
