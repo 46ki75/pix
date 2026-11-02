@@ -134,10 +134,12 @@ separate manual checks.
   account identity and arbitrary provider strings out of terminal output.
 
 The implementation is tested against Pi 0.87.1 (package development pin) and
-1.4.0 (workspace pin), including isolated real-registry OpenAI/Codex login checks
+1.5.0 (workspace pin), including isolated real-registry OpenAI/Codex login checks
 and OpenCode Go reports using each host's built-in catalog and a synthetic stored
-key. Keep coverage for both the older `/zen/go` model roots and Pi 1.3.0's
-`/inference/go` roots without changing the fixed quota endpoint.
+key. Keep coverage for the older `/zen/go` model roots, Pi 1.3.0's `/inference/go`
+roots, and Pi 1.5.0's protocol-specific `/inference/go/anthropic`,
+`/inference/go/google/v1beta`, and `/inference/go/openai/v1` routes without changing
+the fixed quota endpoint.
 `mise run usage:dev` uses the workspace pin so the new OpenAI login is available.
 Use the public extension APIs documented in
 [extensions](https://pi.dev/docs/latest/extensions) and

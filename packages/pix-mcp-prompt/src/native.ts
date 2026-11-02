@@ -19,6 +19,7 @@ const SUPPORTED_PI_VERSIONS = [
   "1.2.0",
   "1.3.0",
   "1.4.0",
+  "1.5.0",
 ];
 
 interface NativeAuthProvider {
@@ -33,7 +34,7 @@ interface NativeOAuthSettings {
   callbackUrl?: string | undefined;
   scope?: string | undefined;
   clientName?: string | undefined;
-  clientRegistration?: "dcr" | "cimd" | undefined;
+  clientRegistration?: "auto" | "dcr" | "cimd" | undefined;
   authServerMetadataUrl?: URL | undefined;
 }
 
