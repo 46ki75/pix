@@ -84,7 +84,8 @@ See its [network domain allowlist](packages/mcp-web/README.md#network-domain-all
 for search-provider hosts and fetch access requirements.
 
 [`@ikuma.cloud/pix-mcp-prompt`](packages/pix-mcp-prompt/README.md) is a prompt
-companion for Pi **1.0.0, 1.0.2, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, and 1.5.1**.
+companion for Pi **1.0.0, 1.0.2, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.5.1,
+and 1.5.2**.
 It preserves `/mcp-prompt` while native Pi handles tools and resources, using the
 same `mcp.json` configuration and project trust. Prompt connections are separate and opened on
 first use. Run `mise run mcp-prompt:dev` or
