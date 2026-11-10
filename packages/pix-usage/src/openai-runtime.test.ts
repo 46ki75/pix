@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const packagePath = fileURLToPath(new URL("../", import.meta.url));
 const hosts = [
   ["0.87.1", new URL("../package.json", import.meta.url)],
-  ["1.5.0", new URL("../../../package.json", import.meta.url)],
+  ["1.5.1", new URL("../../../package.json", import.meta.url)],
 ] as const;
 
 // Subprocesses isolate Pi's module mappings, environment, and credential store.
@@ -61,7 +61,7 @@ test.each(hosts)(
       assert.equal(VERSION, ${JSON.stringify(version)});
       const runtime = await ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, allowModelNetwork: false });
       const registry = new ModelRegistry(runtime);
-      if (${JSON.stringify(version)} === '1.5.0') {
+      if (${JSON.stringify(version)} === '1.5.1') {
         assert.ok(registry.getProvider('openai').auth.oauth, 'New host must support Sign in with ChatGPT');
       }
       const originalAuth = registry.getProviderAuth.bind(registry);

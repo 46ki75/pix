@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const packagePath = fileURLToPath(new URL("../", import.meta.url));
 const hosts = [
   ["0.87.1", new URL("../package.json", import.meta.url)],
-  ["1.5.0", new URL("../../../package.json", import.meta.url)],
+  ["1.5.1", new URL("../../../package.json", import.meta.url)],
 ] as const;
 
 // Use each host's real catalog so endpoint migrations cannot be hidden by mocks.
