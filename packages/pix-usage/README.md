@@ -3,7 +3,7 @@
 Claude, legacy Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports,
 plus OpenAI ChatGPT usage-settings guidance and a current-provider widget for
 [Pi Coding Agent](https://pi.dev/). Uses Pi's existing logins, not a separate
-credential store or usage SDK. Tested with Pi 0.87.1 and 1.5.0.
+credential store or usage SDK. Tested with Pi 0.87.1 and 1.5.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -50,9 +50,9 @@ key. Then run:
 
 ### OpenAI Sign in with ChatGPT
 
-Pi 1.0+ supports ChatGPT subscriptions under `openai`; `openai-codex` is now
-**OpenAI Codex (legacy)**. These are separate logins, not interchangeable provider
-IDs or tokens.
+Pi 1.0+ supports ChatGPT subscriptions under `openai`. This extension treats
+`openai-codex` as the legacy Codex integration. These are separate logins, not
+interchangeable provider IDs or tokens.
 
 No supported quota API is currently known for the new `openai` login, so pix-usage
 classifies usage fetching as `unsupported`. `/usage openai` and `/usage all` show
@@ -259,7 +259,7 @@ every effective provider and model URL is a known first-party OpenCode Go URL:
 
 - Older hosts: `https://opencode.ai/zen/go`, optionally suffixed with `/v1`.
 - Pi 1.3.0 and 1.4.0: `https://opencode.ai/inference/go`, optionally suffixed with `/v1`.
-- Pi 1.5.0: `https://opencode.ai/inference/go/anthropic`,
+- Pi 1.5.0 and 1.5.1: `https://opencode.ai/inference/go/anthropic`,
   `https://opencode.ai/inference/go/google/v1beta`, and
   `https://opencode.ai/inference/go/openai/v1`.
 

@@ -25,21 +25,27 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-test.each(["1.0.0", "1.0.2", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"])(
-  "accepts verified host %s through the version gate",
-  async (version) => {
-    host.version = version;
-    const directory = await mkdtemp(join(tmpdir(), "pix-native-compat-"));
-    vi.stubEnv("PI_CODING_AGENT_DIR", directory);
-    try {
-      await expect(
-        loadServers({ cwd: directory, isProjectTrusted: () => false }, []),
-      ).resolves.toMatchObject({ servers: [], errors: [] });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
-);
+test.each([
+  "1.0.0",
+  "1.0.2",
+  "1.1.0",
+  "1.2.0",
+  "1.3.0",
+  "1.4.0",
+  "1.5.0",
+  "1.5.1",
+])("accepts verified host %s through the version gate", async (version) => {
+  host.version = version;
+  const directory = await mkdtemp(join(tmpdir(), "pix-native-compat-"));
+  vi.stubEnv("PI_CODING_AGENT_DIR", directory);
+  try {
+    await expect(
+      loadServers({ cwd: directory, isProjectTrusted: () => false }, []),
+    ).resolves.toMatchObject({ servers: [], errors: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test.each([
   "0.99.2",
@@ -49,7 +55,7 @@ test.each([
   "1.2.1",
   "1.3.1",
   "1.4.1",
-  "1.5.1",
+  "1.5.2",
   "1.6.0",
 ])(
   "rejects unverified host %s before reading configuration or importing internals",
@@ -58,7 +64,7 @@ test.each([
     await expect(
       loadServers({ cwd: "/unused", isProjectTrusted: () => false }, []),
     ).rejects.toThrow(
-      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2 or 1.1.0 or 1.2.0 or 1.3.0 or 1.4.0 or 1.5.0, found ${version}`,
+      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2 or 1.1.0 or 1.2.0 or 1.3.0 or 1.4.0 or 1.5.0 or 1.5.1, found ${version}`,
     );
     expect(packageDir).not.toHaveBeenCalled();
   },
