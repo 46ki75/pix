@@ -53,13 +53,33 @@ jobs:
         run: mise run check
 
   windows-infrastructure:
-    name: Windows infrastructure
+    name: ${{ matrix.name }}
     runs-on: windows-2025
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows infrastructure
+            shell: pwsh
+            version: "7"
+          - name: Windows PowerShell 5.1
+            shell: powershell
+            version: "5.1"
     defaults:
       run:
-        shell: pwsh
+        shell: ${{ matrix.shell }}
     steps:
+      - name: Verify PowerShell host
+        env:
+          EXPECTED_POWERSHELL_VERSION: ${{ matrix.version }}
+        run: |
+          $version = $PSVersionTable.PSVersion.ToString()
+          if (-not $version.StartsWith($env:EXPECTED_POWERSHELL_VERSION + '.')) {
+            throw "Expected PowerShell $env:EXPECTED_POWERSHELL_VERSION, got $version"
+          }
+          $PSVersionTable | Format-Table -AutoSize
+
       - name: Check out repository
         uses: actions/checkout@v7
         with:
@@ -74,8 +94,10 @@ jobs:
       - name: Locate pnpm cache directories
         id: pnpm-cache
         run: |
-          "store=$(pnpm store path)" >> $env:GITHUB_OUTPUT
-          "metadata=$(pnpm cache path)" >> $env:GITHUB_OUTPUT
+          # Windows PowerShell defaults to UTF-16 redirection; Actions requires UTF-8.
+          # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#environment-files
+          "store=$(pnpm store path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "metadata=$(pnpm cache path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Cache pnpm dependencies
         uses: actions/cache@v5

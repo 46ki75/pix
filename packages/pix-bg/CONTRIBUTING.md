@@ -32,9 +32,11 @@ directory-security tests.
 Add new platform-independent tests to that allowlist when appropriate; do not use
 it instead of the full suite. Windows CI also runs `mise run test --project pix-bg`
 for native Job Object execution, directory ACLs, and shared extension integration.
-The full Windows suite requires both Windows PowerShell 5.1 and PowerShell 7;
-the hosted Windows runner supplies both. It exercises both PowerShell command
-shells alongside Git Bash, including Unicode, exit status, and descendant cleanup.
+The `Windows infrastructure` and `Windows PowerShell 5.1` checks run these tasks
+through PowerShell 7 and Windows PowerShell 5.1, respectively, and verify the host
+version first. The full Windows suite requires both versions; the hosted runner
+supplies them. Both checks exercise both PowerShell command shells alongside Git
+Bash, including Unicode, exit status, and descendant cleanup.
 POSIX-only regression files remain enabled on macOS/Linux; Windows substitutes
 native backend and ACL coverage rather than changing their assertions.
 
