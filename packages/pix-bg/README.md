@@ -2,7 +2,7 @@
 
 Small background shell tasks for [Pi Coding Agent](https://pi.dev/), with
 completion wake-ups, capped log files, and an interactive task viewer.
-Version 0.0.13 (unreleased) targets macOS and Linux, adds experimental Windows
+Version 0.0.14 (unreleased) targets macOS and Linux, adds experimental Windows
 support, and is developed against Pi 0.87.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
