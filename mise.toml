@@ -97,7 +97,7 @@ run = "pnpm exec pi --no-extensions -e ."
 # Explicit allowlist: the full pix-bg suite still requires POSIX processes and permissions.
 [tasks."bg:test-portable"]
 description = "Run pix-bg policy and UI tests without a platform process backend"
-run = "pnpm exec vitest run --project pix-bg packages/pix-bg/src/registry-executor.test.ts packages/pix-bg/src/format.test.ts packages/pix-bg/src/notify.test.ts packages/pix-bg/src/ui.test.ts packages/pix-bg/src/task-list.test.ts packages/pix-bg/src/output-view.test.ts"
+run = "pnpm exec vitest run --project pix-bg packages/pix-bg/src/registry-executor.test.ts packages/pix-bg/src/index-shell.test.ts packages/pix-bg/src/format.test.ts packages/pix-bg/src/notify.test.ts packages/pix-bg/src/ui.test.ts packages/pix-bg/src/task-list.test.ts packages/pix-bg/src/output-view.test.ts"
 
 [tasks."bg:dev"]
 description = "Launch Pi with only @ikuma.cloud/pix-bg; accepts Pi arguments"

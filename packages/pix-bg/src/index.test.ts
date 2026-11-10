@@ -39,7 +39,7 @@ test.each([
       const guidelines =
         extension.tools.get("bg_run")?.definition.promptGuidelines;
       expect(guidelines).toEqual([
-        "Never use bash sleep, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
+        "Never use shell sleeps, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
         "After bg_run, continue independent work or end the turn. In interactive/RPC mode, completion automatically starts another turn without user input.",
         ...(enabled
           ? [expect.stringContaining("pi --print --no-session")]
@@ -109,9 +109,16 @@ test.skipIf(process.platform === "win32").each([
   }
 });
 
-test.each(["print", "json", "rpc", "tui"] as const)(
-  "loads and manages tasks in %s mode without model requests",
-  async (mode) => {
+test.each(
+  (["print", "json", "rpc", "tui"] as const).flatMap((mode) =>
+    (process.platform === "win32"
+      ? (["bash", "powershell"] as const)
+      : (["bash"] as const)
+    ).map((shell) => ({ mode, shell })),
+  ),
+)(
+  "loads and manages $shell tasks in $mode mode without model requests",
+  async ({ mode, shell }) => {
     const directory = await mkdtemp(join(tmpdir(), "pix-bg-load-"));
     const sessionId = `pix-bg-test-${basename(directory)}`;
     let outputDir: string | undefined;
@@ -165,7 +172,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         extension.tools.get("bg_run")?.definition.promptGuidelines,
       ).toEqual(
         expect.arrayContaining([
-          expect.stringContaining("Never use bash sleep, blocking waits,"),
+          expect.stringContaining("Never use shell sleeps, blocking waits,"),
           expect.stringContaining("repeated bg_status/log checks"),
           expect.stringContaining("continue independent work or end the turn"),
           expect.stringContaining(
@@ -214,7 +221,9 @@ test.each(["print", "json", "rpc", "tui"] as const)(
         expect(ctx.ui.setWidget).not.toHaveBeenCalled();
       }
       const result = await tool("bg_run")({
-        command: "sleep 30",
+        command:
+          shell === "powershell" ? "Start-Sleep -Seconds 30" : "sleep 30",
+        shell,
         name: "test sleeper",
       });
       const task = result.details.task as Task;
@@ -233,6 +242,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       if (process.platform !== "win32")
         expect((await stat(dirname(outputDir))).mode & 0o777).toBe(0o700);
       expect(task.pid).toBeGreaterThan(0);
+      expect(task.shell).toBe(shell);
       expect(result.content[0]).toMatchObject({
         text: expect.stringContaining(task.outputPath),
       });
@@ -257,6 +267,7 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       const natural = (
         await tool("bg_run")({
           command: process.platform === "win32" ? "exit 7" : "kill -KILL $$",
+          shell,
         })
       ).details.task as Task;
       await expect.poll(() => send.mock.calls.length).toBe(1);
@@ -273,8 +284,13 @@ test.each(["print", "json", "rpc", "tui"] as const)(
       expect(status.details.tasks[0]?.status).toBe("finished");
       for (const reason of ["reload", "new", "resume", "fork", "quit"]) {
         if (mode === "tui") await command.handler("toggle", ctx);
-        const running = (await tool("bg_run")({ command: "sleep 30" })).details
-          .task as Task;
+        const running = (
+          await tool("bg_run")({
+            command:
+              shell === "powershell" ? "Start-Sleep -Seconds 30" : "sleep 30",
+            shell,
+          })
+        ).details.task as Task;
         await emit("session_shutdown", reason);
         expect(() => process.kill(running.pid, 0)).toThrow();
         await expect(tool("bg_status")({})).rejects.toThrow("not started");

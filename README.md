@@ -30,10 +30,14 @@ for Windows.
 `mise run setup` followed by `mise run check` for formatting, lint, type checking,
 and all workspace tests.
 
-The `Windows infrastructure` job uses Windows Server 2025 to verify locked tool
-and dependency installation, workspace type checking, pix-bg's portable policy
-and UI tests (`mise run bg:test-portable`), and its native Windows execution,
-log-security, and extension-integration tests (`mise run test --project pix-bg`).
+The `Windows (PowerShell 7)` check runs on Windows Server 2025 through `pwsh` and
+fails immediately if the host is not PowerShell 7. It checks locked tool and
+dependency installation, workspace types, pix-bg's portable policy and UI
+(`mise run bg:test-portable`), and native execution, log security, and extension
+integration (`mise run test --project pix-bg`). PowerShell 7 is the CI host target;
+the suite also retains Bash and Windows PowerShell 5.1 command-compatibility tests.
+Windows PowerShell 5.1 remains a separate requirement for pix-bg's existing
+supervisor and directory-security helpers, not an additional CI host.
 The full workspace test suite remains on Ubuntu. Windows desktop release
 qualification still requires the package's normal-user interactive smoke test.
 

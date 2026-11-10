@@ -24,13 +24,20 @@ short cleanup grace periods. Keep the registry independent of Pi APIs; test
 notification policy separately with fake timers. Extension integration tests load
 through Pi's loader with isolated configuration.
 
-`bg:test-portable` selects the fake-executor registry, formatting, notification,
-and UI tests through an explicit allowlist in the root `mise.toml`. It runs on
-Windows CI without loading a process backend. Its registry fixtures also mock
-POSIX directory validation; the full suite retains real directory-security tests.
+`bg:test-portable` selects the fake-executor registry, mocked shell-selection,
+formatting, notification, and UI tests through an explicit allowlist in the root
+`mise.toml`. It runs on Windows CI without loading a process backend. Its registry
+fixtures also mock POSIX directory validation; the full suite retains real
+directory-security tests.
 Add new platform-independent tests to that allowlist when appropriate; do not use
 it instead of the full suite. Windows CI also runs `mise run test --project pix-bg`
 for native Job Object execution, directory ACLs, and shared extension integration.
+The `Windows (PowerShell 7)` check runs these tasks through `pwsh` and verifies
+that the host is PowerShell 7 before continuing. The full Windows suite retains
+Windows PowerShell 5.1 command-compatibility coverage and uses it for the existing
+supervisor and security helpers; the hosted runner supplies both versions. Tests
+exercise both PowerShell command shells alongside Git Bash, including Unicode,
+exit status, and descendant cleanup. Windows PowerShell 5.1 is not a CI host target.
 POSIX-only regression files remain enabled on macOS/Linux; Windows substitutes
 native backend and ACL coverage rather than changing their assertions.
 
@@ -50,7 +57,11 @@ notifications to subscribers. `PosixExecutor` owns shell spawning, process-group
 signaling, escalation, and pipe draining. `WindowsExecutor` coordinates a bundled
 PowerShell/C# supervisor with a kill-on-close Windows Job Object; its reported PID
 belongs to that supervisor. Neither backend imports Pi APIs. The extension entry
-point selects the executor and passes Pi's discovered Bash configuration to it.
+point uses `shell.ts` to resolve Pi's Bash or PowerShell configuration at task
+launch. Bash remains the default; PowerShell is native-Windows-only. Each task
+records its shell and retains its original command, without encoding/exit wrappers.
+`Registry.start` accepts a per-launch executor override; all executions still share
+one registry's task IDs, stop/shutdown ownership, and notification policy.
 
 An executor returns a handle synchronously, including its PID and a `ready`
 promise. Observer callbacks must run after that return so the registry can own a
@@ -90,6 +101,11 @@ Direct stop-delivery errors remain synchronous; queued launch-time stop failures
 must reach the error observer without escaping an event callback or preventing a
 later retry. Pass the original command environment explicitly so the PowerShell
 helper's module search path and execution policy do not leak into commands.
+PowerShell commands need UTF-8 output setup and Windows PowerShell 5.1's
+native-stderr exit correction; keep the parser-boundary and exit-code regressions
+aligned with Pi's PowerShell tool. The supervisor remains a separate Windows
+PowerShell 5.1 process regardless of the command shell.
+
 Git Bash requires MSYS argument encoding rather than CRT encoding; retain native
 literal-backslash/quote regressions and reject WSL shell configurations. Snapshot
 the command environment before acquiring supervisor resources and reject explicit
@@ -110,6 +126,7 @@ ACLs atomically and rejects unsafe existing paths without modifying them.
 - [Pi extensions](https://pi.dev/docs/latest/extensions): lifecycle, messages, tools.
 - [Pi TUI](https://pi.dev/docs/latest/tui): rendering and custom-component disposal.
 - [Pi bash tool](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts): signal exit codes and bounded output.
+- [Pi PowerShell tool](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/powershell.ts): UTF-8 output and Windows PowerShell exit handling.
 - [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects): ownership, inheritance, and kill-on-close cleanup.
 - [Windows process attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute): atomic job association and restricted handle inheritance.
 - [Node child processes](https://nodejs.org/api/child_process.html): `exit` versus

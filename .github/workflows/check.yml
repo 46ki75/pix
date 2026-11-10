@@ -53,13 +53,20 @@ jobs:
         run: mise run check
 
   windows-infrastructure:
-    name: Windows infrastructure
+    name: Windows (PowerShell 7)
     runs-on: windows-2025
     timeout-minutes: 15
     defaults:
       run:
         shell: pwsh
     steps:
+      - name: Verify PowerShell 7 host
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 7) {
+            throw "Expected PowerShell 7, got $($PSVersionTable.PSVersion)"
+          }
+          $PSVersionTable | Format-Table -AutoSize
+
       - name: Check out repository
         uses: actions/checkout@v7
         with:

@@ -11,9 +11,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { getShellConfig } from "@earendil-works/pi-coding-agent";
+import {
+  getPowerShellConfig,
+  getShellConfig,
+} from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Registry } from "./registry.ts";
+import { powerShellCommand } from "./shell.ts";
 import { WindowsExecutor } from "./windows-execution.ts";
 import { windowsPowerShell } from "./windows.ts";
 
@@ -37,12 +41,16 @@ function running(pid: number): boolean {
 
 // IPC readiness travels up the fixture tree before its root exits or floods
 // output. This proves the descendants existed, without scheduling-based sleeps.
-function treeCode(marker: string, mode: "wait" | "exit" | "cap"): string {
+function treeCode(
+  marker: string,
+  mode: "wait" | "exit" | "cap",
+  output: "inherit" | "ignore" = "inherit",
+): string {
   // Avoid libuv's own parent-exit job cleanup, but not pix-bg's outer job.
   // The negative control below proves these descendants survive without it.
   // https://github.com/libuv/libuv/blob/v1.x/src/win/process.c
   const options = JSON.stringify({
-    stdio: ["ignore", "inherit", "inherit", "ipc"],
+    stdio: ["ignore", output, output, "ipc"],
     detached: process.platform === "win32",
     windowsHide: true,
   });
@@ -59,7 +67,7 @@ function treeCode(marker: string, mode: "wait" | "exit" | "cap"): string {
     const child = spawn(process.execPath, ["-e", ${JSON.stringify(child)}], ${options});
     child.once("message", (pids) => {
       writeFileSync(${JSON.stringify(marker)}, JSON.stringify([process.pid, ...pids]));
-      ${mode === "exit" ? "process.exit(0);" : mode === "cap" ? 'process.stdout.write("x".repeat(10000));' : ""}
+      ${mode === "exit" ? "process.exit(0);" : mode === "cap" ? 'process.stdout.write("x".repeat(10000) + "\\n");' : ""}
     });
     setInterval(() => {}, 1000);
   `;
@@ -483,6 +491,143 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.Security
     }
     expect(result.pid).toBeGreaterThan(0);
     await assertGone([result.pid as number]);
+  });
+
+  describe.each(["5.1", "7"])("PowerShell %s commands", (version) => {
+    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    function psNode(code: string): string {
+      // WinPS 5.1's legacy native argument passing strips embedded double quotes.
+      // Decode the fixture inside Node, rather than depend on that shell behavior.
+      const encoded = Buffer.from(code, "utf8").toString("base64");
+      return `& ${quote(process.execPath)} -e ${quote(`eval(Buffer.from('${encoded}','base64').toString('utf8'))`)}`;
+    }
+    async function createPowerShell(maxOutputBytes = 100_000) {
+      const shell =
+        version === "5.1"
+          ? {
+              shell: windowsPowerShell(),
+              args: [
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+              ],
+            }
+          : getPowerShellConfig();
+      if (version === "7") expect(shell.shell).toMatch(/pwsh\.exe$/i);
+      const h = await create(maxOutputBytes, shell);
+      return {
+        ...h,
+        start: (command: string, timeout?: number) =>
+          h.registry.start({
+            command: powerShellCommand(command, shell.shell),
+            shell: "powershell",
+            cwd: h.cwd,
+            ...(timeout === undefined ? {} : { timeout }),
+          }),
+      };
+    }
+
+    test.each([0, 7, 137])(
+      "captures Unicode streams, literals, environment, cwd, and explicit exit %i",
+      async (code) => {
+        const h = await createPowerShell();
+        const literal = "space ' quote \" 界 C:\\path\\tail\\";
+        vi.stubEnv("PIX_BG_WINDOWS_PS_TEST", literal);
+        const task = await h.start(
+          [
+            `[Console]::WriteLine(${quote(literal)})`,
+            "[Console]::Error.WriteLine('stderr界')",
+            "[Console]::WriteLine($env:PIX_BG_WINDOWS_PS_TEST)",
+            "[Console]::WriteLine(('cwd:' + (Get-Location).Path))",
+            "[Console]::WriteLine(('stdin:' + [Console]::In.ReadToEnd().Length))",
+            `exit ${code}`,
+          ].join("\n"),
+        );
+        expect((await h.registry.wait(task.id)).outcome).toEqual({
+          kind: "exited",
+          code,
+        });
+        const text = await readFile(task.outputPath, "utf8");
+        expect(text).toContain(literal);
+        expect(text).toContain("stderr界");
+        const reportedCwd = text
+          .split(/\r?\n/)
+          .find((line) => line.startsWith("cwd:"))
+          ?.slice(4);
+        expect(reportedCwd).toBeDefined();
+        // PowerShell expands Windows 8.3 aliases (RUNNER~1) to their long paths.
+        expect(await realpath(reportedCwd!)).toBe(await realpath(h.cwd));
+        expect(text).toContain("stdin:0");
+        expect(text).not.toContain("�");
+        await assertGone([task.pid]);
+      },
+    );
+
+    test.each([
+      ["Write-Output ok", 0],
+      ["Write-Error failure", 1],
+      ["throw 'failure'", 1],
+      ["Get-ChildItem |", 1],
+      [
+        `${psNode('process.stderr.write("native stderr\\n"); process.exit(0)')} 2>&1 | Select-Object -Last 3`,
+        0,
+      ],
+      [
+        `${psNode('process.stderr.write("native stderr\\n"); process.exit(7)')} 2>&1 | Select-Object -Last 3`,
+        1,
+      ],
+    ] as const)(
+      "preserves PowerShell command status: %s",
+      async (command, code) => {
+        const h = await createPowerShell();
+        const task = await h.start(command);
+        expect(
+          (await h.registry.wait(task.id)).outcome,
+          await readFile(task.outputPath, "utf8"),
+        ).toEqual({ kind: "exited", code });
+        await assertGone([task.pid]);
+      },
+    );
+
+    test("natural shell exit cleans up descendants", async () => {
+      const h = await createPowerShell();
+      // PowerShell waits for native-command output EOF. Disconnect descendant
+      // output so the native root can return and the PowerShell shell can exit.
+      const task = await h.start(psNode(treeCode(h.marker, "exit", "ignore")));
+      expect((await h.registry.wait(task.id)).outcome).toEqual({
+        kind: "exited",
+        code: 0,
+      });
+      await assertGone([task.pid, ...(await pids(h.marker))]);
+    });
+
+    test.each(["agent", "shutdown", "timeout", "cap", "supervisor"] as const)(
+      "%s cleanup terminates PowerShell descendants",
+      async (cause) => {
+        const h = await createPowerShell(cause === "cap" ? 64 : 100_000);
+        const task = await h.start(
+          psNode(treeCode(h.marker, cause === "cap" ? "cap" : "wait")),
+          cause === "timeout" ? 10 : undefined,
+        );
+        const ids = await pids(h.marker);
+        if (cause === "agent") await h.registry.stop(task.id, "agent");
+        if (cause === "shutdown") await h.registry.disposeAll();
+        if (cause === "supervisor") process.kill(task.pid, "SIGKILL");
+        const done = await h.registry.wait(task.id);
+        expect(done.outcome).toEqual(
+          cause === "timeout"
+            ? { kind: "timed_out" }
+            : cause === "cap"
+              ? { kind: "output_capped" }
+              : cause === "supervisor"
+                ? expect.objectContaining({ kind: "failed" })
+                : { kind: "killed", by: cause },
+        );
+        await assertGone([task.pid, ...ids]);
+      },
+    );
   });
 
   test("failed command launch rejects readiness and retains no task", async () => {

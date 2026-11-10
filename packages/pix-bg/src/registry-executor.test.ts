@@ -114,6 +114,33 @@ test("registry delegates launch and waits for the executor's acknowledgment", as
   expect(changed).toHaveBeenCalledExactlyOnceWith(task);
 });
 
+test("per-launch executors share registry ownership without changing its default", async () => {
+  const h = await create();
+  const other = fakeExecutor();
+  const launching = h.registry.start(
+    { command: "Write-Output ok", shell: "powershell", cwd: "/" },
+    other.executor,
+  );
+  const pending = other.attempts[0]!;
+  pending.ready();
+  const task = await launching;
+  expect(task.shell).toBe("powershell");
+  expect(h.attempts).toHaveLength(0);
+  const defaultLaunch = h.registry.start({ command: "printf ok", cwd: "/" });
+  h.attempts[0]!.ready();
+  expect((await defaultLaunch).shell).toBe("bash");
+  const shutdown = h.registry.disposeAll();
+  expect(pending.execution.stop).toHaveBeenCalledOnce();
+  expect(h.attempts[0]!.execution.stop).toHaveBeenCalledOnce();
+  pending.complete();
+  h.attempts[0]!.complete();
+  await shutdown;
+  expect((await h.registry.wait(task.id)).outcome).toEqual({
+    kind: "killed",
+    by: "shutdown",
+  });
+});
+
 test("shell exit clears the timeout but completion waits for executor cleanup", async () => {
   const h = await create();
   vi.useFakeTimers();

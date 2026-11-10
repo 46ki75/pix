@@ -7,6 +7,7 @@ function task(id: string, outcome: Outcome): Task {
     id,
     name: "test",
     command: "true",
+    shell: "bash",
     cwd: "/tmp",
     pid: 1,
     outputPath: "/missing",
