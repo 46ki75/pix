@@ -540,7 +540,7 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.Security
             `[Console]::WriteLine(${quote(literal)})`,
             "[Console]::Error.WriteLine('stderr界')",
             "[Console]::WriteLine($env:PIX_BG_WINDOWS_PS_TEST)",
-            "[Console]::WriteLine((Get-Location).Path)",
+            "[Console]::WriteLine(('cwd:' + (Get-Location).Path))",
             "[Console]::WriteLine(('stdin:' + [Console]::In.ReadToEnd().Length))",
             `exit ${code}`,
           ].join("\n"),
@@ -552,7 +552,13 @@ foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.Security
         const text = await readFile(task.outputPath, "utf8");
         expect(text).toContain(literal);
         expect(text).toContain("stderr界");
-        expect(text).toContain(h.cwd);
+        const reportedCwd = text
+          .split(/\r?\n/)
+          .find((line) => line.startsWith("cwd:"))
+          ?.slice(4);
+        expect(reportedCwd).toBeDefined();
+        // PowerShell expands Windows 8.3 aliases (RUNNER~1) to their long paths.
+        expect(await realpath(reportedCwd!)).toBe(await realpath(h.cwd));
         expect(text).toContain("stdin:0");
         expect(text).not.toContain("�");
         await assertGone([task.pid]);
