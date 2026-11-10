@@ -1,17 +1,13 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import {
-  type ExtensionAPI,
-  getShellConfig,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { outputUserId, privateDirectory } from "./directory.ts";
 import { oneLine, taskDetail, taskList } from "./format.ts";
 import { Notifier } from "./notify.ts";
-import { PosixExecutor } from "./posix-execution.ts";
 import { outputLimit, Registry } from "./registry.ts";
+import { shellExecutor } from "./shell.ts";
 import { TaskUI } from "./ui.ts";
-import { WindowsExecutor } from "./windows-execution.ts";
 
 export default function backgroundTasks(pi: ExtensionAPI): void {
   let runtime:
@@ -38,10 +34,8 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     const outputRoot = privateDirectory(
       join(tmpdir(), `pi-bg-${outputUserId()}`),
     );
-    const LocalExecutor =
-      process.platform === "win32" ? WindowsExecutor : PosixExecutor;
     const tasks = new Registry({
-      executor: new LocalExecutor({ shell: getShellConfig() }),
+      executor: shellExecutor("bash"),
       outputDir: join(outputRoot, ctx.sessionManager.getSessionId()),
       maxOutputBytes: outputLimit(process.env),
       onError: (error, task) =>
@@ -67,11 +61,11 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     name: "bg_run",
     label: "Background Run",
     description:
-      "Start a background shell command. Completion wakes the agent; do not poll. Read output with read.",
+      "Start a background shell command using Bash by default, or PowerShell on Windows with shell: powershell. Completion wakes the agent; do not poll. Read output with read.",
     promptSnippet:
       "Run a shell command in the background with completion notification.",
     promptGuidelines: [
-      "Never use bash sleep, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
+      "Never use shell sleeps, blocking waits, or repeated bg_status/log checks to wait for background tasks.",
       "After bg_run, continue independent work or end the turn. In interactive/RPC mode, completion automatically starts another turn without user input.",
       ...(process.env.PIX_BG_SUBAGENT_HINTS === "0"
         ? []
@@ -80,7 +74,16 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
           ]),
     ],
     parameters: Type.Object({
-      command: Type.String({ minLength: 1, description: "Shell command" }),
+      command: Type.String({
+        minLength: 1,
+        description: "Command in the selected shell's syntax",
+      }),
+      shell: Type.Optional(
+        Type.Union([Type.Literal("bash"), Type.Literal("powershell")], {
+          description:
+            "Command shell; defaults to bash. powershell is available only on native Windows.",
+        }),
+      ),
       name: Type.Optional(
         Type.String({
           minLength: 1,
@@ -98,7 +101,10 @@ export default function backgroundTasks(pi: ExtensionAPI): void {
     }),
     async execute(_id, params, signal, _update, ctx) {
       signal?.throwIfAborted();
-      const task = await registry().start({ ...params, cwd: ctx.cwd });
+      const task = await registry().start(
+        { ...params, cwd: ctx.cwd },
+        params.shell === undefined ? undefined : shellExecutor(params.shell),
+      );
       return {
         content: [
           {

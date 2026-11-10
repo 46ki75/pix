@@ -33,7 +33,8 @@ and all workspace tests.
 The `Windows infrastructure` job uses Windows Server 2025 to verify locked tool
 and dependency installation, workspace type checking, pix-bg's portable policy
 and UI tests (`mise run bg:test-portable`), and its native Windows execution,
-log-security, and extension-integration tests (`mise run test --project pix-bg`).
+log-security, and extension-integration tests (`mise run test --project pix-bg`),
+including Bash, Windows PowerShell 5.1, and PowerShell 7 commands.
 The full workspace test suite remains on Ubuntu. Windows desktop release
 qualification still requires the package's normal-user interactive smoke test.
 

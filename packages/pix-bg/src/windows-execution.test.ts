@@ -93,7 +93,7 @@ test.each([
   { shell: "C:\\Windows\\System32\\bash.exe", args: ["-c"] },
   { shell: "C:\\Windows\\Sysnative\\bash.exe", args: ["-c"] },
 ])("rejects an unsupported WSL shell before spawning: %j", (shell) => {
-  expect(() => new WindowsExecutor({ shell })).toThrow("Git for Windows Bash");
+  expect(() => new WindowsExecutor({ shell })).toThrow("WSL is not supported");
   expect(spawn).not.toHaveBeenCalled();
 });
 

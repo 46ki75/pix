@@ -36,6 +36,7 @@ export function taskDetail(task: Task, now = Date.now()): string {
   return [
     statusLine(task, now),
     `PID: ${task.pid}`,
+    `Shell: ${task.shell}`,
     `Command: ${oneLine(task.command).slice(0, 4096)}`,
     `Directory: ${task.cwd}`,
     `Output: ${task.outputPath} (${formatSize(task.outputBytes)})`,

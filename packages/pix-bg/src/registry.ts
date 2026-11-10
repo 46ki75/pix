@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { stripVTControlCharacters } from "node:util";
 import { privateDirectory } from "./directory.ts";
-import type { Execution, ExecutionOutcome, Executor } from "./execution.ts";
+import type {
+  Execution,
+  ExecutionOutcome,
+  Executor,
+  ShellName,
+} from "./execution.ts";
 
 export type KillReason = "agent" | "user" | "shutdown";
 export type Outcome =
@@ -17,6 +22,7 @@ export interface Task {
   id: string;
   name: string;
   command: string;
+  shell: ShellName;
   cwd: string;
   pid: number;
   outputPath: string;
@@ -131,12 +137,16 @@ export class Registry {
     return this.entry(id).done;
   }
 
-  async start(params: {
-    command: string;
-    cwd: string;
-    name?: string;
-    timeout?: number;
-  }): Promise<Task> {
+  async start(
+    params: {
+      command: string;
+      shell?: ShellName;
+      cwd: string;
+      name?: string;
+      timeout?: number;
+    },
+    executor: Executor = this.options.executor,
+  ): Promise<Task> {
     if (this.disposed) throw new Error("Background task registry is shut down");
     if (!params.command.trim()) throw new Error("Command must not be empty");
     if (
@@ -160,7 +170,7 @@ export class Registry {
     let entry!: Entry;
     let execution: Execution;
     try {
-      execution = this.options.executor.start(params.command, params.cwd, {
+      execution = executor.start(params.command, params.cwd, {
         onData: (source, chunk) =>
           this.output(entry, decoders[source].decode(chunk)),
         onOutputError: (error) => {
@@ -198,6 +208,7 @@ export class Registry {
           params.name?.trim() ||
           params.command.replace(/\s+/g, " ").slice(0, 80),
         command: params.command,
+        shell: params.shell ?? "bash",
         cwd: params.cwd,
         pid: execution.pid,
         outputPath,

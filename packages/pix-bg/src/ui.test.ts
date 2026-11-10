@@ -25,6 +25,7 @@ const task: Task = {
   id: "abc",
   name: "界 test",
   command: "sleep 30",
+  shell: "bash",
   cwd: "/tmp",
   pid: 1,
   outputPath: "/missing",

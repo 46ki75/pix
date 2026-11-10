@@ -15,6 +15,7 @@ const task: Task = {
   id: "abc",
   name: "test",
   command: "echo test",
+  shell: "bash",
   cwd: "/tmp",
   pid: 12,
   outputPath: "/no/log",
@@ -30,6 +31,13 @@ test("signal outcomes never show exit code zero", () => {
   expect(taskDetail(task)).not.toContain("exit code 0");
   expect(taskDetail(task)).toContain("1.0s");
   expect(completionText(task)).toContain("/no/log");
+});
+
+test("task details identify the selected command language", () => {
+  expect(taskDetail(task)).toContain("Shell: bash");
+  expect(taskDetail({ ...task, shell: "powershell" })).toContain(
+    "Shell: powershell",
+  );
 });
 
 test("formats all terminal reasons explicitly", () => {

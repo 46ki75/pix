@@ -21,19 +21,40 @@ and `/bg`. Do not load them together.
 
 ## Windows (unreleased, experimental)
 
-The initial Windows target is Windows 11 x64 and Windows Server 2025. Install
-Git for Windows so Pi can discover Bash. Commands use Bash syntax, not PowerShell
-syntax; the extension keeps Pi's shell discovery rather than selecting a new
-command language. WSL shells are rejected because Job Objects do not supervise
-Linux processes inside WSL. Explicit `MSYS` startup-glob options (including
+The initial Windows target is Windows 11 x64 and Windows Server 2025. Choose the
+command language with `bg_run`'s optional `shell` parameter:
+
+- `bash` (default): install Git for Windows so Pi can discover Bash.
+- `powershell`: use PowerShell syntax. Pi discovers PowerShell 7 (`pwsh.exe`) first,
+  then falls back to Windows PowerShell (`powershell.exe`). Git Bash is not needed
+  for PowerShell tasks. Enabling Pi's built-in `powershell` tool or launching Pi
+  from PowerShell does not change `bg_run`'s Bash default.
+
+For example, pass these arguments to `bg_run`:
+
+```json
+{
+  "command": "Write-Output 'Hello from PowerShell'",
+  "shell": "powershell"
+}
+```
+
+PowerShell output uses UTF-8. Ordinary command failures follow PowerShell's
+`-Command` exit rules (usually 0 or 1); use an explicit `exit`, such as
+`exit $LASTEXITCODE` after a native command, to preserve its numeric exit code.
+PowerShell is supported only when Pi runs as a native Windows process.
+
+WSL shells are rejected because Job Objects do not supervise Linux processes
+inside WSL. For Bash tasks, explicit `MSYS` startup-glob options (including
 `noglob`, `-glob`, and `glob:...`) and quoted `MSYS` option strings are currently
 rejected because startup parsing differs from the supported mode. Remove those
 options or quotes from `MSYS`; other unquoted settings are kept. This restriction
-does not affect Bash's own `set -f` or wildcard expansion.
+does not affect Bash's own `set -f` or wildcard expansion, or PowerShell tasks.
 
-Windows also requires the built-in Windows PowerShell 5.1 in full-language mode,
-.NET Framework, and a local fixed NTFS volume for logs. The extension loads a
-small bundled C# supervisor through PowerShell; no npm native addon or separate
+Both command shells require the built-in Windows PowerShell 5.1 in full-language
+mode, .NET Framework, and a local fixed NTFS volume for logs. The extension loads
+a small bundled C# supervisor through Windows PowerShell 5.1; selecting PowerShell
+7 for commands does not replace this helper. No npm native addon or separate
 compiler installation is needed. Policies that prohibit `Add-Type` or native API
 access will prevent launch rather than fall back to weaker cleanup. Cold startup
 can take several seconds.
@@ -41,19 +62,21 @@ can take several seconds.
 The supervisor atomically creates the command inside a Windows Job Object before
 it can execute. Shell exit terminates remaining job members, including descendants
 holding output pipes. The returned PID identifies the **supervisor**, not the
-Bash process. Killing that PID closes the job and terminates its processes.
-Windows stops are forceful; the POSIX SIGTERM/grace-period behavior does not apply.
+command shell process. Killing that PID closes the job and terminates its
+processes. Windows stops are forceful; the POSIX SIGTERM/grace-period behavior
+does not apply.
 Native Windows exit codes are reported as numeric exits, not invented Unix signals.
 
-Native Windows CI exercises process-tree cleanup, directory ACLs, portable policy,
-and Pi's extension loader. A normal-user Windows 11 terminal smoke test is still
-required before treating the Windows implementation as release-qualified.
+Native Windows CI exercises Bash, Windows PowerShell 5.1, and PowerShell 7 commands,
+process-tree cleanup, directory ACLs, portable policy, and Pi's extension loader.
+A normal-user Windows 11 terminal smoke test is still required before treating
+the Windows implementation as release-qualified.
 
 ## Tools
 
 | Tool | Parameters | Behavior |
 | --- | --- | --- |
-| `bg_run` | `command`, optional `name` and `timeout` | Start a shell command; return ID, PID, and log path |
+| `bg_run` | `command`, optional `shell`, `name`, and `timeout` | Start a shell command; return ID, PID, shell, and log path |
 | `bg_status` | Optional `id` | Inspect one task or list the newest 50 tasks |
 | `bg_kill` | `id` | Stop the task and return its final state |
 
@@ -252,9 +275,11 @@ live registry is not reconstructed from history.
   tasks or wake an idle agent. They stop remaining tasks when the invocation ends.
 - A Pi crash or SIGKILL can orphan processes. There is no watchdog; use the
   recorded PID/process group to inspect and clean up manually.
-- Commands inherit Pi's environment and working directory and run through Pi's
-  default shell configuration, with stdin disconnected. There is no sandbox,
-  interactive prompt handling, concurrency limit, or automatic log retention.
+- Commands inherit Pi's environment and working directory and use Pi's discovery
+  for the selected shell (`bash` by default, or `powershell` on Windows), with
+  stdin disconnected. Shells are resolved at task launch, not session startup.
+  There is no sandbox, interactive prompt handling, concurrency limit, or
+  automatic log retention.
 - Windows support is experimental. Reload survival is unsupported on every OS.
 
 ## Release

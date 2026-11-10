@@ -28,7 +28,7 @@ export class WindowsExecutor implements Executor {
       )
     ) {
       throw new Error(
-        "Windows background tasks require Git for Windows Bash; WSL is not supported",
+        "Windows background tasks require a native Windows shell (Git Bash or PowerShell); WSL is not supported",
       );
     }
   }
@@ -141,7 +141,8 @@ class WindowsExecution implements Execution {
       }
       this.finish();
     });
-    // No command text travels through PowerShell's parser or command-line argv.
+    // No command text travels through the supervisor's PowerShell parser or argv.
+    // The command shell receives its arguments through the C# launcher.
     this.child.stdin?.on("error", () => {});
     this.child.stdin?.end(
       JSON.stringify({

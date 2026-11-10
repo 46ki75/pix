@@ -1,3 +1,5 @@
+export type ShellName = "bash" | "powershell";
+
 export type ExecutionOutcome =
   | { kind: "exited"; code: number }
   | { kind: "signaled"; signal: NodeJS.Signals; code: number }

@@ -25,6 +25,7 @@ function harness(text = output(20), running = false) {
     id: "abc",
     name: "output test",
     command: "test",
+    shell: "bash",
     cwd: directory,
     pid: 1,
     outputPath,
