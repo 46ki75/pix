@@ -3,7 +3,8 @@
 User-selected MCP prompts alongside Pi's native tools and resources.
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
-This version supports **Pi 1.0.0, 1.0.2, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, and 1.5.1**.
+This version supports **Pi 1.0.0, 1.0.2, 1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0,
+1.5.1, and 1.5.2**.
 
 ## Installation
 
@@ -108,7 +109,7 @@ prompt client reconnects when next needed.
 
 Native configuration and authentication helpers are shipped but not public
 exports. `src/native.ts` isolates their use and **accepts only Pi 1.0.0, 1.0.2,
-1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, and 1.5.1** rather than silently changing trust or
+1.1.0, 1.2.0, 1.3.0, 1.4.0, 1.5.0, 1.5.1, and 1.5.2** rather than silently changing trust or
 credential behavior. Other versions, including unverified patch releases,
 require explicit compatibility validation. This is not a shared-client API or a
 claim of upstream support.
