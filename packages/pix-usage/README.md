@@ -3,7 +3,7 @@
 Claude, legacy Codex, Meta Muse, OpenCode Go, and GitHub Copilot quota reports,
 plus OpenAI ChatGPT usage-settings guidance and a current-provider widget for
 [Pi Coding Agent](https://pi.dev/). Uses Pi's existing logins, not a separate
-credential store or usage SDK. Tested with Pi 0.87.1 and 1.6.0.
+credential store or usage SDK. Tested with Pi 0.87.1 and 1.6.1.
 
 **Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes.**
 
@@ -259,7 +259,7 @@ every effective provider and model URL is a known first-party OpenCode Go URL:
 
 - Older hosts: `https://opencode.ai/zen/go`, optionally suffixed with `/v1`.
 - Pi 1.3.0 and 1.4.0: `https://opencode.ai/inference/go`, optionally suffixed with `/v1`.
-- Pi 1.5.0, 1.5.1, and 1.6.0: `https://opencode.ai/inference/go/anthropic`,
+- Pi 1.5.0, 1.5.1, 1.6.0, and 1.6.1: `https://opencode.ai/inference/go/anthropic`,
   `https://opencode.ai/inference/go/google/v1beta`, and
   `https://opencode.ai/inference/go/openai/v1`.
 

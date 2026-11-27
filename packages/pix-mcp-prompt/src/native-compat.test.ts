@@ -36,6 +36,7 @@ test.each([
   "1.5.1",
   "1.5.2",
   "1.6.0",
+  "1.6.1",
 ])("accepts verified host %s through the version gate", async (version) => {
   host.version = version;
   const directory = await mkdtemp(join(tmpdir(), "pix-native-compat-"));
@@ -58,7 +59,7 @@ test.each([
   "1.3.1",
   "1.4.1",
   "1.5.3",
-  "1.6.1",
+  "1.6.2",
 ])(
   "rejects unverified host %s before reading configuration or importing internals",
   async (version) => {
@@ -66,7 +67,7 @@ test.each([
     await expect(
       loadServers({ cwd: "/unused", isProjectTrusted: () => false }, []),
     ).rejects.toThrow(
-      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2 or 1.1.0 or 1.2.0 or 1.3.0 or 1.4.0 or 1.5.0 or 1.5.1 or 1.5.2 or 1.6.0, found ${version}`,
+      `expected @earendil-works/pi-coding-agent 1.0.0 or 1.0.2 or 1.1.0 or 1.2.0 or 1.3.0 or 1.4.0 or 1.5.0 or 1.5.1 or 1.5.2 or 1.6.0 or 1.6.1, found ${version}`,
     );
     expect(packageDir).not.toHaveBeenCalled();
   },
