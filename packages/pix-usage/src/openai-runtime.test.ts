@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const packagePath = fileURLToPath(new URL("../", import.meta.url));
 const hosts = [
   ["0.87.1", new URL("../package.json", import.meta.url)],
-  ["1.6.0", new URL("../../../package.json", import.meta.url)],
+  ["1.6.1", new URL("../../../package.json", import.meta.url)],
 ] as const;
 
 // Subprocesses isolate Pi's module mappings, environment, and credential store.
