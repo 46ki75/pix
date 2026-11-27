@@ -24,6 +24,7 @@ const SUPPORTED_PI_VERSIONS = [
   "1.5.2",
   "1.6.0",
   "1.6.1",
+  "1.7.0",
 ];
 
 interface NativeAuthProvider {
